@@ -1,0 +1,18 @@
+# Godot 4+ specific
+.godot/
+
+# Godot 3 specific
+.import/
+
+# Export presets (contains build configs, not needed in repo)
+export_presets.cfg
+
+# UID files
+*.uid
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor temp files
+*.tmp
