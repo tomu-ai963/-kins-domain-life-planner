@@ -3,28 +3,89 @@ extends Node2D
 # スケール: 1m = 40px  →  1ヘクタール(100m×100m) = 4000px×4000px
 # ワールド原点(0,0)をドメイン中心とし、±2000px(±50m)が境界
 
+const SEASON_NAMES := {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬"}
+
+# 季節ごとの地面パレット
+const GROUND := {
+	"spring": {"dirt": Color(0.40, 0.30, 0.20), "grass": Color(0.62, 0.82, 0.42), "grid": Color(0.50, 0.70, 0.32)},
+	"summer": {"dirt": Color(0.38, 0.28, 0.18), "grass": Color(0.56, 0.77, 0.34), "grid": Color(0.44, 0.65, 0.27)},
+	"autumn": {"dirt": Color(0.36, 0.26, 0.16), "grass": Color(0.74, 0.66, 0.32), "grid": Color(0.62, 0.55, 0.26)},
+	"winter": {"dirt": Color(0.35, 0.32, 0.30), "grass": Color(0.88, 0.90, 0.92), "grid": Color(0.78, 0.81, 0.85)},
+}
+
+var selected_species := "birch"
+var season := "summer"
+
+var _season_timer := 0.0
+
 func _ready() -> void:
-	$HUD.player = $Player
+	_update_season()
+	$HUD.setup($Player, $Trees, self)
 	$Player.connect("plant_tree", self, "_on_plant_tree")
+	$Trees.load_game()
+
+func _process(delta: float) -> void:
+	# 季節は現実の日付から。1 分に 1 回チェックすれば十分
+	_season_timer += delta
+	if _season_timer >= 60.0:
+		_season_timer = 0.0
+		_update_season()
+
+func _update_season() -> void:
+	var m: int = OS.get_datetime().month
+	var s := "winter"
+	if m >= 3 and m <= 5:
+		s = "spring"
+	elif m >= 6 and m <= 8:
+		s = "summer"
+	elif m >= 9 and m <= 11:
+		s = "autumn"
+	season = s
+	$Trees.season = s
+	update()
+	$Trees.update()
 
 func _on_plant_tree(pos: Vector2) -> void:
-	$Trees.add_tree(pos)
+	$Trees.add_tree(pos, selected_species)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	match event.scancode:
+		KEY_1:
+			selected_species = "birch"
+		KEY_2:
+			selected_species = "apple"
+		KEY_3:
+			selected_species = "cedar"
+		KEY_Z:
+			# 足元 2m 以内の木を抜く
+			$Trees.remove_nearest($Player.global_position, 80.0)
+		KEY_T:
+			$Trees.advance_years(1.0)   # 1年先送り(プレビュー)
+		KEY_G:
+			$Trees.advance_years(10.0)  # 10年先送り
+
+func _notification(what: int) -> void:
+	if what == MainLoop.NOTIFICATION_WM_QUIT_REQUEST:
+		$Trees.save_game()
 
 func _draw() -> void:
 	var half := 2000.0
 	var grid := 400.0   # 10m グリッド
+	var pal: Dictionary = GROUND[season]
 
 	# ドメイン外（土の色）
-	draw_rect(Rect2(-6000, -6000, 12000, 12000), Color(0.38, 0.28, 0.18))
+	draw_rect(Rect2(-6000, -6000, 12000, 12000), pal.dirt)
 
-	# 1ヘクタール草原
-	draw_rect(Rect2(-half, -half, half * 2, half * 2), Color(0.56, 0.77, 0.34))
+	# 1ヘクタール草原（冬は雪原）
+	draw_rect(Rect2(-half, -half, half * 2, half * 2), pal.grass)
 
 	# 10m グリッド線
 	for i in range(-5, 6):
 		var p := float(i) * grid
-		draw_line(Vector2(p, -half), Vector2(p,  half), Color(0.44, 0.65, 0.27), 1)
-		draw_line(Vector2(-half, p), Vector2( half, p), Color(0.44, 0.65, 0.27), 1)
+		draw_line(Vector2(p, -half), Vector2(p,  half), pal.grid, 1)
+		draw_line(Vector2(-half, p), Vector2( half, p), pal.grid, 1)
 
 	# ── メルカバ（二つの正三角形 / 六芒星）────────────────────────
 	# 土地のエネルギー軸を示す黄金色のガイドライン
