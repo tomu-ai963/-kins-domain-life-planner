@@ -109,6 +109,11 @@ func advance_years(years: float) -> void:
 	time_offset_years += years
 	update()
 
+# プレビューをやめて今日の姿に戻す
+func reset_preview() -> void:
+	time_offset_years = 0.0
+	update()
+
 # 表示用の樹齢(プレビューの先送りを含む)
 func age_years(tree: Dictionary) -> float:
 	return real_age_years(tree) + time_offset_years

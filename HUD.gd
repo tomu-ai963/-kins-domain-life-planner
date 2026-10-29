@@ -47,7 +47,7 @@ func _process(delta: float) -> void:
 		"選択: %s\n" +
 		"[1]白樺 [2]リンゴ [3]シベリア杉\n" +
 		"SPACE:植える  E:収穫  Z:抜く  ホイール:ズーム\n" +
-		"T:+1年  G:+10年 (未来をプレビュー・保存しない)\n" +
+		"T:+1年  G:+10年  R:今日に戻す (未来をプレビュー)\n" +
 		"%s"
 	) % [
 		dt.year, dt.month, dt.day, season_jp, offset,

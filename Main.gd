@@ -86,6 +86,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			$Trees.advance_years(1.0)   # 1年先送り(プレビュー。保存しない)
 		KEY_G:
 			$Trees.advance_years(10.0)  # 10年先送り
+		KEY_R:
+			$Trees.reset_preview()      # 今日に戻す
 
 func _notification(what: int) -> void:
 	if what == MainLoop.NOTIFICATION_WM_QUIT_REQUEST:

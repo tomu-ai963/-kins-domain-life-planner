@@ -97,6 +97,12 @@ func _test_preview_is_not_saved() -> void:
 	_check(t.real_age_years(t.trees[0]) < 1.0, "判定用の樹齢は現実のまま")
 	_check(t.harvest_nearest(Vector2(0, 0), 80.0) == "preview", "プレビュー中は収穫できない")
 
+	t.reset_preview()
+	_check(t.time_offset_years == 0.0, "R(reset_preview)で先送りが 0 に戻る")
+	_check(t.age_years(t.trees[0]) < 1.0, "戻すと見た目の樹齢も現実に戻る")
+	_check(t.harvest_nearest(Vector2(0, 0), 80.0) == "young", "戻した後はプレビューの制限が外れる")
+	t.advance_years(10.0)
+
 	t.save_game()
 	var f := File.new()
 	f.open(TEST_SAVE, File.READ)
