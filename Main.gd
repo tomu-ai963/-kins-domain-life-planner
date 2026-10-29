@@ -22,8 +22,13 @@ func _ready() -> void:
 	_update_season()
 	$HUD.setup($Player, $Trees, self)
 	$Player.connect("plant_tree", self, "_on_plant_tree")
+	$Trees.land = $Land
+	$Trees.quests = $Quests
+	$Quests.trees = $Trees
+	$Quests.land = $Land
 	$Trees.load_game()
 	_check_new_day()
+	_check_quests()  # 旧セーブで条件を満たしていれば、開いた時点で達成する
 
 func _process(delta: float) -> void:
 	# 季節と日付は現実の日付から。1 分に 1 回チェックすれば十分(開いたまま日付をまたいでも拾う)
@@ -77,9 +82,78 @@ const DAILY_MESSAGES := {
 	"birds": "渡り鳥が来て、しばらく休んでいった",
 }
 
+# 段階クエスト(Quests.QUESTS の id)ごとの名前と進み具合の単位
+const QUEST_TEXTS := {
+	"hedge": {"name": "境界を生垣で囲む", "unit": "区画", "hint": "境界から3m以内に、10mごとに1本"},
+	"garden": {"name": "菜園を作る", "unit": "区画", "hint": "F で3m四方の区画を置く"},
+	"pond": {"name": "池を掘る", "unit": "", "hint": "P で足元に池を掘る"},
+	"family_cedar": {"name": "中心に家族の杉を植える", "unit": "", "hint": "中心から5m以内にシベリア杉"},
+}
+
+# 菜園・池の結果コード(Land.toggle_plot / toggle_pond)ごとの文言
+const PLOT_MESSAGES := {
+	"placed": "菜園の区画を作った(%d区画)",
+	"removed": "菜園の区画を草地に戻した",
+	"outside": "土地の外には作れない",
+}
+const POND_MESSAGES := {
+	"placed": "池を掘った",
+	"removed": "池を埋めた",
+	"one_only": "池はひとつまで(池の中で P を押すと埋める)",
+	"outside": "土地の外には掘れない",
+}
+
 func _on_plant_tree(pos: Vector2) -> void:
 	if not $Trees.add_tree(pos, selected_species):
 		$HUD.show_message("%sの種がない" % $Trees.SPECIES[selected_species].name)
+		return
+	_check_quests()
+
+func _toggle_plot() -> void:
+	var result: String = $Land.toggle_plot($Player.global_position)
+	var msg: String = PLOT_MESSAGES[result]
+	if result == "placed":
+		msg = msg % $Land.plots.size()
+	$HUD.show_message(msg)
+	_after_land_change(result)
+
+func _toggle_pond() -> void:
+	var result: String = $Land.toggle_pond($Player.global_position)
+	$HUD.show_message(POND_MESSAGES[result])
+	_after_land_change(result)
+
+func _after_land_change(result: String) -> void:
+	if result == "placed" or result == "removed":
+		$Trees.save_game()
+		_check_quests()
+
+# クエストを判定し、達成があれば知らせて保存する
+func _check_quests() -> void:
+	$Quests.update()  # 生垣の区画の印などを描き直す
+	var done: Array = $Quests.advance()
+	if done.empty():
+		return
+	$Trees.save_game()
+	if done.has("complete"):
+		$HUD.show_message("愛の空間が完成した", 12.0)
+		return
+	var names := []
+	for id in done:
+		names.append(QUEST_TEXTS[id].name)
+	var next: String = $Quests.current_id()
+	$HUD.show_message("達成: %s → 次は「%s」" % [PoolStringArray(names).join("・"), QUEST_TEXTS[next].name], 8.0)
+
+# HUD に出すクエストの 1 行
+func quest_line() -> String:
+	if $Quests.is_complete():
+		return "クエスト: 愛の空間が完成した"
+	var id: String = $Quests.current_id()
+	var t: Dictionary = QUEST_TEXTS[id]
+	var p: Array = $Quests.progress(id)
+	var count := ""
+	if t.unit != "":
+		count = " %d/%d%s" % [p[0], p[1], t.unit]
+	return "クエスト %d/%d: %s%s(%s)" % [$Quests.stage + 1, $Quests.QUESTS.size(), t.name, count, t.hint]
 
 func _harvest() -> void:
 	# 足元 2m 以内のリンゴを収穫する
@@ -114,8 +188,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_Q:
 			_water()
 		KEY_Z:
-			# 足元 2m 以内の木を抜く(種は戻らない)
+			# 足元 2m 以内の木を抜く(種は戻らない。達成済みのクエストは戻らない)
 			$Trees.remove_nearest($Player.global_position, 80.0)
+			$Quests.update()
+		KEY_F:
+			_toggle_plot()
+		KEY_P:
+			_toggle_pond()
 		KEY_T:
 			$Trees.advance_years(1.0)   # 1年先送り(プレビュー。保存しない)
 		KEY_G:

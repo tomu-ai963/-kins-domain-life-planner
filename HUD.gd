@@ -52,9 +52,10 @@ func _process(delta: float) -> void:
 		"種: 白樺 %d  リンゴ %d  シベリア杉 %d\n" +
 		"選択: %s\n" +
 		"今日の発見: %s\n" +
+		"%s\n" +
 		"[1]白樺 [2]リンゴ [3]シベリア杉\n" +
-		"SPACE:植える  Q:水やり  E:収穫  Z:抜く  ホイール:ズーム\n" +
-		"T:+1年  G:+10年  R:今日に戻す (未来をプレビュー)\n" +
+		"SPACE:植える  Q:水やり  E:収穫  Z:抜く  F:菜園  P:池\n" +
+		"T:+1年  G:+10年  R:今日に戻す (未来をプレビュー)  ホイール:ズーム\n" +
 		"%s"
 	) % [
 		dt.year, dt.month, dt.day, season_jp, offset,
@@ -62,5 +63,6 @@ func _process(delta: float) -> void:
 		seeds.birch, seeds.apple, seeds.cedar,
 		sp_name,
 		found,
+		_main.quest_line(),
 		_message,
 	]

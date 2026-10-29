@@ -60,6 +60,9 @@ var today_event := ""         # その日の発見の id(HUD で一日中見ら�
 var time_offset_years := 0.0  # 時間先送りプレビュー(年)。セーブしない
 var season := "summer"        # Main が現実の日付から設定する
 var save_path := SAVE_PATH    # テストでは別のファイルに向ける
+# 同じセーブファイルに入れる菜園・池(Land)とクエスト(Quests)。Main が設定する(テストでは無しでもよい)
+var land: Node = null
+var quests: Node = null
 
 var _redraw_timer := 0.0
 
@@ -272,6 +275,10 @@ func _draw_fruits(pos: Vector2, r: float) -> void:
 # 時間先送りはプレビューなので保存しない
 func save_game() -> void:
 	var data := {"seeds": seeds, "last_day": last_day, "today_event": today_event, "trees": []}
+	if land != null:
+		data["land"] = land.to_save()
+	if quests != null:
+		data["quests"] = quests.to_save()
 	for t in trees:
 		data.trees.append({
 			"x": t.pos.x, "y": t.pos.y,
@@ -305,6 +312,13 @@ func load_game() -> void:
 				seeds[sp] = int(saved_seeds[sp])
 	# 記録がない旧形式のセーブは、次に開いたとき(= 今)その日の発見が起きる
 	last_day = String(data.get("last_day", ""))
+	# 2-2 以前のセーブには菜園・池・クエストの記録がない(空・段階 0 から)
+	if land != null:
+		var ld = data.get("land", {})
+		land.from_save(ld if typeof(ld) == TYPE_DICTIONARY else {})
+	if quests != null:
+		var qd = data.get("quests", {})
+		quests.from_save(qd if typeof(qd) == TYPE_DICTIONARY else {})
 	today_event = String(data.get("today_event", ""))
 	trees.clear()
 	for t in data.get("trees", []):
