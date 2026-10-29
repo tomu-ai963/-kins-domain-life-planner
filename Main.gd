@@ -23,13 +23,20 @@ func _ready() -> void:
 	$HUD.setup($Player, $Trees, self)
 	$Player.connect("plant_tree", self, "_on_plant_tree")
 	$Trees.load_game()
+	_check_new_day()
 
 func _process(delta: float) -> void:
-	# 季節は現実の日付から。1 分に 1 回チェックすれば十分
+	# 季節と日付は現実の日付から。1 分に 1 回チェックすれば十分(開いたまま日付をまたいでも拾う)
 	_season_timer += delta
 	if _season_timer >= 60.0:
 		_season_timer = 0.0
 		_update_season()
+		_check_new_day()
+
+func _check_new_day() -> void:
+	var id: String = $Trees.check_new_day()
+	if id != "":
+		$HUD.show_message("今日の発見: " + DAILY_MESSAGES[id], 8.0)
 
 func _update_season() -> void:
 	var m: int = OS.get_datetime().month
@@ -55,6 +62,21 @@ const HARVEST_MESSAGES := {
 	"done": "この木は今日もう収穫した",
 }
 
+# 水やりの結果コード(Trees.water_nearest)ごとの文言
+const WATER_MESSAGES := {
+	"watered": "%sに水をあげた(樹齢 +%.1f年)",
+	"none": "近くに木がない",
+	"done": "この木には今日もう水をあげた",
+}
+
+# 日替わりの発見(Trees.DAILY_EVENTS の id)ごとの文言
+const DAILY_MESSAGES := {
+	"birch_seed": "白樺の種が落ちていた(白樺の種 +1)",
+	"cedar_seed": "リスがシベリア杉の実を置いていった(シベリア杉の種 +1)",
+	"rain": "雨が降った。今日は全部の木に水やり済み",
+	"birds": "渡り鳥が来て、しばらく休んでいった",
+}
+
 func _on_plant_tree(pos: Vector2) -> void:
 	if not $Trees.add_tree(pos, selected_species):
 		$HUD.show_message("%sの種がない" % $Trees.SPECIES[selected_species].name)
@@ -65,6 +87,16 @@ func _harvest() -> void:
 	var msg: String = HARVEST_MESSAGES[result]
 	if result == "harvested":
 		msg = msg % $Trees.SEEDS_PER_HARVEST
+	$HUD.show_message(msg)
+
+func _water() -> void:
+	# 足元 2m 以内の木に水をあげる
+	var pos: Vector2 = $Player.global_position
+	var result: String = $Trees.water_nearest(pos, 80.0)
+	var msg: String = WATER_MESSAGES[result]
+	if result == "watered":
+		var i: int = $Trees.nearest_index(pos, 80.0, "")
+		msg = msg % [$Trees.SPECIES[$Trees.trees[i].species].name, $Trees.WATER_BONUS_YEARS]
 	$HUD.show_message(msg)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -79,6 +111,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			selected_species = "cedar"
 		KEY_E:
 			_harvest()
+		KEY_Q:
+			_water()
 		KEY_Z:
 			# 足元 2m 以内の木を抜く(種は戻らない)
 			$Trees.remove_nearest($Player.global_position, 80.0)
