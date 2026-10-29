@@ -45,8 +45,27 @@ func _update_season() -> void:
 	update()
 	$Trees.update()
 
+# 収穫の結果コード(Trees.harvest_nearest)ごとの文言
+const HARVEST_MESSAGES := {
+	"harvested": "リンゴを収穫した → リンゴの種 +%d",
+	"none": "近くにリンゴの木がない",
+	"preview": "未来のプレビュー中は収穫できない",
+	"not_season": "リンゴが実るのは秋",
+	"young": "まだ実らない(樹齢5年から)",
+	"done": "この木は今日もう収穫した",
+}
+
 func _on_plant_tree(pos: Vector2) -> void:
-	$Trees.add_tree(pos, selected_species)
+	if not $Trees.add_tree(pos, selected_species):
+		$HUD.show_message("%sの種がない" % $Trees.SPECIES[selected_species].name)
+
+func _harvest() -> void:
+	# 足元 2m 以内のリンゴを収穫する
+	var result: String = $Trees.harvest_nearest($Player.global_position, 80.0)
+	var msg: String = HARVEST_MESSAGES[result]
+	if result == "harvested":
+		msg = msg % $Trees.SEEDS_PER_HARVEST
+	$HUD.show_message(msg)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
@@ -58,11 +77,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			selected_species = "apple"
 		KEY_3:
 			selected_species = "cedar"
+		KEY_E:
+			_harvest()
 		KEY_Z:
-			# 足元 2m 以内の木を抜く
+			# 足元 2m 以内の木を抜く(種は戻らない)
 			$Trees.remove_nearest($Player.global_position, 80.0)
 		KEY_T:
-			$Trees.advance_years(1.0)   # 1年先送り(プレビュー)
+			$Trees.advance_years(1.0)   # 1年先送り(プレビュー。保存しない)
 		KEY_G:
 			$Trees.advance_years(10.0)  # 10年先送り
 
