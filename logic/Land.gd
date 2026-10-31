@@ -1,8 +1,9 @@
-extends Node2D
+extends Reference
 
-# ── 木以外の配置: 菜園の区画と池 ──────────────────────────────
-# 見た目は当面 _draw() の四角と円(Phase 3 で絵に差し替える)。資源は使わない。
-# 同じキーをもう一度押すと取り消せる
+# ── 木以外の配置: 菜園の区画と池(描画を持たない) ─────────────────
+# 見た目は view/LandView.gd が描く。資源は使わない。同じキーをもう一度押すと取り消せる
+signal changed
+
 const HALF := 2000.0            # ドメインの半幅(px)。境界は ±50m
 const PLOT_SIZE := 120.0        # 菜園の区画 3m 四方。3m グリッドにそろえて置く
 const POND_RADIUS := 160.0      # 池 半径 4m
@@ -16,12 +17,12 @@ func toggle_plot(pos: Vector2) -> String:
 	for i in range(plots.size()):
 		if plots[i] == c:
 			plots.remove(i)
-			update()
+			emit_signal("changed")
 			return "removed"
 	if abs(c.x) + PLOT_SIZE * 0.5 > HALF or abs(c.y) + PLOT_SIZE * 0.5 > HALF:
 		return "outside"
 	plots.append(c)
-	update()
+	emit_signal("changed")
 	return "placed"
 
 # 足元に池を掘る / 池の中なら埋める。結果: placed / removed / one_only / outside
@@ -29,27 +30,14 @@ func toggle_pond(pos: Vector2) -> String:
 	if pond != null:
 		if pos.distance_to(pond) <= POND_RADIUS:
 			pond = null
-			update()
+			emit_signal("changed")
 			return "removed"
 		return "one_only"
 	if abs(pos.x) + POND_RADIUS > HALF or abs(pos.y) + POND_RADIUS > HALF:
 		return "outside"
 	pond = pos
-	update()
+	emit_signal("changed")
 	return "placed"
-
-func _draw() -> void:
-	var soil := Color(0.42, 0.28, 0.16)
-	var furrow := Color(0.30, 0.20, 0.11)
-	var h := PLOT_SIZE * 0.5
-	for c in plots:
-		draw_rect(Rect2(c.x - h + 4, c.y - h + 4, PLOT_SIZE - 8, PLOT_SIZE - 8), soil)
-		for k in range(1, 4):  # 畝
-			var y: float = c.y - h + 4 + (PLOT_SIZE - 8) * k / 4.0
-			draw_line(Vector2(c.x - h + 10, y), Vector2(c.x + h - 10, y), furrow, 2)
-	if pond != null:
-		draw_circle(pond, POND_RADIUS, Color(0.28, 0.52, 0.78, 0.85))
-		draw_circle(pond, POND_RADIUS * 0.6, Color(0.34, 0.60, 0.86, 0.6))
 
 # ── セーブ用 ──────────────────────────────────────────────
 func to_save() -> Dictionary:
@@ -69,4 +57,4 @@ func from_save(d: Dictionary) -> void:
 	var pd = d.get("pond", null)
 	if typeof(pd) == TYPE_ARRAY and pd.size() == 2:
 		pond = Vector2(float(pd[0]), float(pd[1]))
-	update()
+	emit_signal("changed")

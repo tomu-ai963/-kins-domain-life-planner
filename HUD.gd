@@ -6,13 +6,13 @@ const MESSAGE_SECONDS := 3.0
 onready var _label: Label = $PositionLabel
 
 var _player: Node2D
-var _trees: Node2D
+var _trees: Reference  # logic/Forest.gd
 var _main: Node2D
 
 var _message := ""
 var _message_timer := 0.0
 
-func setup(player: Node2D, trees: Node2D, main: Node2D) -> void:
+func setup(player: Node2D, trees: Reference, main: Node2D) -> void:
 	_player = player
 	_trees = trees
 	_main = main
@@ -32,7 +32,7 @@ func _process(delta: float) -> void:
 
 	var pos_m: Vector2 = _player.global_position / PIXELS_PER_METER
 	var dt: Dictionary = OS.get_datetime()
-	var season_jp: String = _main.SEASON_NAMES[_main.season]
+	var season_jp: String = _main.SEASON_NAMES[_trees.season]
 	var sp_name: String = _trees.SPECIES[_main.selected_species].name
 	var seeds: Dictionary = _trees.seeds
 
@@ -41,7 +41,7 @@ func _process(delta: float) -> void:
 		offset = "  (+%d年後をプレビュー中)" % int(_trees.time_offset_years)
 
 	# 今日の発見は一日中見られるように常に出す
-	var today := "%04d-%02d-%02d" % [dt.year, dt.month, dt.day]
+	var today: String = _trees.today()
 	var found := ""
 	if _trees.last_day == today and _trees.today_event != "":
 		found = _main.DAILY_MESSAGES[_trees.today_event]

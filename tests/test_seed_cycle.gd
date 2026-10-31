@@ -1,7 +1,7 @@
 extends SceneTree
 
 # 種の循環(Phase 2-1)のロジックテスト。本物のセーブには触れない。
-# 実行: Godot_v3.6.2-stable_win64.exe --path . -s res://tests/test_seed_cycle.gd
+# 実行: Godot_v3.6.2-stable_win64.exe --no-window --path . -s res://tests/test_seed_cycle.gd
 # 標準出力に結果を出し、失敗があれば終了コード 1 で終わる
 
 const TEST_SAVE := "user://test_seed_cycle.json"
@@ -27,12 +27,10 @@ func _check(cond: bool, label: String) -> void:
 		_failed += 1
 		print("  FAIL ", label)
 
-func _new_trees() -> Node2D:
+# ロジック一式(GameWorld)を作る。木と種は w.forest
+func _new_world() -> Reference:
 	_remove_save()
-	var t: Node2D = load("res://Trees.gd").new()
-	t.save_path = TEST_SAVE
-	t.season = "autumn"
-	return t
+	return _new_world_keep_save()
 
 func _remove_save() -> void:
 	var d := Directory.new()
@@ -40,7 +38,7 @@ func _remove_save() -> void:
 		d.remove(TEST_SAVE)
 
 # リンゴを1本植えて、樹齢を days 年ぶん(= days 日前に植えた扱い)にする
-func _plant_apple_aged(t: Node2D, pos: Vector2, days: int) -> Dictionary:
+func _plant_apple_aged(t: Reference, pos: Vector2, days: int) -> Dictionary:
 	t.seeds["apple"] += 1
 	t.add_tree(pos, "apple")
 	var tree: Dictionary = t.trees[-1]
@@ -49,7 +47,8 @@ func _plant_apple_aged(t: Node2D, pos: Vector2, days: int) -> Dictionary:
 
 func _test_initial_seeds_and_planting() -> void:
 	print("初期の種と植樹")
-	var t := _new_trees()
+	var w := _new_world()
+	var t: Reference = w.forest
 	_check(t.seeds.birch == 3 and t.seeds.apple == 1 and t.seeds.cedar == 0, "初期は 白樺3・リンゴ1・シベリア杉0")
 	_check(t.add_tree(Vector2(0, 0), "birch"), "白樺を植えられる")
 	_check(t.seeds.birch == 2, "植えると白樺の種が1減る")
@@ -58,11 +57,11 @@ func _test_initial_seeds_and_planting() -> void:
 	_check(not t.add_tree(Vector2(300, 0), "birch"), "白樺の種が0なら植えられない")
 	_check(t.trees.size() == 3, "植えられなかった木は増えない")
 	_check(not t.add_tree(Vector2(400, 0), "cedar"), "シベリア杉は種0なので植えられない")
-	t.free()
 
 func _test_harvest_rules() -> void:
 	print("収穫")
-	var t := _new_trees()
+	var w := _new_world()
+	var t: Reference = w.forest
 	_check(t.harvest_nearest(Vector2(0, 0), 80.0) == "none", "近くにリンゴがなければ none")
 
 	t.add_tree(Vector2(0, 0), "apple")  # 植えたばかり
@@ -86,11 +85,11 @@ func _test_harvest_rules() -> void:
 	t.seeds["birch"] = 1
 	t.add_tree(Vector2(5000, 0), "birch")
 	_check(t.harvest_nearest(Vector2(5000, 0), 80.0) == "none", "白樺は収穫の対象にならない")
-	t.free()
 
 func _test_preview_is_not_saved() -> void:
 	print("時間先送りプレビュー")
-	var t := _new_trees()
+	var w := _new_world()
+	var t: Reference = w.forest
 	t.add_tree(Vector2(0, 0), "apple")  # 植えたばかりのリンゴ
 	t.advance_years(10.0)
 	_check(t.age_years(t.trees[0]) >= 10.0, "プレビュー中は見た目の樹齢が10年以上")
@@ -103,25 +102,24 @@ func _test_preview_is_not_saved() -> void:
 	_check(t.harvest_nearest(Vector2(0, 0), 80.0) == "young", "戻した後はプレビューの制限が外れる")
 	t.advance_years(10.0)
 
-	t.save_game()
+	w.save_game()
 	var f := File.new()
 	f.open(TEST_SAVE, File.READ)
 	var data = parse_json(f.get_as_text())
 	f.close()
 	_check(not data.has("time_offset_years"), "セーブに先送りの年数を書かない")
 
-	var t2 := _new_trees_keep_save()
-	t2.load_game()
+	var w2 := _new_world_keep_save()
+	w2.load_game()
+	var t2: Reference = w2.forest
 	_check(t2.time_offset_years == 0.0, "読み込み後の先送りは 0")
 	_check(t2.trees.size() == 1 and t2.seeds.apple == 0, "木と種の所持数は保存・復元される")
-	t.free()
-	t2.free()
 
-func _new_trees_keep_save() -> Node2D:
-	var t: Node2D = load("res://Trees.gd").new()
-	t.save_path = TEST_SAVE
-	t.season = "autumn"
-	return t
+func _new_world_keep_save() -> Reference:
+	var w: Reference = load("res://logic/GameWorld.gd").new()
+	w.save_path = TEST_SAVE
+	w.forest.season = "autumn"
+	return w
 
 func _test_old_save_format() -> void:
 	print("旧形式のセーブ")
@@ -133,10 +131,10 @@ func _test_old_save_format() -> void:
 		"trees": [{"x": 10, "y": 20, "species": "apple", "planted_at": OS.get_unix_time() - 7 * DAY}],
 	}))
 	f.close()
-	var t := _new_trees_keep_save()
-	t.load_game()
+	var w := _new_world_keep_save()
+	w.load_game()
+	var t: Reference = w.forest
 	_check(t.time_offset_years == 0.0, "旧セーブの +483年 は読まない")
 	_check(t.seeds.birch == 3 and t.seeds.apple == 1 and t.seeds.cedar == 0, "種の記録がない旧セーブは初期の種から")
 	_check(t.trees.size() == 1 and t.trees[0].last_harvest == "", "旧セーブの木は残り、収穫記録は空")
 	_check(t.harvest_nearest(Vector2(10, 20), 80.0) == "harvested", "旧セーブの樹齢7年のリンゴも収穫できる")
-	t.free()
