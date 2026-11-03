@@ -41,6 +41,7 @@ func _new_world_keep_save() -> GameWorld:
 	var w := GameWorld.new()
 	w.save_path = TEST_SAVE
 	w.forest.season = "autumn"
+	w.forest.germination_rates = {"birch": 1.0, "apple": 1.0, "cedar": 1.0}  # 種は必ず芽が出る(発芽は test_market で見る)
 	return w
 
 func _remove_save() -> void:
@@ -91,14 +92,16 @@ func _test_harvest_rules() -> void:
 	_check(t.harvest_nearest(Vector2(25, 0), REACH) == "not_season", "秋以外は not_season")
 
 	t.season = "autumn"
-	var before: int = t.seeds.apple
+	var seeds_before: int = t.seeds.apple
 	_check(t.harvest_nearest(Vector2(25, 0), REACH) == "harvested", "樹齢6年・秋なら収穫できる")
-	_check(t.seeds.apple == before + t.SEEDS_PER_HARVEST, "収穫でリンゴの種が %d 増える" % t.SEEDS_PER_HARVEST)
+	_check(t.produce.apple == 5 and t.last_harvest_count == 5, "樹齢6年のリンゴは 5 個採れる")
+	_check(t.seeds.apple == seeds_before, "収穫しても種は増えない(種は市場で買う)")
 	_check(t.harvest_nearest(Vector2(25, 0), REACH) == "done", "同じ木は同じ日に2回収穫できない")
 
 	# 前日に収穫した記録なら、今日はまた採れる(1日1回)
 	ripe.last_harvest = "2000-01-01"
 	_check(t.harvest_nearest(Vector2(25, 0), REACH) == "harvested", "日が変われば同じ木からまた収穫できる")
+	_check(t.produce.apple == 10, "収穫したリンゴはたまっていく")
 
 	# 遠い木は対象外。白樺は収穫対象にならない
 	t.seeds["birch"] = 1

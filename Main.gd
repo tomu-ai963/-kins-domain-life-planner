@@ -6,11 +6,14 @@ extends Node
 # Main・HUD は 2D と 3D で共通。位置は Player.ground_pos() で m の Vector2(x, y)を受け取る
 const GameWorld = preload("res://logic/GameWorld.gd")
 const REACH := 2.0    # 足元 2m 以内
+const PICKUP_RADIUS := 1.2  # 落ちている種は、これだけ近づくと拾う
 
 const SEASON_NAMES := {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬"}
+const FORM_NAMES := {"seed": "種", "sapling": "苗木"}
 
 var world := GameWorld.new()
 var selected_species := "birch"
+var selected_form := "seed"   # V で種 ⇄ 苗木
 
 var _season_timer := 0.0
 
@@ -20,7 +23,10 @@ func _ready() -> void:
 	$Land.setup(world.land)
 	$Quests.setup(world.quests)
 	$Trees.setup(world.forest)
+	$Pickups.setup(world.forest)
+	$Market.setup(world.market)
 	$HUD.setup($Player, world.forest, self)
+	$HUD.shop_action.connect(_on_shop_action)
 	$Player.plant_tree.connect(_on_plant_tree)
 	world.load_game()
 	_check_new_day()
@@ -33,19 +39,36 @@ func _process(delta: float) -> void:
 		_season_timer = 0.0
 		world.refresh_season()
 		_check_new_day()
+		_check_quests()  # 種から芽が出ると生垣などの数が増える
+	_collect_pickups()
 
 func _check_new_day() -> void:
-	var id: String = world.forest.check_new_day()
-	if id != "":
-		$HUD.show_message("今日の発見: " + DAILY_MESSAGES[id], 8.0)
+	var f := world.forest
+	var id: String = f.check_new_day()
+	if id == "":
+		return
+	var lines := ["今日の発見: " + DAILY_MESSAGES[id]]
+	if not f.pickups.is_empty():
+		lines.append("育った木の根元に種が落ちている(%dか所)" % f.pickups.size())
+	for sp in f.last_failed:
+		lines.append("%sの種 %d粒は芽が出なかった" % [f.SPECIES[sp].name, f.last_failed[sp]])
+	$HUD.show_message("\n".join(PackedStringArray(lines)), 10.0)
+
+# 足元に落ちている種を拾う(歩いて近づくだけ)
+func _collect_pickups() -> void:
+	if $HUD.is_shop_open():
+		return
+	var got: Array = world.forest.collect_near(player_pos(), PICKUP_RADIUS)
+	for g in got:
+		$HUD.show_message("%sの種を拾った(+%d)" % [world.forest.SPECIES[g.species].name, g.amount])
 
 # 収穫の結果コード(Forest.harvest_nearest)ごとの文言
 const HARVEST_MESSAGES := {
-	"harvested": "リンゴを収穫した → リンゴの種 +%d",
+	"harvested": "リンゴを%d個収穫した(市場で1個%d₽で売れる)",
 	"none": "近くにリンゴの木がない",
 	"preview": "未来のプレビュー中は収穫できない",
 	"not_season": "リンゴが実るのは秋",
-	"young": "まだ実らない(樹齢5年から)",
+	"young": "まだ実らない(樹齢6年から)",
 	"done": "この木は今日もう収穫した",
 }
 
@@ -58,7 +81,7 @@ const WATER_MESSAGES := {
 
 # 日替わりの発見(Forest.DAILY_EVENTS の id)ごとの文言
 const DAILY_MESSAGES := {
-	"birch_seed": "白樺の種が落ちていた(白樺の種 +1)",
+	"birch_seed": "風で白樺の種が飛んできた(白樺の種 +1)",
 	"cedar_seed": "リスがシベリア杉の実を置いていった(シベリア杉の種 +1)",
 	"rain": "雨が降った。今日は全部の木に水やり済み",
 	"birds": "渡り鳥が来て、しばらく休んでいった",
@@ -90,10 +113,71 @@ func player_pos() -> Vector2:
 	return $Player.ground_pos()
 
 func _on_plant_tree(pos: Vector2) -> void:
-	if not world.forest.add_tree(pos, selected_species):
-		$HUD.show_message("%sの種がない" % world.forest.SPECIES[selected_species].name)
+	if $HUD.is_shop_open():
 		return
+	if not world.forest.add_tree(pos, selected_species, selected_form):
+		$HUD.show_message("%sの%sがない(市場で買える)" % [world.forest.SPECIES[selected_species].name, FORM_NAMES[selected_form]])
+		return
+	if selected_form == "seed":
+		$HUD.show_message("種をまいた。芽が出るかは1日たつと分かる")
 	_check_quests()
+
+# 選んでいる植えるもの(HUD 用)。例: 「白樺の種」
+func selected_name() -> String:
+	return world.forest.SPECIES[selected_species].name + "の" + FORM_NAMES[selected_form]
+
+# ── 市場 ──────────────────────────────────────────────────
+# 市場の品の表示名。例: 「白樺の種(10粒)」「リンゴの苗木(樹齢3年)」
+func good_name(g: Dictionary) -> String:
+	var sp: Dictionary = world.forest.SPECIES[g.species]
+	if g.form == "sapling":
+		return "%sの苗木(樹齢%d年)" % [sp.name, int(sp.sapling_age)]
+	return "%sの種(%d粒・発芽率%d%%)" % [sp.name, g.amount, roundi(sp.germination * 100.0)]
+
+# 市場の画面に並べる行 [{id, text}]
+func shop_rows() -> Array:
+	var m := world.market
+	var rows := []
+	for g in m.GOODS:
+		rows.append({"id": g.id, "text": "買う: %s  %d₽" % [good_name(g), g.price]})
+	var apples: int = world.forest.produce.apple
+	rows.append({"id": "sell_apple", "text": "売る: リンゴ %d個 × %d₽" % [apples, m.SELL_PRICES.apple]})
+	rows.append({"id": "close", "text": "閉じる(B / Esc)"})
+	return rows
+
+func _toggle_shop() -> void:
+	if $HUD.is_shop_open():
+		_close_shop()
+		return
+	var m := world.market
+	if not m.is_near(player_pos()):
+		var d := player_pos().distance_to(m.POS) - m.REACH
+		$HUD.show_message("市場は南の境界の外にある(あと%dm)" % ceili(d))
+		return
+	$Player.set_physics_process(false)  # 買い物中は歩かない
+	$HUD.open_shop()
+
+func _close_shop() -> void:
+	$HUD.close_shop()
+	$Player.set_physics_process(true)
+
+func _on_shop_action(id: String) -> void:
+	var m := world.market
+	match id:
+		"close":
+			_close_shop()
+			return
+		"sell_apple":
+			var income: int = m.sell_all("apple")
+			$HUD.show_message("リンゴを売った(+%d₽)" % income if income > 0 else "売るリンゴがない")
+		_:
+			var g: Dictionary = m.good(id)
+			if m.buy(id) == "bought":
+				$HUD.show_message("%sを買った(-%d₽)" % [good_name(g), g.price])
+			else:
+				$HUD.show_message("お金が足りない(%d₽ 必要)" % g.price)
+	world.save_game()
+	$HUD.refresh_shop()
 
 func _toggle_plot() -> void:
 	var result: String = world.land.toggle_plot(player_pos())
@@ -146,7 +230,7 @@ func _harvest() -> void:
 	var result: String = world.forest.harvest_nearest(player_pos(), REACH)
 	var msg: String = HARVEST_MESSAGES[result]
 	if result == "harvested":
-		msg = msg % world.forest.SEEDS_PER_HARVEST
+		msg = msg % [world.forest.last_harvest_count, world.market.SELL_PRICES.apple]
 	$HUD.show_message(msg)
 
 func _water() -> void:
@@ -163,6 +247,11 @@ func _water() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
+	if $HUD.is_shop_open():
+		# 買い物中は B / Esc で閉じるだけ(選ぶのは画面のボタン)
+		if event.keycode == KEY_B or event.keycode == KEY_ESCAPE:
+			_close_shop()
+		return
 	match event.keycode:
 		KEY_1:
 			selected_species = "birch"
@@ -170,6 +259,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			selected_species = "apple"
 		KEY_3:
 			selected_species = "cedar"
+		KEY_V:
+			selected_form = "sapling" if selected_form == "seed" else "seed"
+		KEY_B:
+			_toggle_shop()
 		KEY_E:
 			_harvest()
 		KEY_Q:

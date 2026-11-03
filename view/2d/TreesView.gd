@@ -49,6 +49,10 @@ func _draw() -> void:
 		var r: float = forest.radius_of(tree) * PX
 		var pos: Vector2 = tree.pos * PX
 
+		if forest.is_seed(tree):
+			draw_circle(pos, 4.0, Color(0.36, 0.25, 0.15))  # 種をまいた土
+			continue
+
 		if r < 6.0:
 			# 苗木フェーズ
 			draw_circle(pos, 3.0, Color(0.15, 0.65, 0.15))

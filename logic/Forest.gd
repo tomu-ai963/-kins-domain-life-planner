@@ -1,8 +1,9 @@
 extends RefCounted
 
 # ── 木と種のゲームロジック(描画を持たない) ─────────────────────
-# 見た目は view/TreesView.gd が changed を受けて描く。2D でも 3D でも同じロジックを使う。
+# 見た目は view/ が changed を受けて描く。2D でも 3D でも同じロジックを使う。
 # 状態が変わると changed(描き直し)を出し、保存が必要な変更では dirty も出す(GameWorld が保存する)
+# 座標の単位は m
 
 signal changed  # 見た目に関わる状態が変わった
 signal dirty    # セーブに入る状態が変わった
@@ -12,13 +13,15 @@ signal dirty    # セーブに入る状態が変わった
 # T / G キーで時間を先送りしてプレビューできる(見た目だけ。セーブしない)。
 const SECONDS_PER_YEAR := 86400.0
 
-# ── 種の循環 ────────────────────────────────────────────────
-# 苗は所持している種からしか植えられない。リンゴは樹齢 5 年から秋に実り、
-# 収穫すると種が採れる。1 本につき現実の 1 日 1 回(= 樹齢 1 年に 1 回)。
-# シベリア杉の種は日替わりの発見(リスが実を置いていく)でだけ手に入る
+# ── 種と苗木(現実寄り。2026-11-03 とむの方針) ─────────────────────
+# 種は安いが、芽が出ないことがある(植えて 1 日 = 樹齢 1 年で分かる。出なければ翌日消える)。
+# 苗木は市場で買う。必ず根付き、樹齢 2〜4 年から始まる。
+# 育った木は実る季節に根元へ種を落とす(拾わなかった分は翌日には消える)。
+# リンゴは樹齢 6 年から秋に実り、収穫すると「リンゴ」が手に入る(市場で売れる。種は増えない)
 const INITIAL_SEEDS := {"birch": 3, "apple": 1, "cedar": 0}
-const APPLE_FRUIT_AGE := 5.0
-const SEEDS_PER_HARVEST := 2
+const INITIAL_SAPLINGS := {"birch": 0, "apple": 0, "cedar": 0}
+const APPLE_FRUIT_AGE := 6.0
+const GERMINATION_YEARS := 1.0  # 種から芽が出るまで(= 1 日)
 
 # ── 毎日の理由 ──────────────────────────────────────────────
 # 水やり: 1 本につき 1 日 1 回、樹齢にボーナスが付く(収穫などの判定にも効く)
@@ -27,30 +30,55 @@ const SEEDS_PER_HARVEST := 2
 const WATER_BONUS_YEARS := 0.5
 const DAILY_EVENTS := [
 	# [id, 重み]。文言は Main が決める
-	["birch_seed", 35],  # 白樺の種 +1
-	["cedar_seed", 15],  # シベリア杉の種 +1
+	["birch_seed", 35],  # 風で白樺の種が飛んできた(+1)
+	["cedar_seed", 15],  # リスがシベリア杉の実を置いていった(+1)
 	["rain", 25],        # 全部の木に水やり済み
 	["birds", 25],       # 演出のみ
 ]
 
-# 樹種ごとの成長パラメータ(色などの見た目は view 側が持つ)
+# 樹種ごとのパラメータ(色などの見た目は view 側が持つ)。数値は現実の目安から
 #   max_r: 成熟時の樹冠半径(m)
-#   tau:   成長の時定数(年)。小さいほど早く育つ
+#   tau, p: 成長曲線 r = max_r × (1 − e^(−樹齢/tau))^p。p が大きいほど若いうちはゆっくり
+#           (白樺: 1 年で高さ 0.1m 台・10 年で約 9m / 杉: 10 年で約 1m・25 年で約 5m)
 #   evergreen: 常緑樹か(冬に葉が残る)
+#   germination: 種の発芽率 / sapling_age: 市場の苗木の樹齢
+#   seed_age: 根元に種を落としはじめる樹齢(0 = 落とさない) / seed_seasons: 落とす季節
+#   seed_drop: 1 本が 1 日に落とす種の数(ひとかたまりで落ちている)
 const SPECIES := {
-	"birch": {"name": "白樺", "max_r": 3.5, "tau": 6.0, "evergreen": false},
-	"apple": {"name": "リンゴ", "max_r": 3.0, "tau": 12.0, "evergreen": false},
-	"cedar": {"name": "シベリア杉", "max_r": 6.0, "tau": 40.0, "evergreen": true},
+	"birch": {
+		"name": "白樺", "max_r": 3.5, "tau": 6.0, "p": 2.5, "evergreen": false,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 10.0, "seed_seasons": ["autumn", "winter"], "seed_drop": 5,
+	},
+	"apple": {
+		"name": "リンゴ", "max_r": 3.0, "tau": 5.0, "p": 2.0, "evergreen": false,
+		"germination": 0.6, "sapling_age": 3.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+	},
+	"cedar": {
+		"name": "シベリア杉", "max_r": 6.0, "tau": 40.0, "p": 2.0, "evergreen": true,
+		"germination": 0.5, "sapling_age": 4.0,
+		"seed_age": 25.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+	},
 }
 
-# [{pos: Vector2(m), species: String, planted_at: int, last_harvest: String,
-#   last_watered: String, bonus_years: float}]
+# [{pos: Vector2(m), species, form: "seed"/"sapling"/""(移行前の木), planted_at: int,
+#   start_age: float(苗木の樹齢), sprouts: bool(種が芽を出すか), last_harvest, last_watered, bonus_years}]
 var trees := []
-var seeds := INITIAL_SEEDS.duplicate()  # 樹種ごとの所持数
+var seeds := INITIAL_SEEDS.duplicate()        # 樹種ごとの種の所持数
+var saplings := INITIAL_SAPLINGS.duplicate()  # 樹種ごとの苗木の所持数
+var produce := {"apple": 0}                   # 収穫物(市場で売る)
+var pickups := []             # 今日、地面に落ちている種 [{pos, species, amount}]
+var last_failed := {}         # 今日の確認で芽が出なかった種の数 {species: 本数}(保存しない)
+var germination_rates := {}   # 発芽率(テストで 1.0 にできるように変数にする)
 var last_day := ""            # 日替わりの発見を最後に起こした日(YYYY-MM-DD)
 var today_event := ""         # その日の発見の id(HUD で一日中見られるように保存する)
 var time_offset_years := 0.0  # 時間先送りプレビュー(年)。セーブしない
 var season := "summer"        # GameWorld が現実の日付から設定する
+
+func _init() -> void:
+	for sp in SPECIES:
+		germination_rates[sp] = SPECIES[sp].germination
 
 # 保存が必要な変更のあと: 保存してから描き直す
 func _commit() -> void:
@@ -63,13 +91,25 @@ func set_season(s: String) -> void:
 	season = s
 	changed.emit()
 
-# 種があれば 1 つ使って植える。種がなければ植えずに false
-func add_tree(pos: Vector2, species: String) -> bool:
-	if int(seeds.get(species, 0)) <= 0:
+# 種(form = "seed")か苗木("sapling")を 1 つ使って植える。持っていなければ植えずに false
+func add_tree(pos: Vector2, species: String, form := "seed") -> bool:
+	var stock: Dictionary = saplings if form == "sapling" else seeds
+	if int(stock.get(species, 0)) <= 0:
 		return false
-	seeds[species] -= 1
+	stock[species] -= 1
+	var now := _now()
+	var sprouts := true
+	var start_age := 0.0
+	if form == "sapling":
+		start_age = SPECIES[species].sapling_age
+	else:
+		# 芽が出るかどうかは植えた場所と時刻から決まる(開き直しても変わらない)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = ("%s:%.2f:%.2f:%d" % [species, pos.x, pos.y, now]).hash()
+		sprouts = rng.randf() < float(germination_rates.get(species, 1.0))
 	trees.append({
-		"pos": pos, "species": species, "planted_at": _now(),
+		"pos": pos, "species": species, "form": form, "planted_at": now,
+		"start_age": start_age, "sprouts": sprouts,
 		"last_harvest": "", "last_watered": "", "bonus_years": 0.0,
 	})
 	# 雨の日は一日中降っている扱い。あとから植えた木も水やり済みにする
@@ -77,6 +117,20 @@ func add_tree(pos: Vector2, species: String) -> bool:
 		_water(trees[-1])
 	_commit()
 	return true
+
+# 根付いているか(苗木・移行前の木はいつも。種は芽が出て 1 日たってから)
+func is_established(tree: Dictionary) -> bool:
+	if tree.form != "seed":
+		return true
+	return tree.sprouts and real_age_years(tree) >= GERMINATION_YEARS
+
+# 種のまま、まだ芽が出ていない(見た目は土の盛り上がり)
+func is_seed(tree: Dictionary) -> bool:
+	return tree.form == "seed" and (not tree.sprouts or age_years(tree) < GERMINATION_YEARS)
+
+# 芽が出なかったと分かった種(翌日の確認で消える)
+func has_failed(tree: Dictionary) -> bool:
+	return tree.form == "seed" and not tree.sprouts and real_age_years(tree) >= GERMINATION_YEARS
 
 # 足元の木に水をあげる。結果コードを返す: watered / none / done
 func water_nearest(pos: Vector2, max_dist: float) -> String:
@@ -119,15 +173,52 @@ func nearest_index(pos: Vector2, max_dist: float, species: String) -> int:
 	return best
 
 # 日付が変わっていたら、その日の発見を 1 つ起こして id を返す。変わっていなければ ""
+# あわせて: 芽が出なかった種を片づけ(last_failed に数を残す)、育った木が今日落とした種を地面に置く
 func check_new_day() -> String:
 	var t := today()
 	if last_day == t:
 		return ""
 	last_day = t
+	last_failed = {}
+	for i in range(trees.size() - 1, -1, -1):
+		if has_failed(trees[i]):
+			var sp: String = trees[i].species
+			last_failed[sp] = int(last_failed.get(sp, 0)) + 1
+			trees.remove_at(i)
+	drop_seeds(t)
 	today_event = roll_daily_event(t)
 	_apply_event(today_event)
 	_commit()
 	return today_event
+
+# 育った木が、実る季節なら根元に種を落とす。前の日の分は消える(たまらない)
+func drop_seeds(date: String) -> void:
+	pickups.clear()
+	for i in range(trees.size()):
+		var tree: Dictionary = trees[i]
+		var sp: Dictionary = SPECIES[tree.species]
+		if sp.seed_age <= 0.0 or not (season in sp.seed_seasons):
+			continue
+		if not is_established(tree) or real_age_years(tree) < sp.seed_age:
+			continue
+		# 落ちる場所は日付と木から決まる(根元から 1〜2.5m)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = ("%s:%d:%.2f:%.2f" % [date, i, tree.pos.x, tree.pos.y]).hash()
+		var off := Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(1.0, 2.5)
+		pickups.append({"pos": tree.pos + off, "species": tree.species, "amount": int(sp.seed_drop)})
+
+# pos から radius 以内に落ちている種を拾う。拾ったもの [{species, amount}] を返す
+func collect_near(pos: Vector2, radius: float) -> Array:
+	var got := []
+	for i in range(pickups.size() - 1, -1, -1):
+		var p: Dictionary = pickups[i]
+		if p.pos.distance_to(pos) <= radius:
+			seeds[p.species] = int(seeds.get(p.species, 0)) + int(p.amount)
+			got.append({"species": p.species, "amount": int(p.amount)})
+			pickups.remove_at(i)
+	if not got.is_empty():
+		_commit()
+	return got
 
 # 日付から決まる発見の id(同じ日付なら必ず同じ)
 func roll_daily_event(date: String) -> String:
@@ -152,6 +243,12 @@ func _apply_event(id: String) -> void:
 		"rain":
 			water_all()
 
+# リンゴ 1 本の 1 年(= 1 日)の収穫量。樹齢 6 年で 5 個、1 年ごとに 5 個ずつ増えて 60 個まで
+static func apple_yield(age: float) -> int:
+	return clampi(5 + int((age - APPLE_FRUIT_AGE) * 5.0), 5, 60)
+
+var last_harvest_count := 0  # 直前の収穫で採れた個数(文言用)
+
 # 足元のリンゴを収穫する。結果を表すコードを返す(文言は Main が決める)
 #   harvested / none / preview / not_season / young / done
 func harvest_nearest(pos: Vector2, max_dist: float) -> String:
@@ -164,12 +261,13 @@ func harvest_nearest(pos: Vector2, max_dist: float) -> String:
 	var tree: Dictionary = trees[best]
 	if season != "autumn":
 		return "not_season"
-	if real_age_years(tree) < APPLE_FRUIT_AGE:
+	if not is_established(tree) or real_age_years(tree) < APPLE_FRUIT_AGE:
 		return "young"
 	if tree.last_harvest == today():
 		return "done"
 	tree.last_harvest = today()
-	seeds["apple"] += SEEDS_PER_HARVEST
+	last_harvest_count = apple_yield(real_age_years(tree))
+	produce["apple"] = int(produce.get("apple", 0)) + last_harvest_count
 	_commit()
 	return "harvested"
 
@@ -200,18 +298,20 @@ func reset_preview() -> void:
 func age_years(tree: Dictionary) -> float:
 	return real_age_years(tree) + time_offset_years
 
-# ゲームの判定用の樹齢(現実時間 + 水やりのボーナス。プレビューは含まない)
+# ゲームの判定用の樹齢(現実時間 + 苗木の樹齢 + 水やりのボーナス。プレビューは含まない)
 func real_age_years(tree: Dictionary) -> float:
-	return (_now() - tree.planted_at) / SECONDS_PER_YEAR + tree.bonus_years
+	return (_now() - tree.planted_at) / SECONDS_PER_YEAR + tree.start_age + tree.bonus_years
 
-# 表示用の樹冠半径(m)
+# 表示用の樹冠半径(m)。芽が出る前の種は 0
 func radius_of(tree: Dictionary) -> float:
+	if is_seed(tree):
+		return 0.0
 	var sp: Dictionary = SPECIES[tree.species]
-	return sp.max_r * (1.0 - exp(-age_years(tree) / sp.tau))
+	return sp.max_r * pow(1.0 - exp(-age_years(tree) / sp.tau), sp.p)
 
-# 実が見えているか(リンゴ・秋・表示用の樹齢 5 年から・今日まだ収穫していない)
+# 実が見えているか(リンゴ・秋・表示用の樹齢 6 年から・今日まだ収穫していない)
 func shows_fruit(tree: Dictionary) -> bool:
-	return tree.species == "apple" and season == "autumn" \
+	return tree.species == "apple" and season == "autumn" and not is_seed(tree) \
 			and age_years(tree) >= APPLE_FRUIT_AGE and tree.last_harvest != today()
 
 func watered_today(tree: Dictionary) -> bool:
@@ -220,26 +320,37 @@ func watered_today(tree: Dictionary) -> bool:
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 # 時間先送りはプレビューなので保存しない
 func to_save() -> Dictionary:
-	var data := {"seeds": seeds, "last_day": last_day, "today_event": today_event, "trees": []}
+	var data := {
+		"seeds": seeds, "saplings": saplings, "produce": produce,
+		"last_day": last_day, "today_event": today_event, "trees": [], "pickups": [],
+	}
 	for t in trees:
 		data.trees.append({
 			"x": t.pos.x, "y": t.pos.y,
-			"species": t.species, "planted_at": t.planted_at,
+			"species": t.species, "form": t.form, "planted_at": t.planted_at,
+			"start_age": t.start_age, "sprouts": t.sprouts,
 			"last_harvest": t.last_harvest,
 			"last_watered": t.last_watered, "bonus_years": t.bonus_years,
 		})
+	for p in pickups:
+		data.pickups.append({"x": p.pos.x, "y": p.pos.y, "species": p.species, "amount": p.amount})
 	return data
+
+static func _counts(saved, base: Dictionary) -> Dictionary:
+	var d := base.duplicate()
+	if typeof(saved) == TYPE_DICTIONARY:
+		for k in base:
+			if saved.has(k):
+				d[k] = int(saved[k])
+	return d
 
 func from_save(data: Dictionary) -> void:
 	# 旧形式のセーブにある time_offset_years は読まない(先送りは 0 から)
 	time_offset_years = 0.0
-	# 種の所持数がない旧形式のセーブは、初期の種から始める
-	seeds = INITIAL_SEEDS.duplicate()
-	var saved_seeds = data.get("seeds", {})
-	if typeof(saved_seeds) == TYPE_DICTIONARY:
-		for sp in SPECIES:
-			if saved_seeds.has(sp):
-				seeds[sp] = int(saved_seeds[sp])
+	# 記録がない旧形式のセーブは、初期の種・苗木 0・収穫物 0 から始める
+	seeds = _counts(data.get("seeds", {}), INITIAL_SEEDS)
+	saplings = _counts(data.get("saplings", {}), INITIAL_SAPLINGS)
+	produce = _counts(data.get("produce", {}), {"apple": 0})
 	# 記録がない旧形式のセーブは、次に開いたとき(= 今)その日の発見が起きる
 	last_day = str(data.get("last_day", ""))
 	today_event = str(data.get("today_event", ""))
@@ -249,9 +360,17 @@ func from_save(data: Dictionary) -> void:
 			trees.append({
 				"pos": Vector2(float(t.x), float(t.y)),
 				"species": str(t.species),
+				# form がない木は種・苗木を分ける前に植えたもの(根付いている扱い)
+				"form": str(t.get("form", "")),
 				"planted_at": int(t.planted_at),
+				"start_age": float(t.get("start_age", 0.0)),
+				"sprouts": bool(t.get("sprouts", true)),
 				"last_harvest": str(t.get("last_harvest", "")),
 				"last_watered": str(t.get("last_watered", "")),
 				"bonus_years": float(t.get("bonus_years", 0.0)),
 			})
+	pickups.clear()
+	for p in data.get("pickups", []):
+		if typeof(p) == TYPE_DICTIONARY and str(p.get("species", "")) in SPECIES:
+			pickups.append({"pos": Vector2(float(p.x), float(p.y)), "species": str(p.species), "amount": int(p.amount)})
 	changed.emit()

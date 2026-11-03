@@ -24,6 +24,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_follows_logic()
 			_test_3d_quest_marks()
 			_test_3d_seasons_and_growth()
+			_test_3d_market_and_pickups()
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
@@ -98,8 +99,8 @@ func _test_3d_quest_marks() -> void:
 	var w = main.world
 	var marks: Node3D = main.get_node("Quests")
 	_check(marks.get_child_count() == 80, "生垣の 40 区画に、まだの印(輪と杭)が出ている")
-	w.forest.seeds["birch"] = 50
-	w.forest.add_tree(w.quests.segment_center(0), "birch")
+	w.forest.saplings["birch"] = 50
+	w.forest.add_tree(w.quests.segment_center(0), "birch", "sapling")  # 根付いた木だけ数える
 	_check(marks.get_child_count() == 79, "1 区画埋めると、その印が緑の丸(1 つ)に変わる")
 	w.quests.stage = 3
 	w.quests.changed.emit()
@@ -112,6 +113,7 @@ func _test_3d_seasons_and_growth() -> void:
 	print("季節と成長")
 	var f = main.world.forest
 	var trees: Node3D = main.get_node("Trees")
+	f.germination_rates = {"birch": 1.0, "apple": 1.0, "cedar": 1.0}  # 種は必ず芽が出る
 	f.seeds["apple"] = 1
 	f.add_tree(Vector2(-10, 5), "apple")
 	f.trees[-1].planted_at = int(Time.get_unix_time_from_system()) - 6 * DAY  # 樹齢 6 年
@@ -133,6 +135,36 @@ func _test_3d_seasons_and_growth() -> void:
 	_check((birch_crown.material_override as StandardMaterial3D).albedo_color.a < 1.0, "冬の白樺は葉が落ちて樹冠が半透明")
 	var ground_grass: MeshInstance3D = main.get_node("Ground").get_child(1)
 	_check((ground_grass.material_override as StandardMaterial3D).albedo_color.b > 0.9, "冬の地面は雪原の色")
+
+func _test_3d_market_and_pickups() -> void:
+	print("市場と落ちた種")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var player = main.get_node("Player")
+	_check(main.get_node("Market").get_child_count() > 0, "南の境界の外に市場の屋台がある")
+	player.global_position = Vector3(0, 0, 0)
+	main._toggle_shop()
+	_check(not hud.is_shop_open(), "市場から遠いと開かない")
+	player.global_position = Vector3(0, 0, 54)
+	main._toggle_shop()
+	_check(hud.is_shop_open() and not player.is_physics_processing(), "市場の前で B を押すと開き、そのあいだは歩かない")
+	var money: int = w.market.money
+	main._on_shop_action("birch_seed")
+	_check(w.market.money == money - 60, "画面から白樺の種を買える")
+	w.forest.produce.apple = 4
+	main._on_shop_action("sell_apple")
+	_check(w.market.money == money - 60 + 60 and w.forest.produce.apple == 0, "画面からリンゴを売れる")
+	main._on_shop_action("close")
+	_check(not hud.is_shop_open() and player.is_physics_processing(), "閉じるとまた歩ける")
+
+	var pickups: Node3D = main.get_node("Pickups")
+	w.forest.pickups.append({"pos": Vector2(5, 5), "species": "birch", "amount": 5})
+	w.forest.changed.emit()
+	_check(pickups.get_child_count() == 1, "落ちている種が地面に出る")
+	var seeds: int = w.forest.seeds.birch
+	player.global_position = Vector3(5.5, 0, 5)
+	main._collect_pickups()
+	_check(pickups.get_child_count() == 0 and w.forest.seeds.birch == seeds + 5, "近づくと拾えて、地面から消える")
 
 func _test_2d_still_works() -> void:
 	print("2D のシーン(比較用)")

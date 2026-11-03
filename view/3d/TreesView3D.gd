@@ -38,6 +38,7 @@ var _cone_mesh := _cylinder(0.0, 0.5)
 var _sphere_mesh := _sphere(0.5, 16)
 var _fruit_mesh := _sphere(0.5, 8)
 var _sapling_mat := Look.mat(Color(0.20, 0.65, 0.20))
+var _mound_mat := Look.mat(Color(0.36, 0.25, 0.15))  # 種をまいた土の盛り上がり
 var _fruit_mat := Look.mat(FRUIT)
 var _water_mat := Look.mat(Color(0.25, 0.60, 0.95, 0.9), true)
 var _mats := {}  # マテリアルの使い回し
@@ -123,6 +124,14 @@ func _layout() -> void:
 		var k: Dictionary = KINDS[tree.species]
 		var r: float = forest.radius_of(tree)
 		var base := Look.at(tree.pos)
+		if forest.is_seed(tree):
+			# 芽が出る前の種: 小さな土の盛り上がり
+			item.trunk.visible = false
+			item.crown.material_override = _mound_mat
+			item.crown.mesh = _sphere_mesh
+			item.crown.position = base + Vector3(0, 0.02, 0)
+			item.crown.scale = Vector3(0.5, 0.12, 0.5)
+			continue
 		if r < SAPLING_R:
 			# 苗木: 地面から少し出た小さな芽
 			item.trunk.visible = false

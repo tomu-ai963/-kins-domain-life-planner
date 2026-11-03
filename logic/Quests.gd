@@ -3,6 +3,7 @@ extends RefCounted
 # ── 段階クエスト(原作『アナスタシア』の一族の土地づくり) ────────────
 # 順番に 1 つずつ進める。先に条件を満たしていたら、その段階に来たときにすぐ達成。
 # 達成した段階は、あとで木を抜いても戻らない。4 つそろうと「愛の空間」が完成する。
+# 数えるのは根付いた木だけ(芽が出る前の種は数えない)。
 # 文言は Main、見た目は view/ が決める(ここは id と数だけ)。座標の単位は m
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
@@ -36,6 +37,8 @@ func hedge_filled() -> Array:
 	filled.resize(HEDGE_SEGMENTS)
 	filled.fill(false)
 	for t in forest.trees:
+		if not forest.is_established(t):
+			continue
 		var p: Vector2 = t.pos
 		if absf(p.x) > HALF or absf(p.y) > HALF:
 			continue
@@ -68,7 +71,7 @@ func progress(id: String) -> Array:
 			return [0 if land.pond == null else 1, 1]
 		"family_cedar":
 			for t in forest.trees:
-				if t.species == "cedar" and t.pos.length() <= FAMILY_CEDAR_RADIUS:
+				if t.species == "cedar" and forest.is_established(t) and t.pos.length() <= FAMILY_CEDAR_RADIUS:
 					return [1, 1]
 			return [0, 1]
 	return [0, 1]

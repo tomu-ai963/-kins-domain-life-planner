@@ -44,6 +44,7 @@ func _new_world(remove_save := true) -> GameWorld:
 	var w := GameWorld.new()
 	w.save_path = TEST_SAVE
 	w.forest.season = "autumn"
+	w.forest.germination_rates = {"birch": 1.0, "apple": 1.0, "cedar": 1.0}  # 種は必ず芽が出る(発芽は test_market で見る)
 	return w
 
 func _test_watering() -> void:
@@ -60,14 +61,14 @@ func _test_watering() -> void:
 	_check(t.water_nearest(Vector2(0.25, 0), REACH) == "watered", "日が変われば同じ木にまたあげられる")
 	_check(absf(t.trees[0].bonus_years - 2 * t.WATER_BONUS_YEARS) < 0.001, "ボーナスは日ごとに積み上がる")
 
-	# 水やりで樹齢5年に届いたリンゴは、その場で収穫できる(ボーナスは判定にも効く)
+	# 水やりで樹齢6年に届いたリンゴは、その場で収穫できる(ボーナスは判定にも効く)
 	t.seeds["apple"] = 1
 	t.add_tree(Vector2(25, 0), "apple")
 	var apple: Dictionary = t.trees[-1]
-	apple.planted_at = _now() - int(4.7 * 86400)
-	_check(t.harvest_nearest(Vector2(25, 0), REACH) == "young", "樹齢4.7年のリンゴはまだ実らない")
+	apple.planted_at = _now() - int(5.7 * 86400)
+	_check(t.harvest_nearest(Vector2(25, 0), REACH) == "young", "樹齢5.7年のリンゴはまだ実らない")
 	t.water_nearest(Vector2(25, 0), REACH)
-	_check(t.harvest_nearest(Vector2(25, 0), REACH) == "harvested", "水やりで5.2年になれば収穫できる")
+	_check(t.harvest_nearest(Vector2(25, 0), REACH) == "harvested", "水やりで6.2年になれば収穫できる")
 
 func _test_daily_event_once_per_day() -> void:
 	print("日替わりの発見(1日1回)")
