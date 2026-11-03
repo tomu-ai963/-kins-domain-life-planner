@@ -1,0 +1,48 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://Player3D.gd" id="1"]
+
+[sub_resource type="CapsuleShape3D" id="1"]
+radius = 0.3
+height = 1.6
+
+[sub_resource type="CapsuleMesh" id="2"]
+radius = 0.3
+height = 1.6
+
+[sub_resource type="StandardMaterial3D" id="3"]
+albedo_color = Color(0.22, 0.48, 0.92, 1)
+roughness = 0.8
+
+[sub_resource type="BoxMesh" id="4"]
+size = Vector3(0.22, 0.12, 0.22)
+
+[sub_resource type="StandardMaterial3D" id="5"]
+albedo_color = Color(0.98, 0.92, 0.80, 1)
+
+[node name="Player" type="CharacterBody3D"]
+motion_mode = 1
+script = ExtResource("1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+shape = SubResource("1")
+
+[node name="Body" type="Node3D" parent="."]
+
+[node name="Capsule" type="MeshInstance3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+mesh = SubResource("2")
+surface_material_override/0 = SubResource("3")
+
+[node name="Nose" type="MeshInstance3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, -0.3)
+mesh = SubResource("4")
+surface_material_override/0 = SubResource("5")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+current = true
+fov = 50.0
+far = 600.0
+
+[node name="FootstepsAudio" type="AudioStreamPlayer3D" parent="."]

@@ -1,11 +1,10 @@
-extends Node2D
+extends Node
 
 # ── つなぎ役: 入力 → ロジック(logic/) → 文言(HUD) ─────────────────
-# ゲームの状態とルールは logic/GameWorld.gd 以下、見た目は view/ 以下。
+# ゲームの状態とルールは logic/GameWorld.gd 以下、見た目は view/3d/(Main.tscn)か view/2d/(Main2D.tscn)。
 # Main はキー入力をロジックに渡し、結果コードを文言にして HUD に出す。
-# ロジックの座標は m、2D 表示(Player の位置)は px。受け渡しのときに直す
+# Main・HUD は 2D と 3D で共通。位置は Player.ground_pos() で m の Vector2(x, y)を受け取る
 const GameWorld = preload("res://logic/GameWorld.gd")
-const PX := 40.0      # 2D 表示の 1m
 const REACH := 2.0    # 足元 2m 以内
 
 const SEASON_NAMES := {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬"}
@@ -88,10 +87,10 @@ const POND_MESSAGES := {
 
 # プレイヤーの足元(m)
 func player_pos() -> Vector2:
-	return $Player.global_position / PX
+	return $Player.ground_pos()
 
-func _on_plant_tree(pos_px: Vector2) -> void:
-	if not world.forest.add_tree(pos_px / PX, selected_species):
+func _on_plant_tree(pos: Vector2) -> void:
+	if not world.forest.add_tree(pos, selected_species):
 		$HUD.show_message("%sの種がない" % world.forest.SPECIES[selected_species].name)
 		return
 	_check_quests()

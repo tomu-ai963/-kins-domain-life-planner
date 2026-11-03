@@ -1,26 +1,53 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://Main.gd" id="1"]
-[ext_resource type="PackedScene" path="res://Player.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://Player3D.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://HUD.tscn" id="3"]
-[ext_resource type="Script" path="res://view/TreesView.gd" id="4"]
-[ext_resource type="Script" path="res://view/LandView.gd" id="5"]
-[ext_resource type="Script" path="res://view/QuestsView.gd" id="6"]
-[ext_resource type="Script" path="res://view/GroundView.gd" id="7"]
+[ext_resource type="Script" path="res://view/3d/TreesView3D.gd" id="4"]
+[ext_resource type="Script" path="res://view/3d/LandView3D.gd" id="5"]
+[ext_resource type="Script" path="res://view/3d/QuestsView3D.gd" id="6"]
+[ext_resource type="Script" path="res://view/3d/GroundView3D.gd" id="7"]
 
-[node name="Main" type="Node2D"]
+[sub_resource type="ProceduralSkyMaterial" id="1"]
+sky_top_color = Color(0.42, 0.62, 0.86, 1)
+sky_horizon_color = Color(0.78, 0.84, 0.88, 1)
+ground_horizon_color = Color(0.78, 0.84, 0.88, 1)
+
+[sub_resource type="Sky" id="2"]
+sky_material = SubResource("1")
+
+[sub_resource type="Environment" id="3"]
+background_mode = 2
+sky = SubResource("2")
+ambient_light_source = 3
+ambient_light_energy = 0.55
+tonemap_mode = 3
+fog_enabled = true
+fog_light_color = Color(0.78, 0.84, 0.88, 1)
+fog_density = 0.0012
+
+[node name="Main" type="Node3D"]
 script = ExtResource("1")
 
-[node name="Ground" type="Node2D" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("3")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, 0.383022, -0.321394, 0.000000, 0.642788, 0.766044, 0.500000, -0.663414, 0.556670, 0, 30, 0)
+light_energy = 1.25
+shadow_enabled = true
+directional_shadow_max_distance = 160.0
+
+[node name="Ground" type="Node3D" parent="."]
 script = ExtResource("7")
 
-[node name="Land" type="Node2D" parent="."]
+[node name="Land" type="Node3D" parent="."]
 script = ExtResource("5")
 
-[node name="Quests" type="Node2D" parent="."]
+[node name="Quests" type="Node3D" parent="."]
 script = ExtResource("6")
 
-[node name="Trees" type="Node2D" parent="."]
+[node name="Trees" type="Node3D" parent="."]
 script = ExtResource("4")
 
 [node name="Audio" type="Node" parent="."]

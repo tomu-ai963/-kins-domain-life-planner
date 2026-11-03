@@ -1,6 +1,6 @@
 extends CharacterBody2D
 
-signal plant_tree(pos)
+signal plant_tree(pos)  # 足元の位置(m)
 
 # 1m = 40px。設計作業がしやすいよう 5 m/s (= 200 px/s) に設定
 const PIXELS_PER_METER := 40.0
@@ -28,13 +28,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			and event.keycode == KEY_SPACE \
 			and event.pressed \
 			and not event.echo:
-		plant_tree.emit(global_position)
+		plant_tree.emit(ground_pos())
 	elif event is InputEventMouseButton and event.pressed:
 		# ホイールでズーム（引くと土地全体、寄ると足元）
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_set_zoom(_zoom * 0.85)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_set_zoom(_zoom / 0.85)
+
+# 足元の位置(m)。ロジックの座標
+func ground_pos() -> Vector2:
+	return global_position / PIXELS_PER_METER
 
 func _set_zoom(z: float) -> void:
 	_zoom = clampf(z, ZOOM_MIN, ZOOM_MAX)

@@ -5,14 +5,14 @@ const MESSAGE_SECONDS := 3.0
 
 @onready var _label: Label = $PositionLabel
 
-var _player: Node2D
+var _player: Node
 var _trees: Forest
-var _main: Node2D
+var _main: Node
 
 var _message := ""
 var _message_timer := 0.0
 
-func setup(player: Node2D, trees: Forest, main: Node2D) -> void:
+func setup(player: Node, trees: Forest, main: Node) -> void:
 	_player = player
 	_trees = trees
 	_main = main
