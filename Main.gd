@@ -2,8 +2,11 @@ extends Node2D
 
 # ── つなぎ役: 入力 → ロジック(logic/) → 文言(HUD) ─────────────────
 # ゲームの状態とルールは logic/GameWorld.gd 以下、見た目は view/ 以下。
-# Main はキー入力をロジックに渡し、結果コードを文言にして HUD に出す
+# Main はキー入力をロジックに渡し、結果コードを文言にして HUD に出す。
+# ロジックの座標は m、2D 表示(Player の位置)は px。受け渡しのときに直す
 const GameWorld = preload("res://logic/GameWorld.gd")
+const PX := 40.0      # 2D 表示の 1m
+const REACH := 2.0    # 足元 2m 以内
 
 const SEASON_NAMES := {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬"}
 
@@ -19,7 +22,7 @@ func _ready() -> void:
 	$Quests.setup(world.quests)
 	$Trees.setup(world.forest)
 	$HUD.setup($Player, world.forest, self)
-	$Player.connect("plant_tree", self, "_on_plant_tree")
+	$Player.plant_tree.connect(_on_plant_tree)
 	world.load_game()
 	_check_new_day()
 	_check_quests()  # 旧セーブで条件を満たしていれば、開いた時点で達成する
@@ -83,14 +86,18 @@ const POND_MESSAGES := {
 	"outside": "土地の外には掘れない",
 }
 
-func _on_plant_tree(pos: Vector2) -> void:
-	if not world.forest.add_tree(pos, selected_species):
+# プレイヤーの足元(m)
+func player_pos() -> Vector2:
+	return $Player.global_position / PX
+
+func _on_plant_tree(pos_px: Vector2) -> void:
+	if not world.forest.add_tree(pos_px / PX, selected_species):
 		$HUD.show_message("%sの種がない" % world.forest.SPECIES[selected_species].name)
 		return
 	_check_quests()
 
 func _toggle_plot() -> void:
-	var result: String = world.land.toggle_plot($Player.global_position)
+	var result: String = world.land.toggle_plot(player_pos())
 	var msg: String = PLOT_MESSAGES[result]
 	if result == "placed":
 		msg = msg % world.land.plots.size()
@@ -98,7 +105,7 @@ func _toggle_plot() -> void:
 	_after_land_change(result)
 
 func _toggle_pond() -> void:
-	var result: String = world.land.toggle_pond($Player.global_position)
+	var result: String = world.land.toggle_pond(player_pos())
 	$HUD.show_message(POND_MESSAGES[result])
 	_after_land_change(result)
 
@@ -110,7 +117,7 @@ func _after_land_change(result: String) -> void:
 # クエストを判定し、達成があれば知らせて保存する
 func _check_quests() -> void:
 	var done: Array = world.quests.advance()
-	if done.empty():
+	if done.is_empty():
 		return
 	world.save_game()
 	if done.has("complete"):
@@ -120,11 +127,11 @@ func _check_quests() -> void:
 	for id in done:
 		names.append(QUEST_TEXTS[id].name)
 	var next: String = world.quests.current_id()
-	$HUD.show_message("達成: %s → 次は「%s」" % [PoolStringArray(names).join("・"), QUEST_TEXTS[next].name], 8.0)
+	$HUD.show_message("達成: %s → 次は「%s」" % ["・".join(PackedStringArray(names)), QUEST_TEXTS[next].name], 8.0)
 
 # HUD に出すクエストの 1 行
 func quest_line() -> String:
-	var q: Reference = world.quests
+	var q := world.quests
 	if q.is_complete():
 		return "クエスト: 愛の空間が完成した"
 	var id: String = q.current_id()
@@ -137,7 +144,7 @@ func quest_line() -> String:
 
 func _harvest() -> void:
 	# 足元 2m 以内のリンゴを収穫する
-	var result: String = world.forest.harvest_nearest($Player.global_position, 80.0)
+	var result: String = world.forest.harvest_nearest(player_pos(), REACH)
 	var msg: String = HARVEST_MESSAGES[result]
 	if result == "harvested":
 		msg = msg % world.forest.SEEDS_PER_HARVEST
@@ -145,19 +152,19 @@ func _harvest() -> void:
 
 func _water() -> void:
 	# 足元 2m 以内の木に水をあげる
-	var f: Reference = world.forest
-	var pos: Vector2 = $Player.global_position
-	var result: String = f.water_nearest(pos, 80.0)
+	var f := world.forest
+	var pos := player_pos()
+	var result: String = f.water_nearest(pos, REACH)
 	var msg: String = WATER_MESSAGES[result]
 	if result == "watered":
-		var i: int = f.nearest_index(pos, 80.0, "")
+		var i: int = f.nearest_index(pos, REACH, "")
 		msg = msg % [f.SPECIES[f.trees[i].species].name, f.WATER_BONUS_YEARS]
 	$HUD.show_message(msg)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
-	match event.scancode:
+	match event.keycode:
 		KEY_1:
 			selected_species = "birch"
 		KEY_2:
@@ -170,7 +177,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_water()
 		KEY_Z:
 			# 足元 2m 以内の木を抜く(種は戻らない。達成済みのクエストは戻らない)
-			world.forest.remove_nearest($Player.global_position, 80.0)
+			world.forest.remove_nearest(player_pos(), REACH)
 		KEY_F:
 			_toggle_plot()
 		KEY_P:
@@ -183,5 +190,5 @@ func _unhandled_input(event: InputEvent) -> void:
 			world.forest.reset_preview()      # 今日に戻す
 
 func _notification(what: int) -> void:
-	if what == MainLoop.NOTIFICATION_WM_QUIT_REQUEST:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		world.save_game()

@@ -1,15 +1,18 @@
 extends SceneTree
 
 # 毎日の理由(Phase 2-2: 水やり・日替わりの発見)のロジックテスト。本物のセーブには触れない。
-# 実行: Godot_v3.6.2-stable_win64.exe --no-window --path . -s res://tests/test_daily.gd
-# 標準出力に結果を出し、失敗があれば終了コード 1 で終わる
+# 実行: Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/test_daily.gd
+# 標準出力に結果を出し、失敗があれば終了コード 1 で終わる。座標の単位は m
+
+const GameWorld = preload("res://logic/GameWorld.gd")
 
 const TEST_SAVE := "user://test_daily.json"
+const REACH := 2.0  # 足元 2m
 
 var _failed := 0
 var _passed := 0
 
-func _init() -> void:
+func _initialize() -> void:
 	_test_watering()
 	_test_daily_event_once_per_day()
 	_test_daily_event_is_fixed_by_date()
@@ -28,15 +31,17 @@ func _check(cond: bool, label: String) -> void:
 		print("  FAIL ", label)
 
 func _remove_save() -> void:
-	var d := Directory.new()
-	if d.file_exists(TEST_SAVE):
-		d.remove(TEST_SAVE)
+	if FileAccess.file_exists(TEST_SAVE):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_SAVE))
+
+func _now() -> int:
+	return int(Time.get_unix_time_from_system())
 
 # ロジック一式(GameWorld)を作る。木と種は w.forest
-func _new_world(remove_save := true) -> Reference:
+func _new_world(remove_save := true) -> GameWorld:
 	if remove_save:
 		_remove_save()
-	var w: Reference = load("res://logic/GameWorld.gd").new()
+	var w := GameWorld.new()
 	w.save_path = TEST_SAVE
 	w.forest.season = "autumn"
 	return w
@@ -44,30 +49,30 @@ func _new_world(remove_save := true) -> Reference:
 func _test_watering() -> void:
 	print("水やり")
 	var w := _new_world()
-	var t: Reference = w.forest
-	_check(t.water_nearest(Vector2(0, 0), 80.0) == "none", "近くに木がなければ none")
+	var t := w.forest
+	_check(t.water_nearest(Vector2(0, 0), REACH) == "none", "近くに木がなければ none")
 	t.add_tree(Vector2(0, 0), "birch")
 	var before: float = t.real_age_years(t.trees[0])
-	_check(t.water_nearest(Vector2(10, 0), 80.0) == "watered", "足元の木に水をあげられる")
-	_check(abs(t.real_age_years(t.trees[0]) - before - t.WATER_BONUS_YEARS) < 0.01, "判定用の樹齢が +%.1f年" % t.WATER_BONUS_YEARS)
-	_check(t.water_nearest(Vector2(10, 0), 80.0) == "done", "同じ木は同じ日に2回あげられない")
+	_check(t.water_nearest(Vector2(0.25, 0), REACH) == "watered", "足元の木に水をあげられる")
+	_check(absf(t.real_age_years(t.trees[0]) - before - t.WATER_BONUS_YEARS) < 0.01, "判定用の樹齢が +%.1f年" % t.WATER_BONUS_YEARS)
+	_check(t.water_nearest(Vector2(0.25, 0), REACH) == "done", "同じ木は同じ日に2回あげられない")
 	t.trees[0].last_watered = "2000-01-01"
-	_check(t.water_nearest(Vector2(10, 0), 80.0) == "watered", "日が変われば同じ木にまたあげられる")
-	_check(abs(t.trees[0].bonus_years - 2 * t.WATER_BONUS_YEARS) < 0.001, "ボーナスは日ごとに積み上がる")
+	_check(t.water_nearest(Vector2(0.25, 0), REACH) == "watered", "日が変われば同じ木にまたあげられる")
+	_check(absf(t.trees[0].bonus_years - 2 * t.WATER_BONUS_YEARS) < 0.001, "ボーナスは日ごとに積み上がる")
 
 	# 水やりで樹齢5年に届いたリンゴは、その場で収穫できる(ボーナスは判定にも効く)
 	t.seeds["apple"] = 1
-	t.add_tree(Vector2(1000, 0), "apple")
+	t.add_tree(Vector2(25, 0), "apple")
 	var apple: Dictionary = t.trees[-1]
-	apple.planted_at = OS.get_unix_time() - int(4.7 * 86400)
-	_check(t.harvest_nearest(Vector2(1000, 0), 80.0) == "young", "樹齢4.7年のリンゴはまだ実らない")
-	t.water_nearest(Vector2(1000, 0), 80.0)
-	_check(t.harvest_nearest(Vector2(1000, 0), 80.0) == "harvested", "水やりで5.2年になれば収穫できる")
+	apple.planted_at = _now() - int(4.7 * 86400)
+	_check(t.harvest_nearest(Vector2(25, 0), REACH) == "young", "樹齢4.7年のリンゴはまだ実らない")
+	t.water_nearest(Vector2(25, 0), REACH)
+	_check(t.harvest_nearest(Vector2(25, 0), REACH) == "harvested", "水やりで5.2年になれば収穫できる")
 
 func _test_daily_event_once_per_day() -> void:
 	print("日替わりの発見(1日1回)")
 	var w := _new_world()
-	var t: Reference = w.forest
+	var t := w.forest
 	var first: String = t.check_new_day()
 	_check(first != "", "その日はじめての確認で発見が起きる")
 	_check(t.today_event == first and t.last_day != "", "今日の発見と日付を覚える")
@@ -78,7 +83,7 @@ func _test_daily_event_once_per_day() -> void:
 func _test_daily_event_is_fixed_by_date() -> void:
 	print("発見は日付で決まる")
 	var w := _new_world()
-	var t: Reference = w.forest
+	var t := w.forest
 	var same := true
 	for i in range(5):
 		if t.roll_daily_event("2026-10-29") != t.roll_daily_event("2026-10-29"):
@@ -88,8 +93,7 @@ func _test_daily_event_is_fixed_by_date() -> void:
 	# 1年分(365日)の出方。重みは 白樺35 / 杉15 / 雨25 / 鳥25
 	var counts := {"birch_seed": 0, "cedar_seed": 0, "rain": 0, "birds": 0}
 	for d in range(365):
-		var dt := OS.get_datetime_from_unix_time(1767225600 + d * 86400)  # 2026-01-01 から
-		var date := "%04d-%02d-%02d" % [dt.year, dt.month, dt.day]
+		var date := Time.get_date_string_from_unix_time(1767225600 + d * 86400)  # 2026-01-01 から
 		counts[t.roll_daily_event(date)] += 1
 	print("    365日の内訳: ", counts)
 	_check(counts.birch_seed > 0 and counts.cedar_seed > 0 and counts.rain > 0 and counts.birds > 0, "4種類とも起きる")
@@ -98,15 +102,15 @@ func _test_daily_event_is_fixed_by_date() -> void:
 func _test_event_effects() -> void:
 	print("発見の効果")
 	var w := _new_world()
-	var t: Reference = w.forest
+	var t := w.forest
 	t._apply_event("birch_seed")
 	_check(t.seeds.birch == 4, "白樺の種が落ちていた → 白樺 +1")
 	t._apply_event("cedar_seed")
 	_check(t.seeds.cedar == 1, "リスが実を置いていった → シベリア杉 +1")
 	_check(t.add_tree(Vector2(0, 0), "cedar"), "手に入れたシベリア杉の種で植えられる")
 
-	t.add_tree(Vector2(500, 0), "birch")
-	t.water_nearest(Vector2(500, 0), 80.0)  # 1本は先に水やり済み
+	t.add_tree(Vector2(12.5, 0), "birch")
+	t.water_nearest(Vector2(12.5, 0), REACH)  # 1本は先に水やり済み
 	var bonus_watered: float = t.trees[1].bonus_years
 	t._apply_event("rain")
 	_check(t.trees[0].last_watered == t.today(), "雨 → まだの木も水やり済みになる")
@@ -116,11 +120,11 @@ func _test_event_effects() -> void:
 	t.last_day = t.today()
 	t.today_event = "rain"
 	t.seeds["birch"] += 1
-	t.add_tree(Vector2(900, 0), "birch")
+	t.add_tree(Vector2(22.5, 0), "birch")
 	_check(t.trees[-1].last_watered == t.today(), "雨の日はあとから植えた木も水やり済み")
 	t.today_event = "birds"
 	t.seeds["birch"] += 1
-	t.add_tree(Vector2(1200, 0), "birch")
+	t.add_tree(Vector2(30, 0), "birch")
 	_check(t.trees[-1].last_watered == "", "雨でない日に植えた木は水やり前")
 
 	var seeds_before: Dictionary = t.seeds.duplicate()
@@ -130,28 +134,27 @@ func _test_event_effects() -> void:
 func _test_save_and_old_format() -> void:
 	print("セーブ")
 	var w := _new_world()
-	var t: Reference = w.forest
+	var t := w.forest
 	t.add_tree(Vector2(0, 0), "birch")
-	t.water_nearest(Vector2(0, 0), 80.0)
+	t.water_nearest(Vector2(0, 0), REACH)
 	var ev: String = t.check_new_day()
 	var w2 := _new_world(false)
 	w2.load_game()
-	var t2: Reference = w2.forest
+	var t2 := w2.forest
 	_check(t2.last_day == t.last_day and t2.today_event == ev, "発見の日付と内容が保存・復元される")
 	_check(t2.trees[0].last_watered == t.today() and t2.trees[0].bonus_years >= t.WATER_BONUS_YEARS, "水やりの記録とボーナスが保存・復元される")
 	_check(t2.check_new_day() == "", "開き直しても同じ日はもう起きない")
 
-	# 2-1 時点のセーブ(水やり・発見の記録なし)
+	# 2-1 時点のセーブ(水やり・発見の記録なし。座標は px)
 	_remove_save()
-	var f := File.new()
-	f.open(TEST_SAVE, File.WRITE)
-	f.store_string(to_json({
+	var f := FileAccess.open(TEST_SAVE, FileAccess.WRITE)
+	f.store_string(JSON.stringify({
 		"seeds": {"birch": 2, "apple": 1, "cedar": 0},
-		"trees": [{"x": 0, "y": 0, "species": "birch", "planted_at": OS.get_unix_time() - 86400, "last_harvest": ""}],
+		"trees": [{"x": 0, "y": 0, "species": "birch", "planted_at": _now() - 86400, "last_harvest": ""}],
 	}))
 	f.close()
 	var w3 := _new_world(false)
 	w3.load_game()
-	var t3: Reference = w3.forest
+	var t3 := w3.forest
 	_check(t3.trees[0].bonus_years == 0.0 and t3.trees[0].last_watered == "", "旧セーブの木はボーナス0・水やり記録なし")
 	_check(t3.check_new_day() != "", "旧セーブでも今日の発見が起きる")

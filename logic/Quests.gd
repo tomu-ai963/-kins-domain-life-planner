@@ -1,23 +1,26 @@
-extends Reference
+extends RefCounted
 
 # ── 段階クエスト(原作『アナスタシア』の一族の土地づくり) ────────────
 # 順番に 1 つずつ進める。先に条件を満たしていたら、その段階に来たときにすぐ達成。
 # 達成した段階は、あとで木を抜いても戻らない。4 つそろうと「愛の空間」が完成する。
-# 文言は Main、見た目は view/QuestsView.gd が決める(ここは id と数だけ)
+# 文言は Main、見た目は view/ が決める(ここは id と数だけ)。座標の単位は m
+const Forest = preload("res://logic/Forest.gd")
+const Land = preload("res://logic/Land.gd")
+
 signal changed
 
 const QUESTS := ["hedge", "garden", "pond", "family_cedar"]
 
-const HALF := 2000.0             # ドメインの半幅(px)
-const HEDGE_BAND := 120.0        # 生垣とみなす帯: 境界から内側 3m
-const HEDGE_SEGMENT := 400.0     # 周囲を 10m ごとに区切る
+const HALF := 50.0               # ドメインの半幅(m)
+const HEDGE_BAND := 3.0          # 生垣とみなす帯: 境界から内側 3m
+const HEDGE_SEGMENT := 10.0      # 周囲を 10m ごとに区切る
 const HEDGE_SEGMENTS := 40       # 周囲 400m / 10m
 const GARDEN_PLOTS := 4          # 菜園は区画 4 つ
-const FAMILY_CEDAR_RADIUS := 200.0  # 中心から 5m 以内のシベリア杉
+const FAMILY_CEDAR_RADIUS := 5.0 # 中心から 5m 以内のシベリア杉
 
 var stage := 0                   # いま取り組んでいる段階(0〜3)。4 で完成
-var forest: Reference            # GameWorld が設定する
-var land: Reference
+var forest: Forest               # GameWorld が設定する
+var land: Land
 
 func is_complete() -> bool:
 	return stage >= QUESTS.size()
@@ -31,13 +34,12 @@ func current_id() -> String:
 func hedge_filled() -> Array:
 	var filled := []
 	filled.resize(HEDGE_SEGMENTS)
-	for i in range(HEDGE_SEGMENTS):
-		filled[i] = false
+	filled.fill(false)
 	for t in forest.trees:
 		var p: Vector2 = t.pos
-		if abs(p.x) > HALF or abs(p.y) > HALF:
+		if absf(p.x) > HALF or absf(p.y) > HALF:
 			continue
-		# 周囲を時計回りに 1 本の線とみなした位置(px): 上辺 → 右辺 → 下辺 → 左辺
+		# 周囲を時計回りに 1 本の線とみなした位置(m): 上辺 → 右辺 → 下辺 → 左辺
 		if p.y - (-HALF) <= HEDGE_BAND:
 			_fill(filled, p.x + HALF)
 		if HALF - p.x <= HEDGE_BAND:
@@ -49,7 +51,7 @@ func hedge_filled() -> Array:
 	return filled
 
 func _fill(filled: Array, s: float) -> void:
-	filled[int(clamp(floor(s / HEDGE_SEGMENT), 0, HEDGE_SEGMENTS - 1))] = true
+	filled[clampi(floori(s / HEDGE_SEGMENT), 0, HEDGE_SEGMENTS - 1)] = true
 
 # [いまの数, 目標の数]
 func progress(id: String) -> Array:
@@ -61,7 +63,7 @@ func progress(id: String) -> Array:
 					n += 1
 			return [n, HEDGE_SEGMENTS]
 		"garden":
-			return [int(min(land.plots.size(), GARDEN_PLOTS)), GARDEN_PLOTS]
+			return [mini(land.plots.size(), GARDEN_PLOTS), GARDEN_PLOTS]
 		"pond":
 			return [0 if land.pond == null else 1, 1]
 		"family_cedar":
@@ -83,8 +85,8 @@ func advance() -> Array:
 		stage += 1
 		if is_complete():
 			done.append("complete")
-	if not done.empty():
-		emit_signal("changed")
+	if not done.is_empty():
+		changed.emit()
 	return done
 
 # 生垣の区画 i の真ん中、境界から 1.5m 内側の点
@@ -107,5 +109,5 @@ func to_save() -> Dictionary:
 	return {"stage": stage}
 
 func from_save(d: Dictionary) -> void:
-	stage = int(clamp(int(d.get("stage", 0)), 0, QUESTS.size()))
-	emit_signal("changed")
+	stage = clampi(int(d.get("stage", 0)), 0, QUESTS.size())
+	changed.emit()

@@ -1,4 +1,4 @@
-extends Reference
+extends RefCounted
 
 # ── 木と種のゲームロジック(描画を持たない) ─────────────────────
 # 見た目は view/TreesView.gd が changed を受けて描く。2D でも 3D でも同じロジックを使う。
@@ -34,16 +34,16 @@ const DAILY_EVENTS := [
 ]
 
 # 樹種ごとの成長パラメータ(色などの見た目は view 側が持つ)
-#   max_r: 成熟時の樹冠半径(px, 40px = 1m)
+#   max_r: 成熟時の樹冠半径(m)
 #   tau:   成長の時定数(年)。小さいほど早く育つ
 #   evergreen: 常緑樹か(冬に葉が残る)
 const SPECIES := {
-	"birch": {"name": "白樺", "max_r": 140.0, "tau": 6.0, "evergreen": false},
-	"apple": {"name": "リンゴ", "max_r": 120.0, "tau": 12.0, "evergreen": false},
-	"cedar": {"name": "シベリア杉", "max_r": 240.0, "tau": 40.0, "evergreen": true},
+	"birch": {"name": "白樺", "max_r": 3.5, "tau": 6.0, "evergreen": false},
+	"apple": {"name": "リンゴ", "max_r": 3.0, "tau": 12.0, "evergreen": false},
+	"cedar": {"name": "シベリア杉", "max_r": 6.0, "tau": 40.0, "evergreen": true},
 }
 
-# [{pos: Vector2, species: String, planted_at: int, last_harvest: String,
+# [{pos: Vector2(m), species: String, planted_at: int, last_harvest: String,
 #   last_watered: String, bonus_years: float}]
 var trees := []
 var seeds := INITIAL_SEEDS.duplicate()  # 樹種ごとの所持数
@@ -54,14 +54,14 @@ var season := "summer"        # GameWorld が現実の日付から設定する
 
 # 保存が必要な変更のあと: 保存してから描き直す
 func _commit() -> void:
-	emit_signal("dirty")
-	emit_signal("changed")
+	dirty.emit()
+	changed.emit()
 
 func set_season(s: String) -> void:
 	if season == s:
 		return
 	season = s
-	emit_signal("changed")
+	changed.emit()
 
 # 種があれば 1 つ使って植える。種がなければ植えずに false
 func add_tree(pos: Vector2, species: String) -> bool:
@@ -69,7 +69,7 @@ func add_tree(pos: Vector2, species: String) -> bool:
 		return false
 	seeds[species] -= 1
 	trees.append({
-		"pos": pos, "species": species, "planted_at": OS.get_unix_time(),
+		"pos": pos, "species": species, "planted_at": _now(),
 		"last_harvest": "", "last_watered": "", "bonus_years": 0.0,
 	})
 	# 雨の日は一日中降っている扱い。あとから植えた木も水やり済みにする
@@ -174,25 +174,27 @@ func harvest_nearest(pos: Vector2, max_dist: float) -> String:
 	return "harvested"
 
 func today() -> String:
-	var dt: Dictionary = OS.get_datetime()
-	return "%04d-%02d-%02d" % [dt.year, dt.month, dt.day]
+	return Time.get_date_string_from_system()  # 現地時間の YYYY-MM-DD
+
+func _now() -> int:
+	return int(Time.get_unix_time_from_system())
 
 func remove_nearest(pos: Vector2, max_dist: float) -> bool:
 	var best := nearest_index(pos, max_dist, "")
 	if best >= 0:
-		trees.remove(best)
+		trees.remove_at(best)
 		_commit()
 		return true
 	return false
 
 func advance_years(years: float) -> void:
 	time_offset_years += years
-	emit_signal("changed")
+	changed.emit()
 
 # プレビューをやめて今日の姿に戻す
 func reset_preview() -> void:
 	time_offset_years = 0.0
-	emit_signal("changed")
+	changed.emit()
 
 # 表示用の樹齢(プレビューの先送りを含む)
 func age_years(tree: Dictionary) -> float:
@@ -200,9 +202,9 @@ func age_years(tree: Dictionary) -> float:
 
 # ゲームの判定用の樹齢(現実時間 + 水やりのボーナス。プレビューは含まない)
 func real_age_years(tree: Dictionary) -> float:
-	return (OS.get_unix_time() - tree.planted_at) / SECONDS_PER_YEAR + tree.bonus_years
+	return (_now() - tree.planted_at) / SECONDS_PER_YEAR + tree.bonus_years
 
-# 表示用の樹冠半径(px)
+# 表示用の樹冠半径(m)
 func radius_of(tree: Dictionary) -> float:
 	var sp: Dictionary = SPECIES[tree.species]
 	return sp.max_r * (1.0 - exp(-age_years(tree) / sp.tau))
@@ -239,17 +241,17 @@ func from_save(data: Dictionary) -> void:
 			if saved_seeds.has(sp):
 				seeds[sp] = int(saved_seeds[sp])
 	# 記録がない旧形式のセーブは、次に開いたとき(= 今)その日の発見が起きる
-	last_day = String(data.get("last_day", ""))
-	today_event = String(data.get("today_event", ""))
+	last_day = str(data.get("last_day", ""))
+	today_event = str(data.get("today_event", ""))
 	trees.clear()
 	for t in data.get("trees", []):
 		if t.species in SPECIES:
 			trees.append({
 				"pos": Vector2(float(t.x), float(t.y)),
-				"species": String(t.species),
+				"species": str(t.species),
 				"planted_at": int(t.planted_at),
-				"last_harvest": String(t.get("last_harvest", "")),
-				"last_watered": String(t.get("last_watered", "")),
+				"last_harvest": str(t.get("last_harvest", "")),
+				"last_watered": str(t.get("last_watered", "")),
 				"bonus_years": float(t.get("bonus_years", 0.0)),
 			})
-	emit_signal("changed")
+	changed.emit()

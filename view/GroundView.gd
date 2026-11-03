@@ -3,6 +3,8 @@ extends Node2D
 # ── 地面の 2D 表示(草地・グリッド・メルカバ・境界) ────────────────────
 # スケール: 1m = 40px  →  1ヘクタール(100m×100m) = 4000px×4000px
 # ワールド原点(0,0)をドメイン中心とし、±2000px(±50m)が境界。季節は logic/Forest.gd から読む
+# (ロジックの座標は m。2D 表示だけ px で描く。3D の view ができたら置き換える)
+const Forest = preload("res://logic/Forest.gd")
 
 # 季節ごとの地面パレット
 const GROUND := {
@@ -12,19 +14,19 @@ const GROUND := {
 	"winter": {"dirt": Color(0.35, 0.32, 0.30), "grass": Color(0.88, 0.90, 0.92), "grid": Color(0.78, 0.81, 0.85)},
 }
 
-var forest: Reference
+var forest: Forest
 var _season := ""
 
-func setup(f: Reference) -> void:
+func setup(f: Forest) -> void:
 	forest = f
-	forest.connect("changed", self, "_on_changed")
+	forest.changed.connect(_on_changed)
 	_on_changed()
 
 # 地面は季節が変わったときだけ描き直す
 func _on_changed() -> void:
 	if forest.season != _season:
 		_season = forest.season
-		update()
+		queue_redraw()
 
 func _draw() -> void:
 	if _season == "":

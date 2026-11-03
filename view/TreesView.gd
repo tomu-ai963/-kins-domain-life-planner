@@ -1,7 +1,9 @@
 extends Node2D
 
 # ── 木の 2D 表示(_draw の円) ──────────────────────────────────
-# 状態とルールは logic/Forest.gd。ここは読んで描くだけ(3D では別の view に差し替える)
+# 状態とルールは logic/Forest.gd(座標は m)。ここは読んで px で描くだけ(3D では別の view に差し替える)
+const Forest = preload("res://logic/Forest.gd")
+const PX := 40.0  # 2D 表示の 1m
 
 # 樹種ごとの色
 const COLORS := {
@@ -22,20 +24,20 @@ const COLORS := {
 	},
 }
 
-var forest: Reference
+var forest: Forest
 var _redraw_timer := 0.0
 
-func setup(f: Reference) -> void:
+func setup(f: Forest) -> void:
 	forest = f
-	forest.connect("changed", self, "update")
-	update()
+	forest.changed.connect(queue_redraw)
+	queue_redraw()
 
 func _process(delta: float) -> void:
 	# 成長は年単位なので毎秒 1 回の再描画で十分(低スペック配慮)
 	_redraw_timer += delta
 	if _redraw_timer >= 1.0:
 		_redraw_timer = 0.0
-		update()
+		queue_redraw()
 
 func _draw() -> void:
 	if forest == null:
@@ -44,17 +46,18 @@ func _draw() -> void:
 	for tree in forest.trees:
 		var evergreen: bool = forest.SPECIES[tree.species].evergreen
 		var col: Dictionary = COLORS[tree.species]
-		var r: float = forest.radius_of(tree)
+		var r: float = forest.radius_of(tree) * PX
+		var pos: Vector2 = tree.pos * PX
 
 		if r < 6.0:
 			# 苗木フェーズ
-			draw_circle(tree.pos, 3.0, Color(0.15, 0.65, 0.15))
+			draw_circle(pos, 3.0, Color(0.15, 0.65, 0.15))
 			continue
 
 		if season == "winter" and not evergreen:
 			# 落葉樹の冬: 裸の樹形(輪郭のみ) + 幹
-			draw_arc(tree.pos, r * 0.75, 0, TAU, 32, Color(0.45, 0.38, 0.30, 0.7), 1.5)
-			draw_circle(tree.pos, 4.0, col.trunk)
+			draw_arc(pos, r * 0.75, 0, TAU, 32, Color(0.45, 0.38, 0.30, 0.7), 1.5)
+			draw_circle(pos, 4.0, col.trunk)
 			continue
 
 		var leaf: Color = col.leaf
@@ -64,24 +67,24 @@ func _draw() -> void:
 			# 常緑樹の冬: 少し沈んだ色
 			leaf = Color(leaf.r * 0.8, leaf.g * 0.8, leaf.b * 0.85, leaf.a)
 
-		draw_circle(tree.pos, r, leaf)
-		draw_circle(tree.pos, r * 0.4, Color(leaf.r * 0.8, leaf.g * 0.85, leaf.b * 0.8, 0.3))
-		draw_circle(tree.pos, 4.0, col.trunk)
+		draw_circle(pos, r, leaf)
+		draw_circle(pos, r * 0.4, Color(leaf.r * 0.8, leaf.g * 0.85, leaf.b * 0.8, 0.3))
+		draw_circle(pos, 4.0, col.trunk)
 
 		# リンゴの季節演出
 		if tree.species == "apple" and season == "spring":
-			draw_circle(tree.pos, r, Color(0.98, 0.80, 0.86, 0.35))  # 花
+			draw_circle(pos, r, Color(0.98, 0.80, 0.86, 0.35))  # 花
 		elif forest.shows_fruit(tree):
-			_draw_fruits(tree.pos, r)                                  # 実(今日収穫したら消える)
+			_draw_fruits(pos, r)                                  # 実(今日収穫したら消える)
 
 	# 今日水をあげた木は、幹のまわりに水色の輪(どの木が済んだか分かるように)
 	for tree in forest.trees:
 		if forest.watered_today(tree):
-			draw_arc(tree.pos, 8.0, 0, TAU, 16, Color(0.25, 0.60, 0.95, 0.9), 2.0)
+			draw_arc(tree.pos * PX, 8.0, 0, TAU, 16, Color(0.25, 0.60, 0.95, 0.9), 2.0)
 
 func _draw_fruits(pos: Vector2, r: float) -> void:
 	# 座標から決まる疑似乱数で毎回同じ場所に実を描く
-	var seed_val := int(abs(pos.x) * 7.0 + abs(pos.y) * 13.0)
+	var seed_val := int(absf(pos.x) * 7.0 + absf(pos.y) * 13.0)
 	for i in range(5):
 		var a := float((seed_val + i * 47) % 100) / 100.0 * TAU
 		var d := (0.35 + 0.5 * float((seed_val + i * 31) % 100) / 100.0) * r

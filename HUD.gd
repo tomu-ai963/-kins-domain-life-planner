@@ -1,18 +1,18 @@
 extends CanvasLayer
 
-const PIXELS_PER_METER := 40.0
+const Forest = preload("res://logic/Forest.gd")
 const MESSAGE_SECONDS := 3.0
 
-onready var _label: Label = $PositionLabel
+@onready var _label: Label = $PositionLabel
 
 var _player: Node2D
-var _trees: Reference  # logic/Forest.gd
+var _trees: Forest
 var _main: Node2D
 
 var _message := ""
 var _message_timer := 0.0
 
-func setup(player: Node2D, trees: Reference, main: Node2D) -> void:
+func setup(player: Node2D, trees: Forest, main: Node2D) -> void:
 	_player = player
 	_trees = trees
 	_main = main
@@ -30,8 +30,8 @@ func _process(delta: float) -> void:
 		if _message_timer <= 0.0:
 			_message = ""
 
-	var pos_m: Vector2 = _player.global_position / PIXELS_PER_METER
-	var dt: Dictionary = OS.get_datetime()
+	var pos_m: Vector2 = _main.player_pos()
+	var dt: Dictionary = Time.get_datetime_dict_from_system()
 	var season_jp: String = _main.SEASON_NAMES[_trees.season]
 	var sp_name: String = _trees.SPECIES[_main.selected_species].name
 	var seeds: Dictionary = _trees.seeds
