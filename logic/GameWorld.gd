@@ -1,11 +1,12 @@
 extends RefCounted
 
 # ── ゲーム全体の状態(描画を持たない) ──────────────────────────
-# 木と種(Forest)・菜園と池(Land)・段階クエスト(Quests)・お金と市場(Market)をまとめ、
-# 1 つのセーブファイルに読み書きする。Forest の保存が必要な変更(dirty)で自動保存する
+# 木と種(Forest)・菜園と池(Land)・畑の野菜(Garden)・段階クエスト(Quests)・お金と市場(Market)をまとめ、
+# 1 つのセーブファイルに読み書きする。Forest・Garden の保存が必要な変更(dirty)で自動保存する
 # 座標の単位は m(ドメイン中心が原点、境界は ±50m)
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
+const Garden = preload("res://logic/Garden.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 
@@ -15,6 +16,7 @@ const OLD_PX_PER_M := 40.0
 
 var forest := Forest.new()
 var land := Land.new()
+var garden := Garden.new()
 var quests := Quests.new()
 var market := Market.new()
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
@@ -22,8 +24,19 @@ var save_path := SAVE_PATH       # テストでは別のファイルに向ける
 func _init() -> void:
 	quests.forest = forest
 	quests.land = land
+	garden.forest = forest
+	garden.land = land
 	market.forest = forest
+	market.garden = garden
 	forest.dirty.connect(save_game)
+	garden.dirty.connect(save_game)
+
+# 日付が変わっていたら、その日の発見を起こして id を返す(Forest.check_new_day)。雨は畑にも降る
+func check_new_day() -> String:
+	var id: String = forest.check_new_day()
+	if id == "rain":
+		garden.water_all()
+	return id
 
 # 季節は現実の日付から(3-5月=春 / 6-8月=夏 / 9-11月=秋 / 12-2月=冬)
 static func season_for_month(m: int) -> String:
@@ -43,6 +56,7 @@ func save_game() -> void:
 	var data := forest.to_save()
 	data["unit"] = SAVE_UNIT
 	data["land"] = land.to_save()
+	data["garden"] = garden.to_save()
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
@@ -71,10 +85,15 @@ func load_game() -> void:
 	var md = data.get("market", {})
 	if typeof(md) != TYPE_DICTIONARY:
 		md = {}
+	# 畑の記録がないセーブ(手順 3-1 まで)は、野菜なし・種 0 から
+	var gd = data.get("garden", {})
+	if typeof(gd) != TYPE_DICTIONARY:
+		gd = {}
 	# Godot 3 版(2026-11 より前)のセーブは座標が px。読むときに m に直す
 	if data.get("unit", "px") != SAVE_UNIT:
 		_px_to_m(data, ld)
 	land.from_save(ld)
+	garden.from_save(gd)
 	quests.from_save(qd)
 	market.from_save(md)
 	forest.from_save(data)

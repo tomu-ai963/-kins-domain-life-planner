@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://Main.gd" id="1"]
 [ext_resource type="PackedScene" path="res://Player3D.tscn" id="2"]
@@ -9,6 +9,7 @@
 [ext_resource type="Script" path="res://view/3d/GroundView3D.gd" id="7"]
 [ext_resource type="Script" path="res://view/3d/PickupsView3D.gd" id="8"]
 [ext_resource type="Script" path="res://view/3d/MarketView3D.gd" id="9"]
+[ext_resource type="Script" path="res://view/3d/GardenView3D.gd" id="10"]
 
 [sub_resource type="ProceduralSkyMaterial" id="1"]
 sky_top_color = Color(0.42, 0.62, 0.86, 1)
@@ -45,6 +46,9 @@ script = ExtResource("7")
 
 [node name="Land" type="Node3D" parent="."]
 script = ExtResource("5")
+
+[node name="Garden" type="Node3D" parent="."]
+script = ExtResource("10")
 
 [node name="Quests" type="Node3D" parent="."]
 script = ExtResource("6")

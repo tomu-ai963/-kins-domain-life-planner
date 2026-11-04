@@ -25,6 +25,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_quest_marks()
 			_test_3d_seasons_and_growth()
 			_test_3d_market_and_pickups()
+			_test_3d_garden()
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
@@ -166,6 +167,70 @@ func _test_3d_market_and_pickups() -> void:
 	main._collect_pickups()
 	_check(pickups.get_child_count() == 0 and w.forest.seeds.birch == seeds + 5, "近づくと拾えて、地面から消える")
 
+func _test_3d_garden() -> void:
+	print("畑の野菜")
+	var w = main.world
+	var g = w.garden
+	var hud = main.get_node("HUD")
+	var player = main.get_node("Player")
+	var view: Node3D = main.get_node("Garden")
+	w.forest.today_event = "birds"
+	w.forest.last_day = w.forest.today()
+	w.forest.set_season("autumn")
+	player.global_position = Vector3(1, 0, 1)
+	main._toggle_plot()
+	_check(view.get_child_count() == 0 and main.plot_line() != "", "空きの区画: 野菜はなく、足元の様子が HUD に出る")
+
+	# 区画の上の SPACE は、木を植えずに野菜をまく
+	var trees: int = w.forest.trees.size()
+	g.seeds.radish = 1
+	main._on_plant_tree(main.player_pos())
+	_check(g.crops.size() == 1 and w.forest.trees.size() == trees, "区画の上で SPACE を押すと、木ではなく選んだ野菜をまく")
+	_check(view.get_child_count() == 12, "野菜は 3 列 × 4 株で並ぶ")
+	var small: Vector3 = view.get_child(0).scale
+	main._water()
+	_check(view.get_child_count() == 13, "水をあげると土が濡れた色になる")
+	w.forest.advance_years(3.0)
+	_check(view.get_child_count() == 1 + 12 + 12, "先送りプレビューで、育った姿(実)が見える")
+	w.forest.reset_preview()
+	_check(view.get_child_count() == 13, "プレビューをやめると今日の姿に戻る")
+
+	var c: Dictionary = g.crop_at(main.player_pos())
+	c.sown_day -= 3
+	c.water_days = 4
+	g.changed.emit()
+	_check(view.get_child_count() == 1 + 12 + 12, "収穫できると、株ごとに実が見える")
+	_check(view.get_child(1).scale.x > small.x, "育つと葉が大きくなる")
+	main._harvest()
+	_check(g.produce.radish == 6 and view.get_child_count() == 0, "E で収穫でき、区画は空きに戻る")
+
+	# 市場の画面の行: 持っている野菜だけ売る行が出る
+	var has_row := func(id): return main.shop_rows().any(func(r): return r.id == id)
+	_check(has_row.call("sell_radish") and not has_row.call("sell_garlic"), "持っている野菜だけ、売る行が出る")
+	player.global_position = Vector3(0, 0, 54)
+	main._toggle_shop()
+	var money: int = w.market.money
+	main._on_shop_action("sell_radish")
+	_check(w.market.money == money + 240 and g.produce.radish == 0, "画面から野菜を売れる")
+	_check(not has_row.call("sell_radish"), "売り切ると、売る行が消える")
+	main._on_shop_action("garlic_seed")
+	_check(g.seeds.garlic == 1 and w.market.money == money + 240 - 250, "画面から野菜の種を買える")
+	main._on_shop_action("close")
+
+	# Z は足元の野菜を先に抜く。区画を取り消せないこと
+	player.global_position = Vector3(1, 0, 1)
+	g.seeds.garlic = 1
+	main.selected_crop = "garlic"
+	main._on_plant_tree(main.player_pos())
+	_check(g.crop_at(main.player_pos()).kind == "garlic", "選んだ野菜(ニンニク)をまける")
+	main._toggle_plot()
+	_check(w.land.plot_at(main.player_pos()) != null, "野菜が育っている区画は F で取り消せない")
+	main._remove()
+	_check(g.crops.is_empty(), "Z で足元の野菜を抜ける")
+	main._toggle_plot()
+	_check(w.land.plot_at(main.player_pos()) == null, "空きになれば F で取り消せる")
+	_check(hud.is_shop_open() == false, "市場の画面は閉じたまま")
+
 func _test_2d_still_works() -> void:
 	print("2D のシーン(比較用)")
 	_check(main is Node2D, "Main2D.tscn は 2D")
@@ -174,3 +239,9 @@ func _test_2d_still_works() -> void:
 	main.world.forest.seeds["birch"] = 1
 	main._on_plant_tree(main.player_pos())
 	_check(main.world.forest.trees.size() == 1 and main.world.forest.trees[0].pos == Vector2(10, -5), "2D でも植えられる")
+	main.world.forest.set_season("autumn")
+	main.get_node("Player").global_position = Vector2(-400, -200)
+	main._toggle_plot()
+	main.world.garden.seeds.radish = 1
+	main._on_plant_tree(main.player_pos())
+	_check(main.world.garden.crops.size() == 1, "2D でも区画に野菜をまける")

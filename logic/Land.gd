@@ -12,9 +12,18 @@ const POND_RADIUS := 4.0        # 池 半径 4m
 var plots := []                 # 区画の中心 [Vector2]
 var pond = null                 # 池の中心 Vector2。なければ null(池はひとつまで)
 
+# pos を含む 3m マスの中心
+func plot_center(pos: Vector2) -> Vector2:
+	return Vector2((floorf(pos.x / PLOT_SIZE) + 0.5) * PLOT_SIZE, (floorf(pos.y / PLOT_SIZE) + 0.5) * PLOT_SIZE)
+
+# 足元の区画の中心。区画がなければ null
+func plot_at(pos: Vector2):
+	var c := plot_center(pos)
+	return c if c in plots else null
+
 # 足元の 3m マスに区画を置く / すでにあれば取り消す。結果: placed / removed / outside
 func toggle_plot(pos: Vector2) -> String:
-	var c := Vector2((floorf(pos.x / PLOT_SIZE) + 0.5) * PLOT_SIZE, (floorf(pos.y / PLOT_SIZE) + 0.5) * PLOT_SIZE)
+	var c := plot_center(pos)
 	for i in range(plots.size()):
 		if plots[i] == c:
 			plots.remove_at(i)

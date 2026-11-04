@@ -1,7 +1,7 @@
 extends Node3D
 
 # ── 菜園の区画と池の 3D 表示(土の箱と水面の円盤) ────────────────────
-# 状態とルールは logic/Land.gd(座標は m)。ここは読んで形を置くだけ
+# 状態とルールは logic/Land.gd(座標は m)。ここは読んで形を置くだけ。野菜は GardenView3D
 const Land = preload("res://logic/Land.gd")
 const Look = preload("res://view/3d/Look.gd")
 
