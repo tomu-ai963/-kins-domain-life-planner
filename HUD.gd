@@ -189,6 +189,7 @@ func _inventory_lines() -> PackedStringArray:
 		"種: 白樺 %d  リンゴ %d  シベリア杉 %d" % [seeds.birch, seeds.apple, seeds.cedar],
 		"苗木: 白樺 %d  リンゴ %d  シベリア杉 %d" % [sap.birch, sap.apple, sap.cedar],
 		"野菜の種: " + _main.crop_seeds_line(),
+		"苗: " + _main.seedlings_line(),
 		"収穫物: " + _main.produce_line(),
 		"植えた木: %d本   いる場所: X %.0fm  Y %.0fm" % [_trees.trees.size(), pos.x, pos.y],
 	])
@@ -199,8 +200,8 @@ func _help_lines() -> PackedStringArray:
 		"─ 操作 ─",
 		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)",
 		"[1]白樺 [2]リンゴ [3]シベリア杉 [V]種/苗木",
-		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク",
+		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク [9]トマト",
 		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る",
-		"F:菜園  P:池  H:小屋",
+		"F:菜園  P:池  H:小屋(完成したら苗づくり)",
 		"T:+1年  G:+10年  R:今日に戻す(未来をプレビュー)",
 	])

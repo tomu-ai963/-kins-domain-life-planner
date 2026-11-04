@@ -7,7 +7,7 @@ const PX := 40.0  # 2D 表示の 1m
 
 var cabin: Cabin
 
-func setup(c: Cabin) -> void:
+func setup(c: Cabin, _seedlings = null) -> void:  # 窓辺の鉢は 2D では描かない
 	cabin = c
 	cabin.changed.connect(queue_redraw)
 	queue_redraw()

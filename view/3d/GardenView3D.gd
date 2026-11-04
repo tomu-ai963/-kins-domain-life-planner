@@ -14,6 +14,7 @@ const MIN_SCALE := 0.2 # まいたばかりの芽の大きさ(育ちきった葉
 # size: 育ちきった葉の幅・高さ・奥行き(m) / ball: 丸い葉(false なら細長い円錐)
 # ripe / ripe_size: 収穫できるときに見える実の色と大きさ
 const LOOKS := {
+	"tomato": {"leaf": Color(0.26, 0.52, 0.20), "size": Vector3(0.45, 0.80, 0.45), "ball": false, "ripe": Color(0.88, 0.14, 0.10), "ripe_size": Vector3(0.20, 0.20, 0.20)},
 	"radish": {"leaf": Color(0.35, 0.62, 0.25), "size": Vector3(0.35, 0.22, 0.35), "ball": true, "ripe": Color(0.85, 0.15, 0.32), "ripe_size": Vector3(0.20, 0.16, 0.20)},
 	"carrot": {"leaf": Color(0.30, 0.60, 0.22), "size": Vector3(0.25, 0.45, 0.25), "ball": false, "ripe": Color(0.95, 0.50, 0.10), "ripe_size": Vector3(0.14, 0.20, 0.14)},
 	"cucumber": {"leaf": Color(0.22, 0.50, 0.20), "size": Vector3(0.50, 0.60, 0.50), "ball": true, "ripe": Color(0.62, 0.82, 0.28), "ripe_size": Vector3(0.12, 0.30, 0.12)},

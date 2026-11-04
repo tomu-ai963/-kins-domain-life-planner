@@ -96,6 +96,13 @@ func set_season(s: String) -> void:
 	season = s
 	changed.emit()
 
+# 今の季節に植えられるか。冬は地面が凍っているので苗木は植えられない。
+# 種は、雪の上にまく方法がある白樺だけ
+func can_plant(species: String, form: String) -> bool:
+	if season != "winter":
+		return true
+	return form == "seed" and species == "birch"
+
 # 種(form = "seed")か苗木("sapling")を 1 つ使って植える。持っていなければ植えずに false
 func add_tree(pos: Vector2, species: String, form := "seed") -> bool:
 	var stock: Dictionary = saplings if form == "sapling" else seeds

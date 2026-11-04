@@ -12,15 +12,18 @@ signal changed  # 見た目に関わる状態が変わった
 signal dirty    # セーブに入る状態が変わった
 
 const DRY_GROWTH := 0.5  # 水をやらなかった日の育ち(1 日あたり)
+const SEEDLING_HEAD_START := 2.0  # 苗から植えると、これだけ育った状態から始まる(日)
 
-# seasons: まける季節 / grow_days: 毎日水をやったときの日数(現実の日数から縮めたもの)
+# seasons: まける季節(苗を植えられる季節) / grow_days: 毎日水をやったときの日数(現実の日数から縮めたもの)
 # yield_kg: 1 区画(9m²)の収量。現実の 1m² あたりの目安 × 9
+# seedling_only: 苗からしか育てない(小屋で苗にする) / hardy: 霜で枯れない
 const CROPS := {
+	"tomato": {"name": "トマト", "seed_name": "トマトの種", "seasons": ["spring", "summer"], "grow_days": 7, "yield_kg": 30, "seedling_only": true},  # 現実 定植から約 60 日
 	"radish": {"name": "ラディッシュ", "seed_name": "ラディッシュの種", "seasons": ["spring", "autumn"], "grow_days": 3, "yield_kg": 6},  # 現実 約 25 日
 	"carrot": {"name": "にんじん", "seed_name": "にんじんの種", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 20},     # 現実 約 90 日
 	"cucumber": {"name": "きゅうり", "seed_name": "きゅうりの種", "seasons": ["spring", "summer"], "grow_days": 5, "yield_kg": 18},  # 現実 約 55 日
 	"potato": {"name": "じゃがいも", "seed_name": "じゃがいもの種いも", "seasons": ["spring"], "grow_days": 7, "yield_kg": 25},       # 現実 約 90 日
-	"garlic": {"name": "ニンニク", "seed_name": "ニンニクの種球", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 5},             # 現実 約 9 か月(秋に植えて翌夏)
+	"garlic": {"name": "ニンニク", "seed_name": "ニンニクの種球", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 5, "hardy": true},  # 現実 約 9 か月(秋に植えて翌夏)
 }
 
 var land: Land      # GameWorld が設定する
@@ -30,6 +33,7 @@ var crops := []    # [{pos: Vector2(区画の中心), kind, sown_day: int, water
 var seeds := {}    # 野菜ごとの種の数(1 つで 1 区画ぶん)
 var produce := {}  # 野菜ごとの収穫物(kg)。市場で売る
 var last_harvest_kg := 0  # 直前の収穫の量(文言用)
+var last_frost := {}      # 今日の確認で霜で枯れた区画の数 {kind: 数}(知らせる用・保存しない)
 
 func _init() -> void:
 	seeds = _zero_counts()
@@ -58,8 +62,9 @@ func crop_at(pos: Vector2) -> Dictionary:
 			return crop
 	return {}
 
-# 足元の区画に種をまく。結果: sown / no_plot / occupied / not_season / no_seed
-func sow(pos: Vector2, kind: String) -> String:
+# 足元の区画に種をまく(from_seedling なら苗を植える。種は使わない。苗の数は Seedlings が持つ)
+# 結果: sown / no_plot / occupied / not_season / needs_seedling / no_seed
+func sow(pos: Vector2, kind: String, from_seedling := false) -> String:
 	var c = land.plot_at(pos)
 	if c == null:
 		return "no_plot"
@@ -67,10 +72,16 @@ func sow(pos: Vector2, kind: String) -> String:
 		return "occupied"
 	if not (forest.season in CROPS[kind].seasons):
 		return "not_season"
-	if int(seeds.get(kind, 0)) <= 0:
-		return "no_seed"
-	seeds[kind] -= 1
-	crops.append({"pos": c, "kind": kind, "sown_day": day_number(), "water_days": 0, "last_watered": ""})
+	if not from_seedling:
+		if CROPS[kind].get("seedling_only", false):
+			return "needs_seedling"
+		if int(seeds.get(kind, 0)) <= 0:
+			return "no_seed"
+		seeds[kind] -= 1
+	crops.append({
+		"pos": c, "kind": kind, "sown_day": day_number(), "water_days": 0, "last_watered": "",
+		"head": SEEDLING_HEAD_START if from_seedling else 0.0,
+	})
 	# 雨の日は一日中降っている扱い。あとからまいた区画も水やり済みにする
 	if forest.last_day == forest.today() and forest.today_event == "rain":
 		_water(crops[-1])
@@ -145,7 +156,7 @@ func toggle_plot(pos: Vector2) -> String:
 func growth_days(c: Dictionary) -> float:
 	var elapsed: int = day_number() - int(c.sown_day)
 	var wet: int = int(c.water_days) - (1 if watered_today(c) else 0)
-	return elapsed * DRY_GROWTH + wet * (1.0 - DRY_GROWTH)
+	return elapsed * DRY_GROWTH + wet * (1.0 - DRY_GROWTH) + float(c.get("head", 0.0))
 
 func is_ripe(c: Dictionary) -> bool:
 	return growth_days(c) >= float(CROPS[c.kind].grow_days)
@@ -158,13 +169,45 @@ func days_left(c: Dictionary) -> int:
 func growth_ratio(c: Dictionary) -> float:
 	return clampf((growth_days(c) + forest.time_offset_years) / float(CROPS[c.kind].grow_days), 0.0, 1.0)
 
+# 霜(日付が変わったときに呼ぶ): 冬を迎えた野菜は枯れる。枯れた数を last_frost に残す。
+# 閉じているあいだに冬が来て過ぎた場合も枯れている。ニンニクは霜に強い
+func apply_frost() -> void:
+	last_frost = {}
+	var today: int = day_number()
+	for i in range(crops.size() - 1, -1, -1):
+		var c: Dictionary = crops[i]
+		if CROPS[c.kind].get("hardy", false):
+			continue
+		if forest.season == "winter" or _winter_between(int(c.sown_day), today):
+			last_frost[c.kind] = int(last_frost.get(c.kind, 0)) + 1
+			crops.remove_at(i)
+	if not last_frost.is_empty():
+		_commit()
+
+# from から to の前の日までに、冬の日(12〜2 月)があるか
+func _winter_between(from: int, to: int) -> bool:
+	for d in range(from, to):
+		var month := int(Forest.date_of_day(d).substr(5, 2))
+		if month == 12 or month <= 2:
+			return true
+	return false
+
+# 霜が近いか(11 月 24 日から月末まで。霜に弱い野菜が畑にあるときだけ)。date は YYYY-MM-DD
+func frost_is_near(date: String) -> bool:
+	if int(date.substr(5, 2)) != 11 or int(date.substr(8, 2)) < 24:
+		return false
+	for c in crops:
+		if not CROPS[c.kind].get("hardy", false):
+			return true
+	return false
+
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
 	var list := []
 	for c in crops:
 		list.append({
 			"x": c.pos.x, "y": c.pos.y, "kind": c.kind, "sown_day": c.sown_day,
-			"water_days": c.water_days, "last_watered": c.last_watered,
+			"water_days": c.water_days, "last_watered": c.last_watered, "head": c.get("head", 0.0),
 		})
 	return {"crops": list, "seeds": seeds, "produce": produce}
 
@@ -183,5 +226,6 @@ func from_save(d: Dictionary) -> void:
 				"sown_day": int(c.sown_day),
 				"water_days": int(c.get("water_days", 0)),
 				"last_watered": str(c.get("last_watered", "")),
+				"head": float(c.get("head", 0.0)),
 			})
 	changed.emit()

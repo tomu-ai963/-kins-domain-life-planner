@@ -3,8 +3,10 @@ extends Node3D
 # ── 小屋の 3D 表示 ─────────────────────────────────────────
 # 状態とルールは logic/Cabin.gd。ここは読んで形を置くだけ。
 # 場所を決めた → 杭と縄 / 基礎 → 土台の角材と床 / 壁 → 作業のたびに高くなる / 屋根 → 垂木 → 屋根とドア。
-# 壁が建ったら歩いて通り抜けられないように当たり判定を付ける。南(カメラの側)がドア
+# 壁が建ったら歩いて通り抜けられないように当たり判定を付ける。南(カメラの側)がドア。
+# 苗づくりの鉢(logic/Seedlings.gd)は、見えるようにドアの東の棚に並べる
 const Cabin = preload("res://logic/Cabin.gd")
+const Seedlings = preload("res://logic/Seedlings.gd")
 const Look = preload("res://view/3d/Look.gd")
 
 const WALL_H := 2.2       # 壁の高さ(m)
@@ -16,7 +18,11 @@ const ROOF_H := 1.3       # 屋根の高さ(m)
 const ROOF_OVER := 0.3    # 屋根のひさし(m)
 
 var cabin: Cabin
+var seedlings: Seedlings
 var _box := BoxMesh.new()
+var _ball := SphereMesh.new()
+var _pot := Look.mat(Color(0.70, 0.36, 0.20))
+var _sprout := Look.mat(Color(0.30, 0.68, 0.24))
 var _stake := Look.mat(Color(0.75, 0.62, 0.42))
 var _rope := Look.mat(Color(0.95, 0.90, 0.70), true)
 var _sill := Look.mat(Color(0.36, 0.24, 0.14))
@@ -27,9 +33,13 @@ var _roof := Look.mat(Color(0.38, 0.28, 0.24))
 var _door := Look.mat(Color(0.30, 0.18, 0.10))
 var _window := Look.mat(Color(0.55, 0.78, 0.92))
 
-func setup(c: Cabin) -> void:
+func setup(c: Cabin, s: Seedlings = null) -> void:
 	cabin = c
+	seedlings = s
 	cabin.changed.connect(_rebuild)
+	if seedlings != null:
+		seedlings.changed.connect(_rebuild)
+		seedlings.forest.changed.connect(_rebuild)  # 日付が変わると苗が育つ
 	_rebuild()
 
 func _piece(parent: Node3D, m: Material, pos: Vector3, scl: Vector3) -> void:
@@ -55,8 +65,21 @@ func _rebuild() -> void:
 		_collider(spot)
 	if cabin.is_complete():
 		_roof_full(spot)
+		_pots(spot)
 	elif cabin.stage == 2 and cabin.days_done >= 1:
 		_rafters(spot)
+
+# 窓辺の鉢: ドアの東に棚を置き、鉢と芽を並べる。芽は育つと大きくなる
+func _pots(spot: Node3D) -> void:
+	if seedlings == null or seedlings.pots.is_empty():
+		return
+	var z: float = Cabin.DEPTH * 0.5 + WALL_T * 0.5 + 0.2
+	_piece(spot, _sill, Vector3(1.2, 0.3, z), Vector3(1.4, 0.06, 0.35))
+	for i in range(seedlings.pots.size()):
+		var x: float = 0.65 + i * 0.22
+		_piece(spot, _pot, Vector3(x, 0.4, z), Vector3(0.16, 0.16, 0.16))
+		var s: float = lerpf(0.06, 0.26, seedlings.growth_ratio(seedlings.pots[i]))
+		spot.add_child(Look.mesh_node(_ball, _sprout, Vector3(x, 0.48 + s * 0.5, z), Vector3(s, s, s)))
 
 # 場所を決めただけ: 四隅の杭と縄
 func _marks(spot: Node3D) -> void:

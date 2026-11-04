@@ -18,7 +18,7 @@ var selected_form := "seed"   # V で種 ⇄ 苗木
 var selected_crop := "radish" # 4〜8 で選ぶ。区画の上で SPACE を押すとまく
 
 # 野菜を選ぶキー(HUD の並びもこの順)
-const CROP_KEYS := {KEY_4: "radish", KEY_5: "carrot", KEY_6: "cucumber", KEY_7: "potato", KEY_8: "garlic"}
+const CROP_KEYS := {KEY_4: "radish", KEY_5: "carrot", KEY_6: "cucumber", KEY_7: "potato", KEY_8: "garlic", KEY_9: "tomato"}
 
 var _season_timer := 0.0
 var _fell_pending := {}      # Z を 1 回押して確認中の木(Forest.trees の要素)
@@ -33,7 +33,7 @@ func _ready() -> void:
 	$Land.setup(world.land)
 	$Garden.setup(world.garden)
 	$Pond.setup(world.pond)
-	$Cabin.setup(world.cabin)
+	$Cabin.setup(world.cabin, world.seedlings)
 	$Quests.setup(world.quests)
 	$Trees.setup(world.forest)
 	$Pickups.setup(world.forest)
@@ -65,6 +65,11 @@ func _check_new_day() -> void:
 		lines.append("育った木の根元に種が落ちている(%dか所)" % f.pickups.size())
 	for sp in f.last_failed:
 		lines.append("%sの種 %d粒は芽が出なかった" % [f.SPECIES[sp].name, f.last_failed[sp]])
+	var g := world.garden
+	for kind in g.last_frost:
+		lines.append("霜で%sが枯れた(%d区画)" % [g.CROPS[kind].name, g.last_frost[kind]])
+	if g.frost_is_near(f.today()):
+		lines.append("もうすぐ霜が降りる(12月)。ニンニク以外の野菜は枯れるので、早めに収穫を")
 	var pond := world.pond
 	if pond.last_gain > 0:
 		lines.append("雨で池に水がたまった(%d%%)" % pond.water)
@@ -157,6 +162,9 @@ func _on_plant_tree(pos: Vector2) -> void:
 	if world.cabin.covers(pos):
 		$HUD.show_message("小屋の場所には植えられない")
 		return
+	if not world.forest.can_plant(selected_species, selected_form):
+		$HUD.show_message("冬は地面が凍っていて植えられない(白樺の種だけは雪の上にまける)", 5.0)
+		return
 	if not world.forest.add_tree(pos, selected_species, selected_form):
 		$HUD.show_message("%sの%sがない(市場で買える)" % [world.forest.SPECIES[selected_species].name, FORM_NAMES[selected_form]])
 		return
@@ -169,12 +177,15 @@ func selected_name() -> String:
 	return world.forest.SPECIES[selected_species].name + "の" + FORM_NAMES[selected_form]
 
 # ── 小屋 ──────────────────────────────────────────────────
-# H: まだ場所がなければ足元に決める。決まっていれば今日の作業をする
+# H: まだ場所がなければ足元に決める。決まっていれば今日の作業をする。完成していれば苗づくり
 func _cabin_action() -> void:
 	var c := world.cabin
 	var pos := player_pos()
 	if c.site == null:
 		$HUD.show_message(CABIN_PLACE_MESSAGES[c.place(pos)], 5.0)
+		return
+	if c.is_complete():
+		_seedling_action(pos)
 		return
 	var s: Dictionary = c.current_stage()
 	match c.work(pos):
@@ -183,9 +194,7 @@ func _cabin_action() -> void:
 		"stage_done":
 			$HUD.show_message("%sができた(丸太 -%d本)。明日から%s" % [CABIN_STAGE_NAMES[s.id], s.logs_per_day, CABIN_STAGE_NAMES[c.current_stage().id]], 5.0)
 		"finished":
-			$HUD.show_message("小屋が建った", 8.0)
-		"complete":
-			$HUD.show_message("小屋はもう建っている")
+			$HUD.show_message("小屋が建った。窓辺で苗を育てられる(トマト [9] か きゅうり [6] を選んで H)", 8.0)
 		"far":
 			$HUD.show_message("小屋の場所まで行って作業する(%.0fm以内)" % c.REACH)
 		"inside":
@@ -195,13 +204,38 @@ func _cabin_action() -> void:
 		"no_wood":
 			$HUD.show_message("丸太が足りない(%d本 必要。市場で買うか、育った木を Z で伐る)" % s.logs_per_day, 5.0)
 
+# 完成した小屋で H: 育った苗を受け取る → 世話をする → 種をまく
+func _seedling_action(pos: Vector2) -> void:
+	var sl := world.seedlings
+	var crop: Dictionary = world.garden.CROPS[selected_crop]
+	match sl.act(pos, selected_crop):
+		"collected":
+			$HUD.show_message("苗が%d鉢育った(春に畑へ植えるか、市場で売れる)" % sl.last_count, 5.0)
+		"tended":
+			$HUD.show_message("苗の世話をした(%d鉢)" % sl.last_count)
+		"sown":
+			$HUD.show_message("%sの種を鉢にまいた(%d/%d鉢。毎日世話をすれば%d日で苗になる)" % [crop.name, sl.pots.size(), sl.POTS, sl.GROW_DAYS], 5.0)
+		"far":
+			$HUD.show_message("小屋まで行って作業する(%.0fm以内)" % world.cabin.REACH)
+		"not_seedling":
+			$HUD.show_message("苗にできるのはトマト [9] と きゅうり [6]")
+		"full":
+			$HUD.show_message("窓辺はいっぱい(%d鉢)。今日の世話は済んだ" % sl.POTS)
+		"no_seed":
+			$HUD.show_message("%sがない(市場で買える)" % crop.seed_name)
+
 # HUD に出す、小屋の 1 行
 func cabin_line() -> String:
 	var c := world.cabin
 	if c.site == null:
 		return "小屋: H で足元に場所を決める(丸太%d本・%d日)" % [c.total_logs(), c.total_days()]
 	if c.is_complete():
-		return "小屋: 完成した"
+		var sl := world.seedlings
+		if sl.pots.is_empty():
+			return "小屋: 完成(H で苗づくり)"
+		var left: int = sl.days_left()
+		var todo := "H で受け取る" if left == 0 else ("H で世話" if sl.needs_care() else "世話は済んだ")
+		return "小屋: 苗 %d/%d鉢 あと%d日(%s)" % [sl.pots.size(), sl.POTS, left, todo]
 	var s: Dictionary = c.current_stage()
 	var today := "今日の作業は済んだ" if c.worked_today() else "H で作業・丸太%d本" % s.logs_per_day
 	return "小屋: %s %d/%d日(%s)" % [CABIN_STAGE_NAMES[s.id], c.days_done, s.days, today]
@@ -237,10 +271,17 @@ func crop_seasons(kind: String) -> String:
 
 func _sow(pos: Vector2) -> void:
 	var g := world.garden
+	var sl := world.seedlings
 	var crop: Dictionary = g.CROPS[selected_crop]
-	match g.sow(pos, selected_crop):
+	# 育った苗があれば、種より先に苗を使う
+	var from_seedling: bool = int(sl.ready.get(selected_crop, 0)) > 0
+	var result: String = sl.transplant(pos, selected_crop) if from_seedling else g.sow(pos, selected_crop)
+	match result:
 		"sown":
-			$HUD.show_message("%sをまいた(毎日水をやれば%d日で収穫できる)" % [crop.name, crop.grow_days], 5.0)
+			var verb := "の苗を植えた" if from_seedling else "をまいた"
+			$HUD.show_message("%s%s(毎日水をやれば%d日で収穫できる)" % [crop.name, verb, g.days_left(g.crop_at(pos))], 5.0)
+		"needs_seedling":
+			$HUD.show_message("%sは苗から育てる(完成した小屋で H を押して鉢にまく)" % crop.name, 5.0)
 		"occupied":
 			$HUD.show_message("この区画にはもう%sが育っている" % g.CROPS[g.crop_at(pos).kind].name)
 		"not_season":
@@ -253,9 +294,12 @@ func selection_line() -> String:
 	var f := world.forest
 	var stock: Dictionary = f.saplings if selected_form == "sapling" else f.seeds
 	var crop: Dictionary = world.garden.CROPS[selected_crop]
-	return "植える: %s %d   畑にまく: %s %d(%sにまける・%d日で育つ)" % [
+	var seedlings := ""
+	if selected_crop in world.seedlings.SEEDLING_CROPS:
+		seedlings = "・苗 %d" % world.seedlings.ready[selected_crop]
+	return "植える: %s %d   畑にまく: %s 種 %d%s(%sにまける・%d日で育つ)" % [
 		selected_name(), stock[selected_species],
-		crop.name, world.garden.seeds[selected_crop], crop_seasons(selected_crop), crop.grow_days,
+		crop.name, world.garden.seeds[selected_crop], seedlings, crop_seasons(selected_crop), crop.grow_days,
 	]
 
 # HUD に出す、足元の区画の様子。区画の上でなければ ""
@@ -273,37 +317,61 @@ func plot_line() -> String:
 	var water := "水やり済み" if g.watered_today(c) else "Q で水やり"
 	return "足元の区画: %s あと%d日(%s)" % [crop_name, g.days_left(c), water]
 
-# HUD に出す、持っている野菜の種の 1 行
+# n 個ごとに折り返して並べる(市場の画面と重ならない幅にするため)
+static func _rows(parts: PackedStringArray, n: int) -> String:
+	var rows := PackedStringArray()
+	for i in range(0, parts.size(), n):
+		rows.append("  ".join(parts.slice(i, i + n)))
+	return "\n    ".join(rows)
+
+# HUD に出す、持っている野菜の種
 func crop_seeds_line() -> String:
 	var parts := PackedStringArray()
 	for key in CROP_KEYS:
 		var kind: String = CROP_KEYS[key]
 		parts.append("%s %d" % [world.garden.CROPS[kind].name, world.garden.seeds[kind]])
-	return "  ".join(parts)
+	return _rows(parts, 3)
 
-# HUD に出す、持っている収穫物の 1 行(持っているものだけ)
+# HUD に出す、持っている収穫物(持っているものだけ。苗は seedlings_line)
 func produce_line() -> String:
 	var parts := PackedStringArray()
 	for item in world.market.SELL_PRICES:
 		var n := produce_count(item)
-		if n > 0:
+		if n > 0 and not item.begins_with("seedling_"):
 			parts.append("%s %d%s" % [produce_name(item), n, produce_unit(item)])
-	return "  ".join(parts) if not parts.is_empty() else "なし"
+	return _rows(parts, 4) if not parts.is_empty() else "なし"
+
+# HUD に出す、育った苗の 1 行
+func seedlings_line() -> String:
+	var ready: Dictionary = world.seedlings.ready
+	return "トマト %d鉢  きゅうり %d鉢" % [ready.tomato, ready.cucumber]
 
 func produce_name(item: String) -> String:
-	return "リンゴ" if item == "apple" else world.garden.CROPS[item].name
+	if item == "apple":
+		return "リンゴ"
+	if item.begins_with("seedling_"):
+		return world.garden.CROPS[item.trim_prefix("seedling_")].name + "の苗"
+	return world.garden.CROPS[item].name
 
 func produce_unit(item: String) -> String:
-	return "個" if item == "apple" else "kg"
+	if item == "apple":
+		return "個"
+	return "鉢" if item.begins_with("seedling_") else "kg"
 
 func produce_count(item: String) -> int:
-	return int(world.forest.produce.apple) if item == "apple" else int(world.garden.produce[item])
+	if item == "apple":
+		return int(world.forest.produce.apple)
+	if item.begins_with("seedling_"):
+		return int(world.seedlings.ready[item.trim_prefix("seedling_")])
+	return int(world.garden.produce[item])
 
 # ── 市場 ──────────────────────────────────────────────────
 # 市場の品の表示名。例: 「白樺の種(10粒)」「リンゴの苗木(樹齢3年)」「じゃがいもの種いも(春にまく)」「丸太(5本)」
 func good_name(g: Dictionary) -> String:
 	if g.form == "material":
 		return "丸太(%d本)" % g.amount
+	if g.species == "tomato":
+		return "%s(小屋で苗にする)" % world.garden.CROPS.tomato.seed_name
 	if g.form == "crop_seed":
 		return "%s(%sにまく)" % [world.garden.CROPS[g.species].seed_name, crop_seasons(g.species)]
 	var sp: Dictionary = world.forest.SPECIES[g.species]

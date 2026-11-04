@@ -266,6 +266,61 @@ func _test_3d_cabin() -> void:
 	var walls: MeshInstance3D = view.get_child(0).get_child(5)
 	_check(walls.scale.y > 2.0, "できあがりの壁は 2m を超える")
 	_check(view.get_child(0).has_node("Collider"), "壁ができると当たり判定が付く")
+	_check(main.cabin_line().contains("苗づくり"), "完成すると苗づくりの案内が出る")
+
+	# 苗づくりと、窓辺の鉢の見た目
+	var sl = main.world.seedlings
+	var g = main.world.garden
+	var done: int = pieces.call()
+	main.selected_crop = "tomato"
+	g.seeds.tomato = 1
+	main._cabin_action()
+	_check(sl.pots.size() == 1 and pieces.call() == done + 3, "H で鉢にまくと、棚と鉢と芽が見える")
+	_check(main.cabin_line().contains("あと5日") and main.cabin_line().contains("世話は済んだ"), "HUD に残りの日数が出る")
+	sl.pots[0].sown_day -= 5
+	sl.pots[0].water_days = 6
+	sl.changed.emit()
+	_check(main.cabin_line().contains("H で受け取る"), "育つと受け取る案内が出る")
+	main._cabin_action()
+	_check(sl.ready.tomato == 1 and pieces.call() == done, "H で受け取ると、鉢が片づく")
+	main.selected_crop = "radish"
+
+	# 苗を売る行と、畑に植える
+	_check(main.shop_rows().any(func(r): return r.id == "sell_seedling_tomato" and r.text.contains("トマトの苗 1鉢")), "育った苗は市場で売れる")
+	main.world.forest.set_season("spring")
+	player.global_position = Vector3(30, 0, -30)
+	main._toggle_plot()
+	main.selected_crop = "tomato"
+	main._on_plant_tree(main.player_pos())
+	_check(sl.ready.tomato == 0 and g.crop_at(main.player_pos()).kind == "tomato", "苗があれば、SPACE で苗を植える")
+	_check(g.days_left(g.crop_at(main.player_pos())) == 5, "苗から植えると 2 日早い")
+	main._on_plant_tree(main.player_pos())
+	g.remove_at(main.player_pos())
+	main._on_plant_tree(main.player_pos())
+	_check(g.crops.is_empty() and main.get_node("HUD")._message.contains("苗から育てる"), "苗がないとトマトはまけない")
+	main._toggle_plot()
+	main.selected_crop = "radish"
+
+	# 冬の地面
+	main.world.forest.set_season("winter")
+	var f = main.world.forest
+	f.saplings.birch = 1
+	f.seeds.apple = 1
+	var trees_before: int = f.trees.size()
+	main.selected_form = "sapling"
+	main.selected_species = "birch"
+	main._on_plant_tree(Vector2(40, -40))
+	_check(f.trees.size() == trees_before and main.get_node("HUD")._message.contains("凍って"), "冬は苗木を植えられない")
+	main.selected_form = "seed"
+	main.selected_species = "apple"
+	main._on_plant_tree(Vector2(40, -40))
+	_check(f.trees.size() == trees_before and f.seeds.apple == 1, "冬はリンゴの種をまけない")
+	f.seeds.birch = 1
+	main.selected_species = "birch"
+	main._on_plant_tree(Vector2(40, -40))
+	_check(f.trees.size() == trees_before + 1, "冬でも白樺の種はまける")
+	f.remove_nearest(Vector2(40, -40), 2.0)
+	f.set_season("autumn")
 	player.global_position = Vector3(20, 0, 20)
 	main.world.forest.seeds.birch = 3
 	var n: int = main.world.forest.trees.size()

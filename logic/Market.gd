@@ -6,6 +6,7 @@ extends RefCounted
 const Forest = preload("res://logic/Forest.gd")
 const Garden = preload("res://logic/Garden.gd")
 const Cabin = preload("res://logic/Cabin.gd")
+const Seedlings = preload("res://logic/Seedlings.gd")
 
 signal changed
 
@@ -26,15 +27,21 @@ const GOODS := [
 	{"id": "cucumber_seed", "species": "cucumber", "form": "crop_seed", "amount": 1, "price": 60},
 	{"id": "potato_seed", "species": "potato", "form": "crop_seed", "amount": 1, "price": 150},
 	{"id": "garlic_seed", "species": "garlic", "form": "crop_seed", "amount": 1, "price": 250},
+	{"id": "tomato_seed", "species": "tomato", "form": "crop_seed", "amount": 1, "price": 80},
 	{"id": "logs", "species": "log", "form": "material", "amount": 5, "price": 1500},
 ]
 # 買い取り値(リンゴは 1 個あたり、野菜は 1kg あたりの ₽)。店頭の値段の半分くらい
-const SELL_PRICES := {"apple": 15, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120}
+# seedling_ は小屋で育てた苗(1 鉢 = 1 区画ぶん)の買い取り値
+const SELL_PRICES := {
+	"apple": 15, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
+	"seedling_tomato": 150, "seedling_cucumber": 120,
+}
 
 var money := INITIAL_MONEY
 var forest: Forest  # GameWorld が設定する(木の種・苗木・リンゴの持ち物は Forest にある)
 var garden: Garden  # GameWorld が設定する(野菜の種・収穫物の持ち物は Garden にある)
 var cabin: Cabin    # GameWorld が設定する(丸太の持ち物は Cabin にある)
+var seedlings: Seedlings  # GameWorld が設定する(苗の持ち物は Seedlings にある)
 
 func is_near(pos: Vector2) -> bool:
 	return pos.distance_to(POS) <= REACH
@@ -68,11 +75,15 @@ func buy(id: String) -> String:
 # 収穫物 item を全部売る。売れた金額を返す(持っていなければ 0)
 func sell_all(item: String) -> int:
 	var pile: Dictionary = garden.produce if garden.produce.has(item) else forest.produce
-	var n := int(pile.get(item, 0))
+	var key := item
+	if item.begins_with("seedling_"):
+		pile = seedlings.ready
+		key = item.trim_prefix("seedling_")
+	var n := int(pile.get(key, 0))
 	if n <= 0 or not SELL_PRICES.has(item):
 		return 0
 	var income: int = n * int(SELL_PRICES[item])
-	pile[item] = 0
+	pile[key] = 0
 	money += income
 	changed.emit()
 	forest.changed.emit()

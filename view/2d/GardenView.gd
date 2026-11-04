@@ -9,6 +9,7 @@ const COLUMNS := 4
 
 const LEAF := Color(0.30, 0.58, 0.22)
 const RIPE := {
+	"tomato": Color(0.88, 0.14, 0.10),
 	"radish": Color(0.85, 0.15, 0.32),
 	"carrot": Color(0.95, 0.50, 0.10),
 	"cucumber": Color(0.62, 0.82, 0.28),

@@ -9,6 +9,7 @@ const Land = preload("res://logic/Land.gd")
 const Garden = preload("res://logic/Garden.gd")
 const Cabin = preload("res://logic/Cabin.gd")
 const Pond = preload("res://logic/Pond.gd")
+const Seedlings = preload("res://logic/Seedlings.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 
@@ -24,6 +25,7 @@ var land := Land.new()
 var garden := Garden.new()
 var cabin := Cabin.new()
 var pond := Pond.new()
+var seedlings := Seedlings.new()
 var quests := Quests.new()
 var market := Market.new()
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
@@ -42,10 +44,15 @@ func _init() -> void:
 	market.forest = forest
 	market.garden = garden
 	market.cabin = cabin
+	market.seedlings = seedlings
+	seedlings.forest = forest
+	seedlings.garden = garden
+	seedlings.cabin = cabin
 	forest.dirty.connect(save_game)
 	garden.dirty.connect(save_game)
 	cabin.dirty.connect(save_game)
 	pond.dirty.connect(save_game)
+	seedlings.dirty.connect(save_game)
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
 # 結果: Garden.toggle_plot の結果か cabin
@@ -63,13 +70,16 @@ func pond_action(pos: Vector2) -> String:
 		return "cabin"
 	return land.toggle_pond(pos)
 
-# 日付が変わっていたら、その日の発見を起こして id を返す(Forest.check_new_day)。雨は畑にも降り、池にたまる
+# 日付が変わっていたら、その日の発見を起こして id を返す(Forest.check_new_day)。
+# 雨は畑にも降り、池にたまる。冬を迎えた野菜は霜で枯れる
 func check_new_day() -> String:
 	var id: String = forest.check_new_day()
+	if id == "":
+		return id
+	garden.apply_frost()
 	if id == "rain":
 		garden.water_all()
-	if id != "":
-		pond.catch_up()
+	pond.catch_up()
 	return id
 
 # 季節は現実の日付から(3-5月=春 / 6-8月=夏 / 9-11月=秋 / 12-2月=冬)
@@ -93,6 +103,7 @@ func save_game() -> void:
 	data["garden"] = garden.to_save()
 	data["cabin"] = cabin.to_save()
 	data["pond"] = pond.to_save()
+	data["seedlings"] = seedlings.to_save()
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
@@ -134,6 +145,10 @@ func load_game() -> void:
 	var pod = data.get("pond", {})
 	if typeof(pod) != TYPE_DICTIONARY:
 		pod = {}
+	# 苗の記録がないセーブ(手順 3-4 まで)は、鉢も苗もなしから
+	var sd = data.get("seedlings", {})
+	if typeof(sd) != TYPE_DICTIONARY:
+		sd = {}
 	# Godot 3 版(2026-11 より前)のセーブは座標が px。読むときに m に直す
 	if data.get("unit", "px") != SAVE_UNIT:
 		_px_to_m(data, ld)
@@ -141,6 +156,7 @@ func load_game() -> void:
 	pond.from_save(pod)
 	garden.from_save(gd)
 	cabin.from_save(cd)
+	seedlings.from_save(sd)
 	quests.from_save(qd)
 	market.from_save(md)
 	forest.from_save(data)
