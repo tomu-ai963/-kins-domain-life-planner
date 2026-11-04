@@ -37,6 +37,7 @@ func _init() -> void:
 	quests.pond = pond
 	pond.forest = forest
 	pond.land = land
+	pond.garden = garden
 	garden.forest = forest
 	garden.land = land
 	cabin.forest = forest

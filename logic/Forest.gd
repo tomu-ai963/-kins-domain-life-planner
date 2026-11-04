@@ -164,6 +164,24 @@ func water_all() -> int:
 		_commit()
 	return n
 
+# center から radius 以内の、まだ今日水をあげていない木の数
+func dry_within(center: Vector2, radius: float) -> int:
+	var n := 0
+	for t in trees:
+		if t.pos.distance_to(center) <= radius and not watered_today(t):
+			n += 1
+	return n
+
+# center から radius 以内の木に、まとめて水をあげる(池から)。あげた本数を返す
+func water_within(center: Vector2, radius: float) -> int:
+	var n := 0
+	for t in trees:
+		if t.pos.distance_to(center) <= radius and _water(t):
+			n += 1
+	if n > 0:
+		_commit()
+	return n
+
 func _water(tree: Dictionary) -> bool:
 	if tree.last_watered == today():
 		return false

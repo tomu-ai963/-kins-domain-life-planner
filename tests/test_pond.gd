@@ -28,6 +28,7 @@ func _initialize() -> void:
 	_test_quest()
 	_test_rain()
 	_test_creatures()
+	_test_water_around()
 	_test_save()
 	_remove_save()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
@@ -204,6 +205,65 @@ func _test_creatures() -> void:
 	w2.pond.catch_up()
 	_check(w2.pond.water == 100 and w2.pond.wet_days() == 28, "30 日留守: 水は満杯、2 回目の雨(28 日前)で半分を超えた")
 	_check(w2.pond.last_arrivals == ["strider", "reed", "dragonfly", "duck"], "30 日留守: 来ていた生き物をまとめて知らせる(秋)")
+
+func _test_water_around() -> void:
+	print("池からまとめて水やり")
+	var w := _world()
+	var p := w.pond
+	var f := w.forest
+	var g := w.garden
+	f.today_event = "birds"
+	f.last_day = f.today()
+	_check(p.water_around(SPOT) == "far", "池がなければ運べない")
+	w.pond_action(SPOT)
+	_check(p.water_around(SPOT) == "far", "掘り終えるまでは運べない")
+	_dug(w)
+	_check(p.water_around(SPOT) == "low", "水がなければ運べない")
+	p.water = 4
+	_check(p.water_around(SPOT) == "low", "水が 5% 未満なら運べない")
+	p.water = 100
+	_check(p.water_around(SPOT) == "nothing" and p.water == 100, "水のいるものがなければ、水は減らない")
+
+	# 20m 以内: 木 2 本と区画 1。外: 木 1 本と区画 1
+	f.saplings = {"birch": 3, "apple": 0, "cedar": 0}
+	f.add_tree(SPOT + Vector2(5, 0), "birch", "sapling")
+	f.add_tree(SPOT + Vector2(0, 19), "birch", "sapling")
+	f.add_tree(SPOT + Vector2(21, 0), "birch", "sapling")
+	var near_plot := SPOT + Vector2(0, -10)
+	var far_plot := SPOT + Vector2(-25, 0)
+	g.seeds.radish = 2
+	w.land.toggle_plot(near_plot)
+	w.land.toggle_plot(far_plot)
+	g.sow(near_plot, "radish")
+	g.sow(far_plot, "radish")
+	_check(p.dry_around() == [1, 2], "20m 以内の、水のいる区画と木を数える")
+	_check(p.water_around(SPOT + Vector2(30, 0)) == "far", "池から離れていると運べない")
+	_check(p.water_around(SPOT + Vector2(5.5, 0)) == "watered", "池のそば(縁から 2m 以内)から運べる")
+	_check(p.last_watered == [1, 2] and p.water == 95, "区画 1・木 2 に水が入り、池の水が 5% 減る")
+	_check(g.watered_today(g.crop_at(near_plot)) and not g.watered_today(g.crop_at(far_plot)), "20m の外の区画には入らない")
+	_check(f.watered_today(f.trees[0]) and f.watered_today(f.trees[1]) and not f.watered_today(f.trees[2]), "20m の外の木には入らない")
+	_check(absf(f.trees[0].bonus_years - 0.5) < 0.001, "木の水やりのボーナスもふつうどおり付く")
+	_check(p.water_around(SPOT) == "nothing" and p.water == 95, "今日はもう水がいらない(水は減らない)")
+	_check(p.dry_around() == [0, 0], "全部済むと数は 0")
+
+	# 収穫できる野菜には運ばない
+	var c: Dictionary = g.crop_at(near_plot)
+	c.sown_day -= 5
+	c.water_days = 6
+	c.last_watered = ""
+	_check(p.dry_around() == [0, 0], "収穫できる野菜は数えない")
+
+	# 冬は凍っていて汲めない
+	f.trees[0].last_watered = ""
+	f.season = "winter"
+	_check(p.water_around(SPOT) == "frozen" and p.water == 95, "冬は凍っていて運べない")
+	f.season = "autumn"
+	_check(p.water_around(SPOT) == "watered" and p.water == 90, "凍っていなければ運べる")
+
+	# 水が半分より減っても、生き物は残る
+	p.wet_since_day = f.day_number() - 20
+	p.water = 10
+	_check(not p.present().is_empty(), "水が減っても、来た生き物はいなくならない")
 
 func _test_save() -> void:
 	print("セーブ")

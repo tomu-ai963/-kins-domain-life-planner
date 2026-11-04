@@ -137,6 +137,13 @@ const POND_MESSAGES := {
 	"done_today": "今日はもう掘った(1日1回)",
 }
 
+# 池からまとめて水をやれないとき(Pond.water_around)の文言
+const POND_WATER_MESSAGES := {
+	"frozen": "池が凍っていて水を汲めない",
+	"low": "池の水が足りない(雨でたまる)",
+	"nothing": "まわりに水のいる木や区画がない",
+}
+
 # 小屋の場所決め(Cabin.place)の結果ごとの文言
 const CABIN_PLACE_MESSAGES := {
 	"placed": "ここに小屋を建てることにした(外から H で作業する。始める前なら Z で取り消せる)",
@@ -248,7 +255,17 @@ func _pond_action() -> void:
 		world.save_game()
 		_check_quests()
 
-# HUD に出す、池の 1 行(小屋と同じ行に並べる)
+# HUD に出す、池のそばでの案内。そばにいなければ ""
+func pond_beside_line() -> String:
+	var p := world.pond
+	if not p.is_beside(player_pos()) or p.is_frozen() or p.water < p.WATER_COST:
+		return ""
+	var dry: Array = p.dry_around()
+	if dry[0] + dry[1] == 0:
+		return ""
+	return "池のそば: Q で 区画 %d・木 %d にまとめて水やり(池の水 -%d%%)" % [dry[0], dry[1], p.WATER_COST]
+
+# HUD に出す、池の 1 行
 func pond_line() -> String:
 	var p := world.pond
 	if not p.is_placed():
@@ -495,6 +512,12 @@ func _water() -> void:
 	var f := world.forest
 	var g := world.garden
 	var pos := player_pos()
+	# 池のそばなら、まわりにまとめて水をやる。できなければ、ふつうの水やりを試す
+	var pond_result: String = world.pond.water_around(pos)
+	if pond_result == "watered":
+		var n: Array = world.pond.last_watered
+		$HUD.show_message("池の水を運んだ(区画 %d・木 %d に水やり。池の水 %d%%)" % [n[0], n[1], world.pond.water], 5.0)
+		return
 	# 足元の区画の野菜を先に。今日もう水をあげていれば、近くの木を見る
 	var crop: String = g.water_at(pos)
 	if crop == "watered":
@@ -504,6 +527,10 @@ func _water() -> void:
 	var result: String = f.water_nearest(pos, REACH)
 	if crop != "none" and result != "watered":
 		$HUD.show_message("もう収穫できる(E)" if crop == "ripe" else "この区画には今日もう水をあげた")
+		return
+	# 足元に何もない池のそば: なぜ運べないかを知らせる
+	if result == "none" and POND_WATER_MESSAGES.has(pond_result):
+		$HUD.show_message(POND_WATER_MESSAGES[pond_result])
 		return
 	var msg: String = WATER_MESSAGES[result]
 	if result == "watered":

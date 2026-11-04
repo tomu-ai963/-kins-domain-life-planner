@@ -110,6 +110,24 @@ func water_all() -> int:
 		_commit()
 	return n
 
+# center から radius 以内の、水がいる区画の数(収穫できる野菜には水はいらない)
+func dry_within(center: Vector2, radius: float) -> int:
+	var n := 0
+	for c in crops:
+		if c.pos.distance_to(center) <= radius and not is_ripe(c) and not watered_today(c):
+			n += 1
+	return n
+
+# center から radius 以内の区画に、まとめて水をあげる(池から)。あげた区画の数を返す
+func water_within(center: Vector2, radius: float) -> int:
+	var n := 0
+	for c in crops:
+		if c.pos.distance_to(center) <= radius and not is_ripe(c) and _water(c):
+			n += 1
+	if n > 0:
+		_commit()
+	return n
+
 func _water(c: Dictionary) -> bool:
 	if c.last_watered == forest.today():
 		return false

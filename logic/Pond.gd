@@ -7,6 +7,7 @@ extends RefCounted
 # 文言は Main、見た目は view/ が決める。座標の単位は m
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
+const Garden = preload("res://logic/Garden.gd")
 
 signal changed  # 見た目に関わる状態が変わった
 signal dirty    # セーブに入る状態が変わった
@@ -15,6 +16,8 @@ const DIG_DAYS := 5     # 掘る日数(50m² を手で掘ると現実は 2〜3 �
 const REACH := 2.0      # 池の縁からこの距離までなら作業できる
 const RAIN_FILL := 25   # 雨 1 回でたまる水(%)。4 回の雨で満杯
 const WET_WATER := 50   # 水がこの量(%)を超えると、生き物が来るようになる
+const WATER_RADIUS := 20.0  # 池の中心からこの距離(m)までの木と区画に、まとめて水をやれる
+const WATER_COST := 5       # まとめて水をやると減る水(%)。雨は 4 日に 1 回 25% なので、毎日使っても釣り合う
 
 # days: 水が WET_WATER を超えてから来るまでの日数(現実の数週間〜数か月を縮めた) / seasons: 見られる季節
 const CREATURES := {
@@ -27,6 +30,7 @@ const CREATURES := {
 
 var forest: Forest  # GameWorld が設定する
 var land: Land
+var garden: Garden
 
 var days_dug := 0            # 掘った日数
 var last_dug := ""           # 最後に掘った日(YYYY-MM-DD)
@@ -36,6 +40,7 @@ var last_checked_day := 0    # 雨を数え終えた日の通し番号
 var seen := []               # 一度でも来た生き物の id
 var last_arrivals := []      # 今日はじめて来た生き物の id(知らせる用・保存しない)
 var last_gain := 0           # 今日の確認でたまった水(%)(知らせる用・保存しない)
+var last_watered := [0, 0]   # 直前にまとめて水をやった [区画の数, 木の数](文言用・保存しない)
 
 func is_placed() -> bool:
 	return land.pond != null
@@ -90,6 +95,32 @@ func cancel(pos: Vector2) -> bool:
 	_reset()
 	_commit()
 	return true
+
+# 掘り終えた池のそばにいるか
+func is_beside(pos: Vector2) -> bool:
+	return is_dug() and _is_near(pos)
+
+# 池のまわりの、水がいる [区画の数, 木の数]
+func dry_around() -> Array:
+	if not is_placed():
+		return [0, 0]
+	return [garden.dry_within(land.pond, WATER_RADIUS), forest.dry_within(land.pond, WATER_RADIUS)]
+
+# 池のそばから、まわりの区画と木にまとめて水をやる。結果: watered / far / frozen / low / nothing
+func water_around(pos: Vector2) -> String:
+	if not is_beside(pos):
+		return "far"
+	if is_frozen():
+		return "frozen"
+	if water < WATER_COST:
+		return "low"
+	var dry := dry_around()
+	if dry[0] + dry[1] == 0:
+		return "nothing"
+	last_watered = [garden.water_within(land.pond, WATER_RADIUS), forest.water_within(land.pond, WATER_RADIUS)]
+	water -= WATER_COST
+	_commit()
+	return "watered"
 
 # 前の確認から今日までに降った雨で水をためて、来た生き物を確かめる(日付が変わったときに呼ぶ)
 func catch_up() -> void:

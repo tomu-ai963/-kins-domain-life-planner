@@ -377,6 +377,22 @@ func _test_3d_pond() -> void:
 	p.changed.emit()
 	_check(pieces.call() == 4 + 5 + 16 + 2 + 3 + 2, "夏・20 日後: アメンボ 5・ガマ 8 本(葉と穂)・カエル 2・トンボ 3・カモ 2 が出る")
 	_check(main.pond_line().contains("カモ"), "HUD にいる生き物が出る")
+	# 池のそばの Q: まとめて水やり。足元に何もなければ、運べない理由を出す
+	var hud = main.get_node("HUD")
+	f.today_event = "birds"
+	f.last_day = f.today()
+	f.saplings.birch = 1
+	f.add_tree(Vector2(-20, -12), "birch", "sapling")
+	_check(main.pond_beside_line().contains("木 1"), "池のそばに、まとめて水やりの案内が出る")
+	var water_before: int = p.water
+	main._water()
+	_check(f.watered_today(f.trees[-1]) and p.water == water_before - 5 and hud._message.contains("木 1"), "Q でまとめて水やりでき、池の水が減る")
+	_check(main.pond_beside_line() == "", "水のいるものがなくなると、案内は消える")
+	main._water()
+	_check(hud._message.contains("水のいる木や区画がない") and p.water == water_before - 5, "もう何もなければ、その理由を出す(水は減らない)")
+	f.trees.remove_at(f.trees.size() - 1)
+	p.water = 100
+	f.changed.emit()
 	var strider: Node3D = view.get_child(0).get_child(4)
 	var before: Vector3 = strider.position
 	view._process(1.0)

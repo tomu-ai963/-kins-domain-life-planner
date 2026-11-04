@@ -176,6 +176,9 @@ func _status_lines() -> PackedStringArray:
 	var plot: String = _main.plot_line()
 	if plot != "":
 		lines.append(plot)
+	var beside: String = _main.pond_beside_line()
+	if beside != "":
+		lines.append(beside)
 	lines.append("Tab:%s  F1:%s" % ["持ち物を閉じる" if inventory_open else "持ち物", "操作を閉じる" if help_open else "操作"])
 	return lines
 
