@@ -49,6 +49,18 @@ static func ring(c: Vector2, r: float, thickness: float, material: Material, y :
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi
 
+# 地面に置く円盤(中心 c、半径 r、厚さ h、下面の高さ y)。水面・岸用
+static func disc(c: Vector2, r: float, h: float, material: Material, y := 0.0) -> MeshInstance3D:
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = r
+	cyl.bottom_radius = r
+	cyl.height = h
+	cyl.radial_segments = 48
+	cyl.rings = 1
+	var mi := mesh_node(cyl, material, at(c, y + h * 0.5))
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
 static func clear_children(n: Node) -> void:
 	for c in n.get_children():
 		n.remove_child(c)

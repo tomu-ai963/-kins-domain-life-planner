@@ -142,7 +142,7 @@ func _process(delta: float) -> void:
 		"%s\n" +
 		"今日の発見: %s\n" +
 		"%s\n" +
-		"%s\n" +
+		"%s   %s\n" +
 		"[1]白樺 [2]リンゴ [3]シベリア杉 [V]種/苗木  B:市場(南の境界の外)\n" +
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク\n" +
 		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る  F:菜園  P:池  H:小屋\n" +
@@ -161,6 +161,7 @@ func _process(delta: float) -> void:
 		found,
 		_main.quest_line(),
 		_main.cabin_line(),
+		_main.pond_line(),
 		_main.plot_line(),
 		_message,
 	]

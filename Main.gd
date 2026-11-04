@@ -26,6 +26,7 @@ func _ready() -> void:
 	$Ground.setup(world.forest)
 	$Land.setup(world.land)
 	$Garden.setup(world.garden)
+	$Pond.setup(world.pond)
 	$Cabin.setup(world.cabin)
 	$Quests.setup(world.quests)
 	$Trees.setup(world.forest)
@@ -58,6 +59,11 @@ func _check_new_day() -> void:
 		lines.append("育った木の根元に種が落ちている(%dか所)" % f.pickups.size())
 	for sp in f.last_failed:
 		lines.append("%sの種 %d粒は芽が出なかった" % [f.SPECIES[sp].name, f.last_failed[sp]])
+	var pond := world.pond
+	if pond.last_gain > 0:
+		lines.append("雨で池に水がたまった(%d%%)" % pond.water)
+	for c in pond.last_arrivals:
+		lines.append("池に%sが来た" % pond.CREATURES[c].name)
 	$HUD.show_message("\n".join(PackedStringArray(lines)), 10.0)
 
 # 足元に落ちている種を拾う(歩いて近づくだけ)
@@ -97,11 +103,11 @@ const DAILY_MESSAGES := {
 const QUEST_TEXTS := {
 	"hedge": {"name": "境界を生垣で囲む", "unit": "区画", "hint": "境界から3m以内に、10mごとに1本"},
 	"garden": {"name": "菜園を作る", "unit": "区画", "hint": "F で3m四方の区画を置く"},
-	"pond": {"name": "池を掘る", "unit": "", "hint": "P で足元に池を掘る"},
+	"pond": {"name": "池を掘る", "unit": "", "hint": "P で場所を決めて、1日1回 5日かけて掘る"},
 	"family_cedar": {"name": "中心に家族の杉を植える", "unit": "", "hint": "中心から5m以内にシベリア杉"},
 }
 
-# 菜園・池の結果コード(Land.toggle_plot / toggle_pond)ごとの文言
+# 菜園・池の結果コード(GameWorld.toggle_plot / pond_action)ごとの文言
 const PLOT_MESSAGES := {
 	"placed": "菜園の区画を作った(%d区画)",
 	"removed": "菜園の区画を草地に戻した",
@@ -110,11 +116,14 @@ const PLOT_MESSAGES := {
 	"cabin": "小屋にかかる場所には作れない",
 }
 const POND_MESSAGES := {
-	"placed": "池を掘った",
-	"removed": "池を埋めた",
-	"one_only": "池はひとつまで(池の中で P を押すと埋める)",
+	"placed": "ここに池を掘ることにした(P で 1日1回 掘る。掘りはじめる前なら Z で取り消せる)",
 	"outside": "土地の外には掘れない",
 	"cabin": "小屋にかかる場所には掘れない",
+	"dug": "池を掘った(続きは明日)",
+	"finished": "池を掘り終えた。あとは雨で水がたまる",
+	"far": "池はひとつまで(今の池の近くで P を押すと掘る)",
+	"already": "池はもう掘り終えた(水は雨でたまる)",
+	"done_today": "今日はもう掘った(1日1回)",
 }
 
 # 小屋の場所決め(Cabin.place)の結果ごとの文言
@@ -190,6 +199,27 @@ func cabin_line() -> String:
 	var s: Dictionary = c.current_stage()
 	var today := "今日の作業は済んだ" if c.worked_today() else "H で作業・丸太%d本" % s.logs_per_day
 	return "小屋: %s %d/%d日(%s)" % [CABIN_STAGE_NAMES[s.id], c.days_done, s.days, today]
+
+# ── 池 ────────────────────────────────────────────────────
+func _pond_action() -> void:
+	var result: String = world.pond_action(player_pos())
+	$HUD.show_message(POND_MESSAGES[result], 5.0)
+	if result == "placed" or result == "finished":
+		world.save_game()
+		_check_quests()
+
+# HUD に出す、池の 1 行(小屋と同じ行に並べる)
+func pond_line() -> String:
+	var p := world.pond
+	if not p.is_placed():
+		return "池: P で足元に場所を決める(%d日)" % p.DIG_DAYS
+	if not p.is_dug():
+		return "池: 掘っている %d/%d日(%s)" % [p.days_dug, p.DIG_DAYS, "今日は済んだ" if p.dug_today() else "P で掘る"]
+	var names := PackedStringArray()
+	for id in p.present():
+		names.append(p.CREATURES[id].name)
+	var state := "氷が張っている" if p.is_frozen() else "水 %d%%" % p.water
+	return "池: %s%s" % [state, "(%s)" % "・".join(names) if not names.is_empty() else ""]
 
 # ── 畑の野菜 ────────────────────────────────────────────────
 # まける季節の文言。例: 「春・秋」
@@ -326,11 +356,6 @@ func _toggle_plot() -> void:
 	$HUD.show_message(msg)
 	_after_land_change(result)
 
-func _toggle_pond() -> void:
-	var result: String = world.toggle_pond(player_pos())
-	$HUD.show_message(POND_MESSAGES[result])
-	_after_land_change(result)
-
 func _after_land_change(result: String) -> void:
 	if result == "placed" or result == "removed":
 		world.save_game()
@@ -408,7 +433,7 @@ func _water() -> void:
 	$HUD.show_message(msg)
 
 # 足元の野菜を抜く。なければ 2m 以内の木を伐る(育った木は丸太になる。種は戻らない。
-# 達成済みのクエストは戻らない)。木もなければ、作業を始める前の小屋の場所を取り消す
+# 達成済みのクエストは戻らない)。木もなければ、作業を始める前の小屋・池の場所を取り消す
 func _remove() -> void:
 	var g := world.garden
 	var pos := player_pos()
@@ -423,6 +448,8 @@ func _remove() -> void:
 		$HUD.show_message("木を抜いた(細くて丸太にはならない)")
 	elif world.cabin.cancel(pos):
 		$HUD.show_message("小屋の場所を取り消した")
+	elif world.pond.cancel(pos):
+		$HUD.show_message("池の場所を取り消した")
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
@@ -457,7 +484,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_F:
 			_toggle_plot()
 		KEY_P:
-			_toggle_pond()
+			_pond_action()
 		KEY_T:
 			world.forest.advance_years(1.0)   # 1年先送り(プレビュー。保存しない)
 		KEY_G:

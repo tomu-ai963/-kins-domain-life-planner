@@ -7,6 +7,7 @@ extends RefCounted
 # 文言は Main、見た目は view/ が決める(ここは id と数だけ)。座標の単位は m
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
+const Pond = preload("res://logic/Pond.gd")
 
 signal changed
 
@@ -22,6 +23,7 @@ const FAMILY_CEDAR_RADIUS := 5.0 # 中心から 5m 以内のシベリア杉
 var stage := 0                   # いま取り組んでいる段階(0〜3)。4 で完成
 var forest: Forest               # GameWorld が設定する
 var land: Land
+var pond: Pond
 
 func is_complete() -> bool:
 	return stage >= QUESTS.size()
@@ -68,7 +70,7 @@ func progress(id: String) -> Array:
 		"garden":
 			return [mini(land.plots.size(), GARDEN_PLOTS), GARDEN_PLOTS]
 		"pond":
-			return [0 if land.pond == null else 1, 1]
+			return [1 if pond.is_dug() else 0, 1]  # 掘り終えたら達成(水はあとからたまる)
 		"family_cedar":
 			for t in forest.trees:
 				if t.species == "cedar" and forest.is_established(t) and t.pos.length() <= FAMILY_CEDAR_RADIUS:

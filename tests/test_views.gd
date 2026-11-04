@@ -27,6 +27,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_market_and_pickups()
 			_test_3d_garden()
 			_test_3d_cabin()
+			_test_3d_pond()
 		10:
 			_test_3d_cabin_collision()  # 当たり判定が物理サーバーに入るのを待ってから
 			main.queue_free()
@@ -90,10 +91,6 @@ func _test_3d_follows_logic() -> void:
 	main.get_node("Player").global_position = Vector3(1, 0, 1)
 	main._toggle_plot()
 	_check(land.get_child_count() == 4, "菜園の区画(土 + 畝 3 本)ができる")
-	main.get_node("Player").global_position = Vector3(-20, 0, -20)
-	main._toggle_pond()
-	_check(land.get_child_count() == 7, "池(岸・水面・真ん中)ができる")
-	main._toggle_pond()
 	main.get_node("Player").global_position = Vector3(1, 0, 1)
 	main._toggle_plot()
 	_check(land.get_child_count() == 0, "取り消すと消える")
@@ -280,6 +277,57 @@ func _test_3d_cabin_collision() -> void:
 	_check(player.test_move(from_south, Vector3(0, 0, -3)), "南から歩いて小屋にぶつかる(通り抜けられない)")
 	_check(not player.test_move(from_south, Vector3(5, 0, 0)), "小屋の外は歩ける")
 
+func _test_3d_pond() -> void:
+	print("池")
+	var w = main.world
+	var p = w.pond
+	var player = main.get_node("Player")
+	var view: Node3D = main.get_node("Pond")
+	var pieces := func() -> int: return view.get_child(0).get_child_count() if view.get_child_count() > 0 else 0
+	_check(view.get_child_count() == 0 and main.pond_line().contains("P で足元"), "はじめは池がない")
+	player.global_position = Vector3(-20, 0, -20)
+	main._pond_action()
+	_check(pieces.call() == 9, "P で場所を決めると、縄の輪と杭 8 本が立つ")
+	player.global_position = Vector3(-20, 0, -20)
+	main._remove()
+	_check(not p.is_placed() and view.get_child_count() == 0, "掘りはじめる前なら Z で取り消せる")
+	main._pond_action()
+	main._pond_action()
+	_check(pieces.call() == 3 and main.pond_line().contains("1/5"), "掘ると岸・穴・掘った土の山が見える")
+	var hole: float = (view.get_child(0).get_child(1).mesh as CylinderMesh).top_radius
+	var dirt: float = view.get_child(0).get_child(2).scale.x
+	p.last_dug = ""
+	main._pond_action()
+	_check((view.get_child(0).get_child(1).mesh as CylinderMesh).top_radius > hole, "掘るたびに穴が広がる")
+	_check(view.get_child(0).get_child(2).scale.x > dirt, "掘った土の山が大きくなる")
+	for i in range(3):
+		p.last_dug = ""
+		main._pond_action()
+	_check(p.is_dug() and pieces.call() == 2, "掘り終えると、岸と空の穴だけになる(水はまだ)")
+	_check(main.pond_line().contains("水 0%"), "HUD に水の量が出る")
+
+	p.water = 25
+	p.changed.emit()
+	_check(pieces.call() == 4, "水がたまると水面(2 枚)が出る")
+	var small: float = (view.get_child(0).get_child(2).mesh as CylinderMesh).top_radius
+	p.water = 100
+	p.changed.emit()
+	_check((view.get_child(0).get_child(2).mesh as CylinderMesh).top_radius > small, "水が増えると水面が広がる")
+
+	var f = w.forest
+	f.set_season("summer")
+	p.wet_since_day = f.day_number() - 20
+	p.changed.emit()
+	_check(pieces.call() == 4 + 5 + 16 + 2 + 3 + 2, "夏・20 日後: アメンボ 5・ガマ 8 本(葉と穂)・カエル 2・トンボ 3・カモ 2 が出る")
+	_check(main.pond_line().contains("カモ"), "HUD にいる生き物が出る")
+	var strider: Node3D = view.get_child(0).get_child(4)
+	var before: Vector3 = strider.position
+	view._process(1.0)
+	_check(strider.position != before, "生き物はゆっくり動く")
+	f.set_season("winter")
+	_check(pieces.call() == 3 + 16 and main.pond_line().contains("氷"), "冬: 氷が張り、ガマだけ残る")
+	f.set_season("autumn")
+
 func _test_2d_still_works() -> void:
 	print("2D のシーン(比較用)")
 	_check(main is Node2D, "Main2D.tscn は 2D")
@@ -297,3 +345,7 @@ func _test_2d_still_works() -> void:
 	main.get_node("Player").global_position = Vector2(800, 800)
 	main._cabin_action()
 	_check(main.world.cabin.site == Vector2(20, 20), "2D でも小屋の場所を決められる")
+	main.get_node("Player").global_position = Vector2(-800, 800)
+	main._pond_action()
+	main._pond_action()
+	_check(main.world.pond.days_dug == 1, "2D でも池を掘れる")

@@ -279,6 +279,14 @@ func harvest_nearest(pos: Vector2, max_dist: float) -> String:
 func today() -> String:
 	return Time.get_date_string_from_system()  # 現地時間の YYYY-MM-DD
 
+# 暦の日の通し番号(日付をまたぐと 1 増える。時刻によらない)
+func day_number() -> int:
+	return int(Time.get_unix_time_from_datetime_string(today()) / 86400.0)
+
+# 通し番号から日付(YYYY-MM-DD)に戻す
+static func date_of_day(n: int) -> String:
+	return Time.get_date_string_from_unix_time(n * 86400)
+
 func _now() -> int:
 	return int(Time.get_unix_time_from_system())
 

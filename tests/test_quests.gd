@@ -116,8 +116,12 @@ func _test_sequential_stages() -> void:
 	_check(done == ["hedge", "garden"], "生垣を達成すると、先に作った菜園もすぐ達成")
 	_check(q.current_id() == "pond", "次は池")
 
-	w.land.toggle_pond(Vector2(-15, -15))
-	_check(q.advance() == ["pond"], "池を掘ると達成")
+	w.pond_action(Vector2(-15, -15))
+	_check(q.advance().is_empty(), "場所を決めただけでは達成しない")
+	for i in range(w.pond.DIG_DAYS):
+		w.pond.last_dug = ""
+		w.pond_action(Vector2(-15, -15))
+	_check(q.advance() == ["pond"], "池を掘り終えると達成")
 
 	w.forest.add_tree(Vector2(2.5, 0), "cedar", "sapling")
 	done = q.advance()

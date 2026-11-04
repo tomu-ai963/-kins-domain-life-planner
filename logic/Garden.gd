@@ -43,7 +43,7 @@ static func _zero_counts() -> Dictionary:
 
 # 暦の日の通し番号(日付をまたぐと 1 増える。植えた時刻によらない)
 func day_number() -> int:
-	return int(Time.get_unix_time_from_datetime_string(forest.today()) / 86400.0)
+	return forest.day_number()
 
 # 保存が必要な変更のあと: 保存してから描き直す
 func _commit() -> void:

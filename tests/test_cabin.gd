@@ -153,11 +153,10 @@ func _test_blocks() -> void:
 	c.place(SITE)
 	_check(c.covers(SITE) and not c.covers(OUTSIDE), "小屋の敷地が分かる")
 	_check(w.toggle_plot(Vector2(19.5, 19.5)) == "cabin" and w.land.plots.is_empty(), "小屋にかかる場所に菜園の区画は置けない")
-	_check(w.toggle_pond(Vector2(20, 25)) == "cabin" and w.land.pond == null, "小屋にかかる場所に池は掘れない")
+	_check(w.pond_action(Vector2(20, 25)) == "cabin" and w.land.pond == null, "小屋にかかる場所に池は掘れない")
 	_check(w.toggle_plot(Vector2(10, 10)) == "placed", "離れた場所には区画を置ける")
 	_check(w.toggle_plot(Vector2(10, 10)) == "removed", "離れた区画は取り消せる")
-	_check(w.toggle_pond(Vector2(-20, -20)) == "placed", "離れた場所には池を掘れる")
-	_check(w.toggle_pond(Vector2(-20, -20)) == "removed", "離れた池は埋められる")
+	_check(w.pond_action(Vector2(-20, -20)) == "placed", "離れた場所には池を掘れる")
 
 func _test_cancel() -> void:
 	print("場所の取り消し")
