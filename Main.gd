@@ -242,10 +242,15 @@ func _sow(pos: Vector2) -> void:
 		"no_seed":
 			$HUD.show_message("%sがない(市場で買える)" % crop.seed_name)
 
-# HUD に出す、選んでいる野菜の 1 行
-func selected_crop_line() -> String:
+# HUD に出す、選んでいるものの 1 行(いくつ持っているかも分かるように)
+func selection_line() -> String:
+	var f := world.forest
+	var stock: Dictionary = f.saplings if selected_form == "sapling" else f.seeds
 	var crop: Dictionary = world.garden.CROPS[selected_crop]
-	return "畑にまく: %s(%sにまける・%d日で育つ)" % [crop.name, crop_seasons(selected_crop), crop.grow_days]
+	return "植える: %s %d   畑にまく: %s %d(%sにまける・%d日で育つ)" % [
+		selected_name(), stock[selected_species],
+		crop.name, world.garden.seeds[selected_crop], crop_seasons(selected_crop), crop.grow_days,
+	]
 
 # HUD に出す、足元の区画の様子。区画の上でなければ ""
 func plot_line() -> String:
@@ -463,6 +468,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		selected_crop = CROP_KEYS[event.keycode]
 		return
 	match event.keycode:
+		KEY_TAB:
+			$HUD.inventory_open = not $HUD.inventory_open
+		KEY_F1:
+			$HUD.help_open = not $HUD.help_open
 		KEY_1:
 			selected_species = "birch"
 		KEY_2:

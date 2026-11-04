@@ -28,6 +28,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_garden()
 			_test_3d_cabin()
 			_test_3d_pond()
+			_test_hud()
 		10:
 			_test_3d_cabin_collision()  # 当たり判定が物理サーバーに入るのを待ってから
 			main.queue_free()
@@ -327,6 +328,54 @@ func _test_3d_pond() -> void:
 	f.set_season("winter")
 	_check(pieces.call() == 3 + 16 and main.pond_line().contains("氷"), "冬: 氷が張り、ガマだけ残る")
 	f.set_season("autumn")
+
+func _press(keycode: int) -> void:
+	var e := InputEventKey.new()
+	e.keycode = keycode
+	e.pressed = true
+	main._unhandled_input(e)
+
+func _test_hud() -> void:
+	print("HUD")
+	var hud = main.get_node("HUD")
+	var player = main.get_node("Player")
+	player.global_position = Vector3(30, 0, 30)
+	hud.inventory_open = false
+	hud.help_open = false
+	var base: int = hud.status_text().split("\n").size()
+	print("    いつも出る行数: ", base)
+	_check(base <= 8, "いつも出るのは 8 行まで")
+	var text: String = hud.status_text()
+	_check(text.contains("所持金") and text.contains("丸太") and text.contains("クエスト") and text.contains("小屋") and text.contains("池"), "所持金・丸太・クエスト・小屋・池はいつも出る")
+	_check(text.contains("植える: ") and text.contains("畑にまく: "), "選んでいるものはいつも出る")
+	_check(not text.contains("苗木:") and not text.contains("SPACE"), "持ち物と操作説明はふだん出さない")
+
+	_press(KEY_TAB)
+	_check(hud.status_text().contains("苗木:") and hud.status_text().contains("収穫物:"), "Tab で持ち物が出る")
+	_press(KEY_TAB)
+	_check(not hud.status_text().contains("苗木:"), "もう一度 Tab で閉じる")
+	_press(KEY_F1)
+	_check(hud.status_text().contains("SPACE") and hud.status_text().contains("H:小屋"), "F1 で操作説明が出る")
+	_press(KEY_F1)
+	_check(not hud.status_text().contains("SPACE"), "もう一度 F1 で閉じる")
+
+	# 市場を開いているあいだは持ち物が出る(閉じれば戻る)
+	player.global_position = Vector3(0, 0, 54)
+	_check(hud.status_text().contains("市場の前"), "市場の前では、その案内が出る")
+	main._toggle_shop()
+	_check(hud.status_text().contains("苗木:"), "市場を開いているあいだは持ち物が出る")
+	_check(not hud.status_text().contains("市場の前"), "開いているあいだは、市場の前の案内を出さない")
+	main._close_shop()
+	_check(not hud.status_text().contains("苗木:"), "閉じると元に戻る")
+
+	# メッセージは下の中央に別に出て、数秒で消える
+	hud.show_message("てすと", 1.0)
+	_check(hud.is_message_visible() and not hud.status_text().contains("てすと"), "メッセージは左上とは別に出る")
+	hud._process(0.5)
+	_check(hud.is_message_visible(), "時間が来るまでは出ている")
+	hud._process(0.6)
+	_check(not hud.is_message_visible(), "時間が来ると消える")
+	player.global_position = Vector3(20, 0, 23)  # 次の当たり判定のテストのために小屋の南へ戻す
 
 func _test_2d_still_works() -> void:
 	print("2D のシーン(比較用)")

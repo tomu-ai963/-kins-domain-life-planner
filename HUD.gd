@@ -1,7 +1,9 @@
 extends CanvasLayer
 
 # ── 画面の文字表示(2D と 3D で共通) ─────────────────────────────
-# 左上: 日付・位置・持ち物・クエスト・操作・メッセージ。市場の近くで B を押すと、真ん中に市場の画面が開く。
+# 左上: いつも見たいこと(日付・所持金・発見・クエスト・小屋・池・選択・足元)。
+# Tab で持ち物(市場を開いているあいだは自動で出す)、F1 で操作説明を足す。
+# 下の中央: 数秒だけのメッセージ。右: 市場の近くで B を押すと市場の画面が開く。
 # 文言の中身は Main が決める(shop_rows・quest_line など)。ここは並べて出すだけ
 const Forest = preload("res://logic/Forest.gd")
 const MESSAGE_SECONDS := 3.0
@@ -17,6 +19,10 @@ var _main: Node
 
 var _message := ""
 var _message_timer := 0.0
+var _message_panel: PanelContainer
+var _message_label: Label
+var inventory_open := false  # Tab
+var help_open := false       # F1
 var _shop: PanelContainer
 var _shop_columns := []  # 買う列と売る列(VBoxContainer)
 var _shop_money: Label
@@ -25,12 +31,32 @@ func setup(player: Node, trees: Forest, main: Node) -> void:
 	_player = player
 	_trees = trees
 	_main = main
+	_build_message()
 	_build_shop()
 
 # 植えられない・収穫した などを数秒だけ出す
 func show_message(text: String, seconds: float = MESSAGE_SECONDS) -> void:
 	_message = text
 	_message_timer = seconds
+	_message_label.text = text
+	_message_panel.visible = true
+
+func is_message_visible() -> bool:
+	return _message_panel != null and _message_panel.visible
+
+func _build_message() -> void:
+	_message_panel = PanelContainer.new()
+	_message_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	_message_panel.offset_top = -16.0
+	_message_panel.offset_bottom = -16.0
+	_message_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_message_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_message_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_message_panel.visible = false
+	_message_label = Label.new()
+	_message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_message_panel.add_child(_message_label)
+	add_child(_message_panel)
 
 # ── 市場の画面 ──────────────────────────────────────────────
 func _build_shop() -> void:
@@ -110,60 +136,71 @@ func _process(delta: float) -> void:
 		_message_timer -= delta
 		if _message_timer <= 0.0:
 			_message = ""
+			_message_panel.visible = false
+	_label.text = status_text()
+	# 背景は文字の量に合わせる
+	_bg.size = _label.get_combined_minimum_size() + Vector2(12, 8)
 
-	var pos_m: Vector2 = _main.player_pos()
+# 左上に出す文字
+func status_text() -> String:
+	var lines := _status_lines()
+	if inventory_open or is_shop_open():
+		lines.append_array(_inventory_lines())
+	if help_open:
+		lines.append_array(_help_lines())
+	return "\n".join(lines)
+
+# いつも見たいこと
+func _status_lines() -> PackedStringArray:
 	var dt: Dictionary = Time.get_datetime_dict_from_system()
 	var season_jp: String = _main.SEASON_NAMES[_trees.season]
-	var seeds: Dictionary = _trees.seeds
-	var sap: Dictionary = _trees.saplings
-
 	var offset := ""
 	if _trees.time_offset_years > 0.0:
 		offset = "  (+%d年後をプレビュー中)" % int(_trees.time_offset_years)
 
-	# 今日の発見は一日中見られるように常に出す
-	var today: String = _trees.today()
-	var found := ""
-	if _trees.last_day == today and _trees.today_event != "":
-		found = _main.DAILY_MESSAGES[_trees.today_event]
-
-	var market_hint := ""
-	if _main.world.market.is_near(pos_m):
-		market_hint = "  ← 市場の前(B で開く)"
-
-	_label.text = (
-		"%04d/%02d/%02d  %s%s\n" +
-		"X:%6.1f m  Y:%6.1f m   木: %d本%s\n" +
-		"所持金: %s₽   丸太: %d本   収穫物: %s\n" +
-		"種:   白樺 %d  リンゴ %d  シベリア杉 %d\n" +
-		"苗木: 白樺 %d  リンゴ %d  シベリア杉 %d\n" +
-		"野菜の種: %s\n" +
-		"選択: %s\n" +
-		"%s\n" +
-		"今日の発見: %s\n" +
-		"%s\n" +
-		"%s   %s\n" +
-		"[1]白樺 [2]リンゴ [3]シベリア杉 [V]種/苗木  B:市場(南の境界の外)\n" +
-		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク\n" +
-		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る  F:菜園  P:池  H:小屋\n" +
-		"T:+1年  G:+10年  R:今日に戻す (未来をプレビュー)  ホイール:ズーム\n" +
-		"%s\n" +
-		"%s"
-	) % [
+	var lines := PackedStringArray()
+	lines.append("%04d/%02d/%02d  %s%s   所持金: %s₽   丸太: %d本" % [
 		dt.year, dt.month, dt.day, season_jp, offset,
-		pos_m.x, pos_m.y, _trees.trees.size(), market_hint,
-		_money_text(_main.world.market.money), int(_main.world.cabin.materials.log), _main.produce_line(),
-		seeds.birch, seeds.apple, seeds.cedar,
-		sap.birch, sap.apple, sap.cedar,
-		_main.crop_seeds_line(),
-		_main.selected_name(),
-		_main.selected_crop_line(),
-		found,
-		_main.quest_line(),
-		_main.cabin_line(),
-		_main.pond_line(),
-		_main.plot_line(),
-		_message,
-	]
-	# 背景は文字の量に合わせる
-	_bg.size = _label.get_combined_minimum_size() + Vector2(12, 8)
+		_money_text(_main.world.market.money), int(_main.world.cabin.materials.log),
+	])
+	# 今日の発見は一日中見られるように常に出す
+	if _trees.last_day == _trees.today() and _trees.today_event != "":
+		lines.append("今日の発見: " + _main.DAILY_MESSAGES[_trees.today_event])
+	lines.append(_main.quest_line())
+	lines.append(_main.cabin_line())
+	lines.append(_main.pond_line())
+	lines.append(_main.selection_line())
+	# その場所でだけ意味があること
+	if _main.world.market.is_near(_main.player_pos()) and not is_shop_open():
+		lines.append("市場の前(B で開く)")
+	var plot: String = _main.plot_line()
+	if plot != "":
+		lines.append(plot)
+	lines.append("Tab:%s  F1:%s" % ["持ち物を閉じる" if inventory_open else "持ち物", "操作を閉じる" if help_open else "操作"])
+	return lines
+
+# 持ち物(Tab)
+func _inventory_lines() -> PackedStringArray:
+	var pos: Vector2 = _main.player_pos()
+	var seeds: Dictionary = _trees.seeds
+	var sap: Dictionary = _trees.saplings
+	return PackedStringArray([
+		"─ 持ち物 ─",
+		"種: 白樺 %d  リンゴ %d  シベリア杉 %d" % [seeds.birch, seeds.apple, seeds.cedar],
+		"苗木: 白樺 %d  リンゴ %d  シベリア杉 %d" % [sap.birch, sap.apple, sap.cedar],
+		"野菜の種: " + _main.crop_seeds_line(),
+		"収穫物: " + _main.produce_line(),
+		"植えた木: %d本   いる場所: X %.0fm  Y %.0fm" % [_trees.trees.size(), pos.x, pos.y],
+	])
+
+# 操作説明(F1)
+func _help_lines() -> PackedStringArray:
+	return PackedStringArray([
+		"─ 操作 ─",
+		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)",
+		"[1]白樺 [2]リンゴ [3]シベリア杉 [V]種/苗木",
+		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク",
+		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る",
+		"F:菜園  P:池  H:小屋",
+		"T:+1年  G:+10年  R:今日に戻す(未来をプレビュー)",
+	])
