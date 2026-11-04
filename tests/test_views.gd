@@ -28,6 +28,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_garden()
 			_test_3d_cabin()
 			_test_3d_pond()
+			_test_fell_confirm()
 			_test_hud()
 		10:
 			_test_3d_cabin_collision()  # 当たり判定が物理サーバーに入るのを待ってから
@@ -328,6 +329,45 @@ func _test_3d_pond() -> void:
 	f.set_season("winter")
 	_check(pieces.call() == 3 + 16 and main.pond_line().contains("氷"), "冬: 氷が張り、ガマだけ残る")
 	f.set_season("autumn")
+
+func _test_fell_confirm() -> void:
+	print("木を伐る前の確認")
+	var w = main.world
+	_check(w.backup_dir == "", "テストのセーブでは控えを取らない(Main は本物のセーブのときだけ設定する)")
+	var f = w.forest
+	var hud = main.get_node("HUD")
+	var player = main.get_node("Player")
+	var cabin = w.cabin
+	f.saplings.birch = 2
+	f.add_tree(Vector2(35, 35), "birch", "sapling")
+	f.trees[-1].start_age = 20.0
+	f.add_tree(Vector2(36, 35), "birch", "sapling")
+	var old_tree: Dictionary = f.trees[-2]
+	player.global_position = Vector3(34.9, 0, 35)
+	var n: int = f.trees.size()
+	var logs: int = cabin.materials.log
+	main._remove()
+	_check(f.trees.size() == n and hud._message.contains("もう一度 Z") and hud._message.contains("樹齢20年") and hud._message.contains("丸太2本"), "1 回目は伐らず、樹齢と採れる丸太を知らせる")
+	main._fell_deadline = 0.0
+	main._remove()
+	_check(f.trees.size() == n and hud._message.contains("もう一度 Z"), "時間が過ぎていれば、もう一度確認する")
+	# 確認中に別の木の近くへ移ると、その木は伐らずに確認し直す
+	player.global_position = Vector3(36.1, 0, 35)
+	main._remove()
+	_check(f.trees.size() == n and hud._message.contains("細くて"), "別の木に移ると、そちらの確認になる")
+	player.global_position = Vector3(34.9, 0, 35)
+	main._remove()
+	_check(f.trees.size() == n, "元の木に戻っても、いきなり伐らない")
+	main._remove()
+	_check(f.trees.size() == n - 1 and not f.trees.has(old_tree) and cabin.materials.log == logs + 2, "時間内にもう一度押すと伐れて、丸太が増える")
+	# 芽が出ていない種は確認なしで抜ける
+	f.remove_nearest(Vector2(36, 35), 2.0)
+	f.germination_rates.birch = 0.0
+	f.seeds.birch = 1
+	f.add_tree(Vector2(35, 35), "birch")
+	n = f.trees.size()
+	main._remove()
+	_check(f.trees.size() == n - 1, "まいたばかりの種は 1 回で抜ける")
 
 func _press(keycode: int) -> void:
 	var e := InputEventKey.new()

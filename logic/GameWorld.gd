@@ -15,6 +15,9 @@ const Market = preload("res://logic/Market.gd")
 const SAVE_PATH := "user://kins_domain_save.json"
 const SAVE_UNIT := "m"           # セーブの座標の単位。この印がない古いセーブは px(40px = 1m)
 const OLD_PX_PER_M := 40.0
+const BACKUP_DIR := "user://backups"  # セーブの控えの置き場所
+const BACKUP_PREFIX := "kins_domain_save_"
+const BACKUP_KEEP := 7           # 控えを残す日数
 
 var forest := Forest.new()
 var land := Land.new()
@@ -24,6 +27,7 @@ var pond := Pond.new()
 var quests := Quests.new()
 var market := Market.new()
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
+var backup_dir := ""             # 控えを置くフォルダ。空なら控えを取らない(本物のセーブのときだけ Main が設定する)
 
 func _init() -> void:
 	quests.forest = forest
@@ -106,6 +110,7 @@ func load_game() -> void:
 	f.close()
 	if typeof(data) != TYPE_DICTIONARY:
 		return
+	_backup_save()
 	# 2-2 以前のセーブには菜園・池・クエストの記録がない(空・段階 0 から)
 	var ld = data.get("land", {})
 	if typeof(ld) != TYPE_DICTIONARY:
@@ -139,6 +144,22 @@ func load_game() -> void:
 	quests.from_save(qd)
 	market.from_save(md)
 	forest.from_save(data)
+
+# その日はじめて読めたセーブを、日付つきで控える(壊れたセーブは呼ばれない)。新しい BACKUP_KEEP 日ぶんを残す
+func _backup_save() -> void:
+	if backup_dir == "":
+		return
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(backup_dir))
+	var path := "%s/%s%s.json" % [backup_dir, BACKUP_PREFIX, forest.today()]
+	if not FileAccess.file_exists(path):
+		DirAccess.copy_absolute(ProjectSettings.globalize_path(save_path), ProjectSettings.globalize_path(path))
+	var names := []
+	for n in DirAccess.get_files_at(backup_dir):
+		if n.begins_with(BACKUP_PREFIX):
+			names.append(n)
+	names.sort()  # 名前に日付が入っているので、古い順になる
+	for i in range(names.size() - BACKUP_KEEP):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("%s/%s" % [backup_dir, names[i]]))
 
 static func _px_to_m(data: Dictionary, ld: Dictionary) -> void:
 	for t in data.get("trees", []):

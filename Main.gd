@@ -7,6 +7,7 @@ extends Node
 const GameWorld = preload("res://logic/GameWorld.gd")
 const REACH := 2.0    # 足元 2m 以内
 const PICKUP_RADIUS := 1.2  # 落ちている種は、これだけ近づくと拾う
+const FELL_CONFIRM_SECONDS := 4.0  # 根付いた木は、この時間内にもう一度 Z を押すと伐れる
 
 const SEASON_NAMES := {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬"}
 const FORM_NAMES := {"seed": "種", "sapling": "苗木"}
@@ -20,8 +21,13 @@ var selected_crop := "radish" # 4〜8 で選ぶ。区画の上で SPACE を押�
 const CROP_KEYS := {KEY_4: "radish", KEY_5: "carrot", KEY_6: "cucumber", KEY_7: "potato", KEY_8: "garlic"}
 
 var _season_timer := 0.0
+var _fell_pending := {}      # Z を 1 回押して確認中の木(Forest.trees の要素)
+var _fell_deadline := 0.0    # いつまでにもう一度押せば伐れるか(秒)
 
 func _ready() -> void:
+	# 本物のセーブのときだけ控えを取る(テストや確認用のセーブでは取らない)
+	if world.save_path == world.SAVE_PATH:
+		world.backup_dir = world.BACKUP_DIR
 	world.refresh_season()
 	$Ground.setup(world.forest)
 	$Land.setup(world.land)
@@ -446,6 +452,8 @@ func _remove() -> void:
 	if g.remove_at(pos):
 		$HUD.show_message("%sを抜いた(種は戻らない)" % g.CROPS[c.kind].name)
 		return
+	if _needs_fell_confirm(pos):
+		return
 	var logs: int = world.cabin.fell(pos, REACH)
 	if logs > 0:
 		$HUD.show_message("木を伐った(丸太 +%d本)" % logs)
@@ -455,6 +463,24 @@ func _remove() -> void:
 		$HUD.show_message("小屋の場所を取り消した")
 	elif world.pond.cancel(pos):
 		$HUD.show_message("池の場所を取り消した")
+
+# 根付いた木を間違えて伐らないように、1 回目は確認の文言だけ出す。確認を出したら true
+func _needs_fell_confirm(pos: Vector2) -> bool:
+	var f := world.forest
+	var i: int = f.nearest_index(pos, REACH, "")
+	if i < 0 or not f.is_established(f.trees[i]):
+		return false
+	var tree: Dictionary = f.trees[i]
+	var now: float = Time.get_ticks_msec() / 1000.0
+	if is_same(tree, _fell_pending) and now <= _fell_deadline:
+		_fell_pending = {}
+		return false
+	_fell_pending = tree
+	_fell_deadline = now + FELL_CONFIRM_SECONDS
+	var logs: int = f.wood_yield(tree)
+	var wood := "丸太%d本" % logs if logs > 0 else "細くて丸太にはならない"
+	$HUD.show_message("もう一度 Z で伐る: %s 樹齢%d年(%s)" % [f.SPECIES[tree.species].name, int(f.real_age_years(tree)), wood], FELL_CONFIRM_SECONDS)
+	return true
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
