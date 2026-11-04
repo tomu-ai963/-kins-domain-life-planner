@@ -1,12 +1,13 @@
 extends RefCounted
 
 # ── ゲーム全体の状態(描画を持たない) ──────────────────────────
-# 木と種(Forest)・菜園と池(Land)・畑の野菜(Garden)・段階クエスト(Quests)・お金と市場(Market)をまとめ、
-# 1 つのセーブファイルに読み書きする。Forest・Garden の保存が必要な変更(dirty)で自動保存する
+# 木と種(Forest)・菜園と池(Land)・畑の野菜(Garden)・小屋(Cabin)・段階クエスト(Quests)・お金と市場(Market)をまとめ、
+# 1 つのセーブファイルに読み書きする。Forest・Garden・Cabin の保存が必要な変更(dirty)で自動保存する
 # 座標の単位は m(ドメイン中心が原点、境界は ±50m)
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
 const Garden = preload("res://logic/Garden.gd")
+const Cabin = preload("res://logic/Cabin.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 
@@ -17,6 +18,7 @@ const OLD_PX_PER_M := 40.0
 var forest := Forest.new()
 var land := Land.new()
 var garden := Garden.new()
+var cabin := Cabin.new()
 var quests := Quests.new()
 var market := Market.new()
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
@@ -26,10 +28,28 @@ func _init() -> void:
 	quests.land = land
 	garden.forest = forest
 	garden.land = land
+	cabin.forest = forest
+	cabin.land = land
 	market.forest = forest
 	market.garden = garden
+	market.cabin = cabin
 	forest.dirty.connect(save_game)
 	garden.dirty.connect(save_game)
+	cabin.dirty.connect(save_game)
+
+# 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
+# 結果: Garden.toggle_plot の結果か cabin
+func toggle_plot(pos: Vector2) -> String:
+	if land.plot_at(pos) == null and cabin.blocks_plot(land.plot_center(pos)):
+		return "cabin"
+	return garden.toggle_plot(pos)
+
+# 足元に池を掘る / 埋める。小屋にかかる場所には掘れない
+# 結果: Land.toggle_pond の結果か cabin
+func toggle_pond(pos: Vector2) -> String:
+	if land.pond == null and cabin.blocks_pond(pos):
+		return "cabin"
+	return land.toggle_pond(pos)
 
 # 日付が変わっていたら、その日の発見を起こして id を返す(Forest.check_new_day)。雨は畑にも降る
 func check_new_day() -> String:
@@ -57,6 +77,7 @@ func save_game() -> void:
 	data["unit"] = SAVE_UNIT
 	data["land"] = land.to_save()
 	data["garden"] = garden.to_save()
+	data["cabin"] = cabin.to_save()
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
@@ -89,11 +110,16 @@ func load_game() -> void:
 	var gd = data.get("garden", {})
 	if typeof(gd) != TYPE_DICTIONARY:
 		gd = {}
+	# 小屋の記録がないセーブ(手順 3-2 まで)は、小屋なし・丸太 0 から
+	var cd = data.get("cabin", {})
+	if typeof(cd) != TYPE_DICTIONARY:
+		cd = {}
 	# Godot 3 版(2026-11 より前)のセーブは座標が px。読むときに m に直す
 	if data.get("unit", "px") != SAVE_UNIT:
 		_px_to_m(data, ld)
 	land.from_save(ld)
 	garden.from_save(gd)
+	cabin.from_save(cd)
 	quests.from_save(qd)
 	market.from_save(md)
 	forest.from_save(data)

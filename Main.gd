@@ -26,6 +26,7 @@ func _ready() -> void:
 	$Ground.setup(world.forest)
 	$Land.setup(world.land)
 	$Garden.setup(world.garden)
+	$Cabin.setup(world.cabin)
 	$Quests.setup(world.quests)
 	$Trees.setup(world.forest)
 	$Pickups.setup(world.forest)
@@ -106,13 +107,26 @@ const PLOT_MESSAGES := {
 	"removed": "菜園の区画を草地に戻した",
 	"outside": "土地の外には作れない",
 	"has_crop": "野菜が育っている区画は戻せない(Z で抜くか、E で収穫してから)",
+	"cabin": "小屋にかかる場所には作れない",
 }
 const POND_MESSAGES := {
 	"placed": "池を掘った",
 	"removed": "池を埋めた",
 	"one_only": "池はひとつまで(池の中で P を押すと埋める)",
 	"outside": "土地の外には掘れない",
+	"cabin": "小屋にかかる場所には掘れない",
 }
+
+# 小屋の場所決め(Cabin.place)の結果ごとの文言
+const CABIN_PLACE_MESSAGES := {
+	"placed": "ここに小屋を建てることにした(外から H で作業する。始める前なら Z で取り消せる)",
+	"edge": "境界の近くには建てられない(生垣のために3m空ける)",
+	"center": "中心の近くには建てられない(家族の杉のために5m空ける)",
+	"pond": "池にかかる場所には建てられない",
+	"plot": "菜園の区画にかかる場所には建てられない",
+	"tree": "木がある場所には建てられない(先に Z で伐る)",
+}
+const CABIN_STAGE_NAMES := {"foundation": "基礎", "walls": "壁", "roof": "屋根"}
 
 # プレイヤーの足元(m)
 func player_pos() -> Vector2:
@@ -125,6 +139,9 @@ func _on_plant_tree(pos: Vector2) -> void:
 	if world.land.plot_at(pos) != null:
 		_sow(pos)
 		return
+	if world.cabin.covers(pos):
+		$HUD.show_message("小屋の場所には植えられない")
+		return
 	if not world.forest.add_tree(pos, selected_species, selected_form):
 		$HUD.show_message("%sの%sがない(市場で買える)" % [world.forest.SPECIES[selected_species].name, FORM_NAMES[selected_form]])
 		return
@@ -135,6 +152,44 @@ func _on_plant_tree(pos: Vector2) -> void:
 # 選んでいる植えるもの(HUD 用)。例: 「白樺の種」
 func selected_name() -> String:
 	return world.forest.SPECIES[selected_species].name + "の" + FORM_NAMES[selected_form]
+
+# ── 小屋 ──────────────────────────────────────────────────
+# H: まだ場所がなければ足元に決める。決まっていれば今日の作業をする
+func _cabin_action() -> void:
+	var c := world.cabin
+	var pos := player_pos()
+	if c.site == null:
+		$HUD.show_message(CABIN_PLACE_MESSAGES[c.place(pos)], 5.0)
+		return
+	var s: Dictionary = c.current_stage()
+	match c.work(pos):
+		"worked":
+			$HUD.show_message("%sの作業をした(丸太 -%d本)。続きは明日" % [CABIN_STAGE_NAMES[s.id], s.logs_per_day], 5.0)
+		"stage_done":
+			$HUD.show_message("%sができた(丸太 -%d本)。明日から%s" % [CABIN_STAGE_NAMES[s.id], s.logs_per_day, CABIN_STAGE_NAMES[c.current_stage().id]], 5.0)
+		"finished":
+			$HUD.show_message("小屋が建った", 8.0)
+		"complete":
+			$HUD.show_message("小屋はもう建っている")
+		"far":
+			$HUD.show_message("小屋の場所まで行って作業する(%.0fm以内)" % c.REACH)
+		"inside":
+			$HUD.show_message("建てる場所の外に出て作業する")
+		"done_today":
+			$HUD.show_message("今日の作業はもう済んだ(1日1回)")
+		"no_wood":
+			$HUD.show_message("丸太が足りない(%d本 必要。市場で買うか、育った木を Z で伐る)" % s.logs_per_day, 5.0)
+
+# HUD に出す、小屋の 1 行
+func cabin_line() -> String:
+	var c := world.cabin
+	if c.site == null:
+		return "小屋: H で足元に場所を決める(丸太%d本・%d日)" % [c.total_logs(), c.total_days()]
+	if c.is_complete():
+		return "小屋: 完成した"
+	var s: Dictionary = c.current_stage()
+	var today := "今日の作業は済んだ" if c.worked_today() else "H で作業・丸太%d本" % s.logs_per_day
+	return "小屋: %s %d/%d日(%s)" % [CABIN_STAGE_NAMES[s.id], c.days_done, s.days, today]
 
 # ── 畑の野菜 ────────────────────────────────────────────────
 # まける季節の文言。例: 「春・秋」
@@ -204,8 +259,10 @@ func produce_count(item: String) -> int:
 	return int(world.forest.produce.apple) if item == "apple" else int(world.garden.produce[item])
 
 # ── 市場 ──────────────────────────────────────────────────
-# 市場の品の表示名。例: 「白樺の種(10粒)」「リンゴの苗木(樹齢3年)」「じゃがいもの種いも(春にまく)」
+# 市場の品の表示名。例: 「白樺の種(10粒)」「リンゴの苗木(樹齢3年)」「じゃがいもの種いも(春にまく)」「丸太(5本)」
 func good_name(g: Dictionary) -> String:
+	if g.form == "material":
+		return "丸太(%d本)" % g.amount
 	if g.form == "crop_seed":
 		return "%s(%sにまく)" % [world.garden.CROPS[g.species].seed_name, crop_seasons(g.species)]
 	var sp: Dictionary = world.forest.SPECIES[g.species]
@@ -262,7 +319,7 @@ func _on_shop_action(id: String) -> void:
 	$HUD.refresh_shop()
 
 func _toggle_plot() -> void:
-	var result: String = world.garden.toggle_plot(player_pos())
+	var result: String = world.toggle_plot(player_pos())
 	var msg: String = PLOT_MESSAGES[result]
 	if result == "placed":
 		msg = msg % world.land.plots.size()
@@ -270,7 +327,7 @@ func _toggle_plot() -> void:
 	_after_land_change(result)
 
 func _toggle_pond() -> void:
-	var result: String = world.land.toggle_pond(player_pos())
+	var result: String = world.toggle_pond(player_pos())
 	$HUD.show_message(POND_MESSAGES[result])
 	_after_land_change(result)
 
@@ -350,7 +407,8 @@ func _water() -> void:
 		msg = msg % [f.SPECIES[f.trees[i].species].name, f.WATER_BONUS_YEARS]
 	$HUD.show_message(msg)
 
-# 足元の野菜を抜く。なければ 2m 以内の木を抜く(種は戻らない。達成済みのクエストは戻らない)
+# 足元の野菜を抜く。なければ 2m 以内の木を伐る(育った木は丸太になる。種は戻らない。
+# 達成済みのクエストは戻らない)。木もなければ、作業を始める前の小屋の場所を取り消す
 func _remove() -> void:
 	var g := world.garden
 	var pos := player_pos()
@@ -358,7 +416,13 @@ func _remove() -> void:
 	if g.remove_at(pos):
 		$HUD.show_message("%sを抜いた(種は戻らない)" % g.CROPS[c.kind].name)
 		return
-	world.forest.remove_nearest(pos, REACH)
+	var logs: int = world.cabin.fell(pos, REACH)
+	if logs > 0:
+		$HUD.show_message("木を伐った(丸太 +%d本)" % logs)
+	elif logs == 0:
+		$HUD.show_message("木を抜いた(細くて丸太にはならない)")
+	elif world.cabin.cancel(pos):
+		$HUD.show_message("小屋の場所を取り消した")
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
@@ -388,6 +452,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_water()
 		KEY_Z:
 			_remove()
+		KEY_H:
+			_cabin_action()
 		KEY_F:
 			_toggle_plot()
 		KEY_P:

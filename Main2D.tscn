@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://Main.gd" id="1"]
 [ext_resource type="PackedScene" path="res://Player2D.tscn" id="2"]
@@ -10,6 +10,7 @@
 [ext_resource type="Script" path="res://view/2d/PickupsView.gd" id="8"]
 [ext_resource type="Script" path="res://view/2d/MarketView.gd" id="9"]
 [ext_resource type="Script" path="res://view/2d/GardenView.gd" id="10"]
+[ext_resource type="Script" path="res://view/2d/CabinView.gd" id="11"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1")
@@ -22,6 +23,9 @@ script = ExtResource("5")
 
 [node name="Garden" type="Node2D" parent="."]
 script = ExtResource("10")
+
+[node name="Cabin" type="Node2D" parent="."]
+script = ExtResource("11")
 
 [node name="Quests" type="Node2D" parent="."]
 script = ExtResource("6")

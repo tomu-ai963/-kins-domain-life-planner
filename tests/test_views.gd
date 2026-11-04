@@ -26,14 +26,17 @@ func _process(_delta: float) -> bool:
 			_test_3d_seasons_and_growth()
 			_test_3d_market_and_pickups()
 			_test_3d_garden()
+			_test_3d_cabin()
+		10:
+			_test_3d_cabin_collision()  # 当たり判定が物理サーバーに入るのを待ってから
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
-		4:
+		12:
 			_test_2d_still_works()
 			main.queue_free()
 			_remove_save()
-		6:
+		14:
 			print("RESULT: %d passed, %d failed" % [_passed, _failed])
 			quit(1 if _failed > 0 else 0)
 	return false
@@ -231,6 +234,52 @@ func _test_3d_garden() -> void:
 	_check(w.land.plot_at(main.player_pos()) == null, "空きになれば F で取り消せる")
 	_check(hud.is_shop_open() == false, "市場の画面は閉じたまま")
 
+func _test_3d_cabin() -> void:
+	print("小屋")
+	var c = main.world.cabin
+	var player = main.get_node("Player")
+	var view: Node3D = main.get_node("Cabin")
+	var pieces := func() -> int: return view.get_child(0).get_child_count() if view.get_child_count() > 0 else 0
+	_check(view.get_child_count() == 0 and main.cabin_line().contains("H で足元"), "はじめは何も建っていない")
+	player.global_position = Vector3(20, 0, 20)
+	main._cabin_action()
+	_check(c.site == Vector2(20, 20) and pieces.call() == 8, "H で足元に場所を決めると、杭 4 本と縄 4 本が立つ")
+	player.global_position = Vector3(20, 0, 22.5)
+	main._remove()
+	_check(c.site == null and view.get_child_count() == 0, "作業を始める前なら Z で取り消せる")
+	player.global_position = Vector3(20, 0, 20)
+	main._cabin_action()
+	player.global_position = Vector3(20, 0, 22.5)
+	c.materials.log = 29
+
+	var counts := []
+	for i in range(c.total_days()):
+		c.last_worked = ""
+		main._cabin_action()
+		counts.append(pieces.call())
+	print("    作業の日ごとの部品の数: ", counts)
+	_check(c.is_complete() and c.materials.log == 0, "7 日作業すると完成し、丸太 29 本を使う")
+	_check(counts[0] == 2 and counts[1] == 5, "基礎: 1 日目は長い辺の土台、2 日目で四辺の土台と床")
+	_check(counts[2] == 10 and counts[3] == 10, "壁 1〜2 日目: 土台の上に壁 5 枚(ドアの開口を空ける)")
+	_check(counts[4] > counts[3], "壁 3 日目: ドアの上の壁とドア・窓が付く")
+	_check(counts[5] > counts[4], "屋根 1 日目: 垂木が付く")
+	_check(counts[6] < counts[5] and main.cabin_line().contains("完成"), "屋根 2 日目: 垂木が屋根に変わって完成")
+	var walls: MeshInstance3D = view.get_child(0).get_child(5)
+	_check(walls.scale.y > 2.0, "できあがりの壁は 2m を超える")
+	_check(view.get_child(0).has_node("Collider"), "壁ができると当たり判定が付く")
+	player.global_position = Vector3(20, 0, 20)
+	main.world.forest.seeds.birch = 3
+	var n: int = main.world.forest.trees.size()
+	main._on_plant_tree(main.player_pos())
+	_check(main.world.forest.trees.size() == n, "小屋の場所には木を植えられない")
+	player.global_position = Vector3(20, 0, 23)
+
+func _test_3d_cabin_collision() -> void:
+	var player: CharacterBody3D = main.get_node("Player")
+	var from_south := Transform3D(Basis.IDENTITY, Vector3(20, 0, 23))
+	_check(player.test_move(from_south, Vector3(0, 0, -3)), "南から歩いて小屋にぶつかる(通り抜けられない)")
+	_check(not player.test_move(from_south, Vector3(5, 0, 0)), "小屋の外は歩ける")
+
 func _test_2d_still_works() -> void:
 	print("2D のシーン(比較用)")
 	_check(main is Node2D, "Main2D.tscn は 2D")
@@ -245,3 +294,6 @@ func _test_2d_still_works() -> void:
 	main.world.garden.seeds.radish = 1
 	main._on_plant_tree(main.player_pos())
 	_check(main.world.garden.crops.size() == 1, "2D でも区画に野菜をまける")
+	main.get_node("Player").global_position = Vector2(800, 800)
+	main._cabin_action()
+	_check(main.world.cabin.site == Vector2(20, 20), "2D でも小屋の場所を決められる")

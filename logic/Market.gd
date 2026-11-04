@@ -5,6 +5,7 @@ extends RefCounted
 # 値段はロシアの園芸店・市場の目安(ルーブル)。文言は Main、見た目は view/ が決める
 const Forest = preload("res://logic/Forest.gd")
 const Garden = preload("res://logic/Garden.gd")
+const Cabin = preload("res://logic/Cabin.gd")
 
 signal changed
 
@@ -25,6 +26,7 @@ const GOODS := [
 	{"id": "cucumber_seed", "species": "cucumber", "form": "crop_seed", "amount": 1, "price": 60},
 	{"id": "potato_seed", "species": "potato", "form": "crop_seed", "amount": 1, "price": 150},
 	{"id": "garlic_seed", "species": "garlic", "form": "crop_seed", "amount": 1, "price": 250},
+	{"id": "logs", "species": "log", "form": "material", "amount": 5, "price": 1500},
 ]
 # 買い取り値(リンゴは 1 個あたり、野菜は 1kg あたりの ₽)。店頭の値段の半分くらい
 const SELL_PRICES := {"apple": 15, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120}
@@ -32,6 +34,7 @@ const SELL_PRICES := {"apple": 15, "radish": 40, "carrot": 20, "cucumber": 25, "
 var money := INITIAL_MONEY
 var forest: Forest  # GameWorld が設定する(木の種・苗木・リンゴの持ち物は Forest にある)
 var garden: Garden  # GameWorld が設定する(野菜の種・収穫物の持ち物は Garden にある)
+var cabin: Cabin    # GameWorld が設定する(丸太の持ち物は Cabin にある)
 
 func is_near(pos: Vector2) -> bool:
 	return pos.distance_to(POS) <= REACH
@@ -55,6 +58,8 @@ func buy(id: String) -> String:
 		stock = forest.saplings
 	elif g.form == "crop_seed":
 		stock = garden.seeds
+	elif g.form == "material":
+		stock = cabin.materials
 	stock[g.species] = int(stock.get(g.species, 0)) + int(g.amount)
 	changed.emit()
 	forest.changed.emit()

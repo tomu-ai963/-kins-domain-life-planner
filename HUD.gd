@@ -134,7 +134,7 @@ func _process(delta: float) -> void:
 	_label.text = (
 		"%04d/%02d/%02d  %s%s\n" +
 		"X:%6.1f m  Y:%6.1f m   木: %d本%s\n" +
-		"所持金: %s₽   収穫物: %s\n" +
+		"所持金: %s₽   丸太: %d本   収穫物: %s\n" +
 		"種:   白樺 %d  リンゴ %d  シベリア杉 %d\n" +
 		"苗木: 白樺 %d  リンゴ %d  シベリア杉 %d\n" +
 		"野菜の種: %s\n" +
@@ -142,16 +142,17 @@ func _process(delta: float) -> void:
 		"%s\n" +
 		"今日の発見: %s\n" +
 		"%s\n" +
+		"%s\n" +
 		"[1]白樺 [2]リンゴ [3]シベリア杉 [V]種/苗木  B:市場(南の境界の外)\n" +
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク\n" +
-		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く  F:菜園  P:池\n" +
+		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る  F:菜園  P:池  H:小屋\n" +
 		"T:+1年  G:+10年  R:今日に戻す (未来をプレビュー)  ホイール:ズーム\n" +
 		"%s\n" +
 		"%s"
 	) % [
 		dt.year, dt.month, dt.day, season_jp, offset,
 		pos_m.x, pos_m.y, _trees.trees.size(), market_hint,
-		_money_text(_main.world.market.money), _main.produce_line(),
+		_money_text(_main.world.market.money), int(_main.world.cabin.materials.log), _main.produce_line(),
 		seeds.birch, seeds.apple, seeds.cedar,
 		sap.birch, sap.apple, sap.cedar,
 		_main.crop_seeds_line(),
@@ -159,6 +160,7 @@ func _process(delta: float) -> void:
 		_main.selected_crop_line(),
 		found,
 		_main.quest_line(),
+		_main.cabin_line(),
 		_main.plot_line(),
 		_message,
 	]

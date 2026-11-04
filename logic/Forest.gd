@@ -44,21 +44,26 @@ const DAILY_EVENTS := [
 #   germination: 種の発芽率 / sapling_age: 市場の苗木の樹齢
 #   seed_age: 根元に種を落としはじめる樹齢(0 = 落とさない) / seed_seasons: 落とす季節
 #   seed_drop: 1 本が 1 日に落とす種の数(ひとかたまりで落ちている)
+#   wood_age: 伐って丸太(約 0.1m³)が採れはじめる樹齢 / wood_years: 丸太 1 本増えるのにかかる年数 / wood_max: 上限
+#             (白樺: 20 年で 2 本ほど = 約 0.2m³・40 年で 6 本 / 杉は育つのが遅い / リンゴは太くならない)
 const SPECIES := {
 	"birch": {
 		"name": "白樺", "max_r": 3.5, "tau": 6.0, "p": 2.5, "evergreen": false,
 		"germination": 0.4, "sapling_age": 2.0,
 		"seed_age": 10.0, "seed_seasons": ["autumn", "winter"], "seed_drop": 5,
+		"wood_age": 15.0, "wood_years": 5.0, "wood_max": 6,
 	},
 	"apple": {
 		"name": "リンゴ", "max_r": 3.0, "tau": 5.0, "p": 2.0, "evergreen": false,
 		"germination": 0.6, "sapling_age": 3.0,
 		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
 	},
 	"cedar": {
 		"name": "シベリア杉", "max_r": 6.0, "tau": 40.0, "p": 2.0, "evergreen": true,
 		"germination": 0.5, "sapling_age": 4.0,
 		"seed_age": 25.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 40.0, "wood_years": 10.0, "wood_max": 8,
 	},
 }
 
@@ -276,6 +281,16 @@ func today() -> String:
 
 func _now() -> int:
 	return int(Time.get_unix_time_from_system())
+
+# 伐ったときに採れる丸太の本数(判定は現実の樹齢。先送りプレビューでは増えない)
+func wood_yield(tree: Dictionary) -> int:
+	if not is_established(tree):
+		return 0
+	var sp: Dictionary = SPECIES[tree.species]
+	var age := real_age_years(tree)
+	if age < sp.wood_age:
+		return 0
+	return mini(1 + int((age - sp.wood_age) / sp.wood_years), int(sp.wood_max))
 
 func remove_nearest(pos: Vector2, max_dist: float) -> bool:
 	var best := nearest_index(pos, max_dist, "")
