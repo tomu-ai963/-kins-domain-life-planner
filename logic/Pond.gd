@@ -3,7 +3,7 @@ extends RefCounted
 # ── 池の作り込み(描画を持たない) ───────────────────────────────
 # 池の場所は Land.pond。ここは掘る作業・水の量・来る生き物を持つ。
 # 場所を決める → 1 日 1 回掘る(5 日) → 雨で水がたまる → 水が半分を超えると生き物が順に来る。
-# 雨は閉じているあいだの分も数える(天気は日付から決まる。Forest.roll_daily_event)。
+# 雨と夏の蒸発は閉じているあいだの分も数える(天気は日付から決まる。Forest.roll_daily_event)。
 # 文言は Main、見た目は view/ が決める。座標の単位は m
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
@@ -15,6 +15,7 @@ signal dirty    # セーブに入る状態が変わった
 const DIG_DAYS := 5     # 掘る日数(50m² を手で掘ると現実は 2〜3 週間ほど。縮めている)
 const REACH := 2.0      # 池の縁からこの距離までなら作業できる
 const RAIN_FILL := 25   # 雨 1 回でたまる水(%)。4 回の雨で満杯
+const SUMMER_LOSS := 2  # 夏(6〜8 月)に 1 日で蒸発する水(%)。雨は平均で 1 日 6% ほどたまる
 const WET_WATER := 50   # 水がこの量(%)を超えると、生き物が来るようになる
 const WATER_RADIUS := 20.0  # 池の中心からこの距離(m)までの木と区画に、まとめて水をやれる
 const WATER_COST := 5       # まとめて水をやると減る水(%)。雨は 4 日に 1 回 25% なので、毎日使っても釣り合う
@@ -131,7 +132,10 @@ func catch_up() -> void:
 	var before := water
 	var today: int = forest.day_number()
 	for d in range(last_checked_day + 1, today + 1):
-		if forest.roll_daily_event(Forest.date_of_day(d)) == "rain":
+		var date := Forest.date_of_day(d)
+		if forest.is_summer_date(date):
+			water = maxi(0, water - SUMMER_LOSS)
+		if forest.roll_daily_event(date) == "rain":
 			water = mini(100, water + RAIN_FILL)
 		if water >= WET_WATER and wet_since_day < 0:
 			wet_since_day = d

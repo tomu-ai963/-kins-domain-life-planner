@@ -329,8 +329,10 @@ func plot_line() -> String:
 	if c.is_empty():
 		return "足元の区画: 空き(SPACE でまく)"
 	var crop_name: String = g.CROPS[c.kind].name
+	if g.is_spoiled(c):
+		return "足元の区画: %s 傷みはじめた(E で収穫・量は半分)" % crop_name
 	if g.is_ripe(c):
-		return "足元の区画: %s 収穫できる(E)" % crop_name
+		return "足元の区画: %s 収穫できる(E・あと%d日で傷む)" % [crop_name, g.days_until_spoiled(c)]
 	var water := "水やり済み" if g.watered_today(c) else "Q で水やり"
 	return "足元の区画: %s あと%d日(%s)" % [crop_name, g.days_left(c), water]
 
@@ -493,7 +495,8 @@ func _harvest() -> void:
 	var crop: String = g.harvest_at(pos)
 	if crop == "harvested":
 		var kind: String = c.kind
-		$HUD.show_message("%sを%dkg収穫した(市場で1kg %d₽で売れる)" % [g.CROPS[kind].name, g.last_harvest_kg, world.market.SELL_PRICES[kind]])
+		var spoiled := "傷んでいて半分だけ。" if g.last_harvest_spoiled else ""
+		$HUD.show_message("%sを%dkg収穫した(%s市場で1kg %d₽で売れる)" % [g.CROPS[kind].name, g.last_harvest_kg, spoiled, world.market.SELL_PRICES[kind]])
 		return
 	if crop == "preview":
 		$HUD.show_message(HARVEST_MESSAGES.preview)

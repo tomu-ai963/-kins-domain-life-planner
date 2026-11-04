@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_sowing()
 	_test_growth_and_water()
 	_test_harvest_and_sell()
+	_test_spoiling()
 	_test_rain()
 	_test_plot_guard_and_remove()
 	_test_preview()
@@ -159,6 +160,50 @@ func _test_harvest_and_sell() -> void:
 			if income <= int(g2.price):
 				ok = false
 	_check(ok, "どの野菜も 1 区画の売り上げが種代を上回る")
+
+func _test_spoiling() -> void:
+	print("傷む")
+	var w := _world()
+	var g := w.garden
+	# ラディッシュ: 毎日水をやって 3 日で収穫でき、そこから 3 日もつ
+	var c := _grown(w, "radish", 3, 3)
+	_check(g.is_ripe(c) and g.days_since_ripe(c) == 0.0 and g.days_until_spoiled(c) == 3, "収穫できるようになった日は、あと 3 日もつ")
+	c.sown_day -= 3
+	_check(g.days_since_ripe(c) == 3.0 and not g.is_spoiled(c) and g.days_until_spoiled(c) == 0, "3 日たってもまだ傷んでいない(ちょうど期限)")
+	c.sown_day -= 1
+	_check(g.is_spoiled(c), "4 日たつと傷む")
+	_check(g.harvest_at(SPOT) == "harvested" and g.last_harvest_kg == 3 and g.last_harvest_spoiled and g.produce.radish == 3, "傷んだ野菜は半分だけ採れる(6kg → 3kg)")
+
+	var w2 := _world()
+	var c2 := _grown(w2, "radish", 3, 3)
+	_check(w2.garden.harvest_at(SPOT) == "harvested" and w2.garden.last_harvest_kg == 6 and not w2.garden.last_harvest_spoiled, "傷む前なら満量")
+
+	# 野菜ごとの持ち
+	var expected := {"radish": 3, "cucumber": 3, "tomato": 4, "carrot": 7, "potato": 10, "garlic": 10}
+	var ok := true
+	for kind in expected:
+		if int(w.garden.CROPS[kind].keep_days) != expected[kind]:
+			ok = false
+	_check(ok and expected.size() == w.garden.CROPS.size(), "どの野菜にも、傷むまでの日数がある")
+	var w3 := _world()
+	var c3 := _grown(w3, "garlic", 7, 7)
+	c3.sown_day -= 10
+	_check(not w3.garden.is_spoiled(c3), "ニンニクは 10 日もつ")
+	c3.sown_day -= 1
+	_check(w3.garden.is_spoiled(c3), "11 日で傷む")
+	_check(w3.garden.harvest_at(SPOT) == "harvested" and w3.garden.last_harvest_kg == 3, "5kg の半分は切り上げて 3kg")
+
+	# 雨で日数が狂わない: 収穫できる野菜には雨が入らない
+	var w4 := _world()
+	var c4 := _grown(w4, "radish", 3, 3)
+	_check(w4.garden.water_all() == 0 and not w4.garden.watered_today(c4), "収穫できる野菜には雨の水を数えない")
+
+	# 水やりなしで育った野菜も、同じ日数で傷む
+	var w5 := _world()
+	var c5 := _grown(w5, "radish", 6, 0)
+	_check(w5.garden.is_ripe(c5) and w5.garden.days_since_ripe(c5) == 0.0, "水なしで 6 日: 収穫できるようになったところ")
+	c5.sown_day -= 4
+	_check(w5.garden.is_spoiled(c5), "そこから 4 日で傷む")
 
 func _test_rain() -> void:
 	print("雨")

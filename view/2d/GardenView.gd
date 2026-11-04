@@ -33,6 +33,8 @@ func _draw() -> void:
 			draw_rect(Rect2(center - Vector2(plot, plot) * 0.5, Vector2(plot, plot)), Color(0.14, 0.09, 0.06, 0.45))
 		var ratio: float = garden.growth_ratio(c)
 		var color: Color = RIPE[c.kind] if ratio >= 1.0 else LEAF
+		if garden.is_spoiled(c):
+			color = Color(0.36, 0.26, 0.14)
 		for r in range(ROWS):
 			for k in range(COLUMNS):
 				var p := center + Vector2(plot * ((k + 0.5) / COLUMNS - 0.5), plot * ((r + 1.0) / (ROWS + 1.0) - 0.5))

@@ -10,6 +10,7 @@ const ROWS := 3     # LandView3D の畝と同じ本数
 const COLUMNS := 4
 const BED_TOP := 0.12  # LandView3D の土の箱の上面
 const MIN_SCALE := 0.2 # まいたばかりの芽の大きさ(育ちきった葉に対する割合)
+const SPOILED := Color(0.36, 0.26, 0.14)  # 傷んだ実の色
 
 # size: 育ちきった葉の幅・高さ・奥行き(m) / ball: 丸い葉(false なら細長い円錐)
 # ripe / ripe_size: 収穫できるときに見える実の色と大きさ
@@ -59,6 +60,7 @@ func _rebuild() -> void:
 		var ratio: float = garden.growth_ratio(c)
 		var leaf: Vector3 = look.size * lerpf(MIN_SCALE, 1.0, ratio)
 		var mesh: Mesh = _ball if look.ball else _cone
+		var fruit: Color = SPOILED if garden.is_spoiled(c) else look.ripe
 		if garden.watered_today(c):
 			var wet := Look.mesh_node(_wet_mesh, _wet_mat, Look.at(c.pos, BED_TOP + 0.005))
 			wet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -71,4 +73,4 @@ func _rebuild() -> void:
 				add_child(Look.mesh_node(mesh, _mat(look.leaf), Look.at(p, BED_TOP + leaf.y * 0.5), leaf))
 				if ratio >= 1.0:
 					# 引いたカメラからも分かるように、実は葉の上に見せる
-					add_child(Look.mesh_node(_ball, _mat(look.ripe), Look.at(p, BED_TOP + leaf.y), look.ripe_size))
+					add_child(Look.mesh_node(_ball, _mat(fruit), Look.at(p, BED_TOP + leaf.y), look.ripe_size))

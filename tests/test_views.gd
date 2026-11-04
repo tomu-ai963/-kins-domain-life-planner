@@ -203,6 +203,22 @@ func _test_3d_garden() -> void:
 	g.changed.emit()
 	_check(view.get_child_count() == 1 + 12 + 12, "収穫できると、株ごとに実が見える")
 	_check(view.get_child(1).scale.x > small.x, "育つと葉が大きくなる")
+	_check(main.plot_line().contains("あと3日で傷む"), "HUD に傷むまでの日数が出る")
+	var fruit_before: Color = (view.get_child(2).material_override as StandardMaterial3D).albedo_color
+	c.sown_day -= 8
+	g.changed.emit()
+	_check(main.plot_line().contains("傷みはじめた"), "傷むと HUD が変わる")
+	_check((view.get_child(2).material_override as StandardMaterial3D).albedo_color != fruit_before, "傷むと実の色が変わる")
+	main._harvest()
+	_check(g.produce.radish == 3 and main.get_node("HUD")._message.contains("半分"), "傷んだ野菜は半分だけ採れて、そう知らせる")
+	g.produce.radish = 0
+	g.seeds.radish = 1
+	main._on_plant_tree(main.player_pos())
+	main._water()
+	c = g.crop_at(main.player_pos())
+	c.sown_day -= 3
+	c.water_days = 4
+	g.changed.emit()
 	main._harvest()
 	_check(g.produce.radish == 6 and view.get_child_count() == 0, "E で収穫でき、区画は空きに戻る")
 

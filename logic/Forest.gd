@@ -308,6 +308,11 @@ func today() -> String:
 func day_number() -> int:
 	return int(Time.get_unix_time_from_datetime_string(today()) / 86400.0)
 
+# その日付が夏か(6〜8 月。池の水が蒸発する)。テストで差し替えられるようにメソッドにしておく
+func is_summer_date(date: String) -> bool:
+	var month := int(date.substr(5, 2))
+	return month >= 6 and month <= 8
+
 # 通し番号から日付(YYYY-MM-DD)に戻す
 static func date_of_day(n: int) -> String:
 	return Time.get_date_string_from_unix_time(n * 86400)

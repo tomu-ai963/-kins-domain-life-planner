@@ -17,14 +17,16 @@ const SEEDLING_HEAD_START := 2.0  # 苗から植えると、これだけ育っ�
 # seasons: まける季節(苗を植えられる季節) / grow_days: 毎日水をやったときの日数(現実の日数から縮めたもの)
 # yield_kg: 1 区画(9m²)の収量。現実の 1m² あたりの目安 × 9
 # seedling_only: 苗からしか育てない(小屋で苗にする) / hardy: 霜で枯れない
+# keep_days: 収穫できるようになってから傷むまでの日数。すぎると収量が半分になる(現実の持ちの目安)
 const CROPS := {
-	"tomato": {"name": "トマト", "seed_name": "トマトの種", "seasons": ["spring", "summer"], "grow_days": 7, "yield_kg": 30, "seedling_only": true},  # 現実 定植から約 60 日
-	"radish": {"name": "ラディッシュ", "seed_name": "ラディッシュの種", "seasons": ["spring", "autumn"], "grow_days": 3, "yield_kg": 6},  # 現実 約 25 日
-	"carrot": {"name": "にんじん", "seed_name": "にんじんの種", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 20},     # 現実 約 90 日
-	"cucumber": {"name": "きゅうり", "seed_name": "きゅうりの種", "seasons": ["spring", "summer"], "grow_days": 5, "yield_kg": 18},  # 現実 約 55 日
-	"potato": {"name": "じゃがいも", "seed_name": "じゃがいもの種いも", "seasons": ["spring"], "grow_days": 7, "yield_kg": 25},       # 現実 約 90 日
-	"garlic": {"name": "ニンニク", "seed_name": "ニンニクの種球", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 5, "hardy": true},  # 現実 約 9 か月(秋に植えて翌夏)
+	"tomato": {"name": "トマト", "seed_name": "トマトの種", "seasons": ["spring", "summer"], "grow_days": 7, "yield_kg": 30, "keep_days": 4, "seedling_only": true},  # 現実 定植から約 60 日
+	"radish": {"name": "ラディッシュ", "seed_name": "ラディッシュの種", "seasons": ["spring", "autumn"], "grow_days": 3, "yield_kg": 6, "keep_days": 3},  # 現実 約 25 日
+	"carrot": {"name": "にんじん", "seed_name": "にんじんの種", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 20, "keep_days": 7},     # 現実 約 90 日
+	"cucumber": {"name": "きゅうり", "seed_name": "きゅうりの種", "seasons": ["spring", "summer"], "grow_days": 5, "yield_kg": 18, "keep_days": 3},  # 現実 約 55 日
+	"potato": {"name": "じゃがいも", "seed_name": "じゃがいもの種いも", "seasons": ["spring"], "grow_days": 7, "yield_kg": 25, "keep_days": 10},       # 現実 約 90 日
+	"garlic": {"name": "ニンニク", "seed_name": "ニンニクの種球", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 5, "keep_days": 10, "hardy": true},  # 現実 約 9 か月(秋に植えて翌夏)
 }
+const SPOILED_YIELD := 0.5  # 傷んだ野菜の収量の割合
 
 var land: Land      # GameWorld が設定する
 var forest: Forest  # 季節・日付・雨・先送りプレビューは Forest が持っている
@@ -33,6 +35,7 @@ var crops := []    # [{pos: Vector2(区画の中心), kind, sown_day: int, water
 var seeds := {}    # 野菜ごとの種の数(1 つで 1 区画ぶん)
 var produce := {}  # 野菜ごとの収穫物(kg)。市場で売る
 var last_harvest_kg := 0  # 直前の収穫の量(文言用)
+var last_harvest_spoiled := false  # 直前の収穫が傷んでいたか(文言用)
 var last_frost := {}      # 今日の確認で霜で枯れた区画の数 {kind: 数}(知らせる用・保存しない)
 
 func _init() -> void:
@@ -104,7 +107,7 @@ func water_at(pos: Vector2) -> String:
 func water_all() -> int:
 	var n := 0
 	for c in crops:
-		if _water(c):
+		if not is_ripe(c) and _water(c):  # 収穫できる野菜には水はいらない(傷むまでの日数が数えられなくなる)
 			n += 1
 	if n > 0:
 		_commit()
@@ -148,7 +151,10 @@ func harvest_at(pos: Vector2) -> String:
 		return "preview"
 	if not is_ripe(c):
 		return "growing"
+	last_harvest_spoiled = is_spoiled(c)
 	last_harvest_kg = int(CROPS[c.kind].yield_kg)
+	if last_harvest_spoiled:
+		last_harvest_kg = ceili(last_harvest_kg * SPOILED_YIELD)
 	produce[c.kind] += last_harvest_kg
 	crops.erase(c)
 	_commit()
@@ -178,6 +184,17 @@ func growth_days(c: Dictionary) -> float:
 
 func is_ripe(c: Dictionary) -> bool:
 	return growth_days(c) >= float(CROPS[c.kind].grow_days)
+
+# 収穫できるようになってからの日数。そのあとは水をやらないので、育ちは 1 日に DRY_GROWTH ずつ増える
+func days_since_ripe(c: Dictionary) -> float:
+	return maxf(0.0, (growth_days(c) - float(CROPS[c.kind].grow_days)) / DRY_GROWTH)
+
+func is_spoiled(c: Dictionary) -> bool:
+	return is_ripe(c) and days_since_ripe(c) > float(CROPS[c.kind].keep_days)
+
+# 傷むまであと何日か(傷んでいれば 0)
+func days_until_spoiled(c: Dictionary) -> int:
+	return maxi(0, ceili(float(CROPS[c.kind].keep_days) - days_since_ripe(c)))
 
 # 毎日水をやったとして、収穫まであと何日か
 func days_left(c: Dictionary) -> int:

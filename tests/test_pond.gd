@@ -14,13 +14,30 @@ var _failed := 0
 var _passed := 0
 
 # 毎日雨 / 毎日晴れの Forest(天気は日付で決まるので、ふつうには選べない)
+# テストを動かす季節に左右されないよう、夏の蒸発も決めておく
 class RainForest extends Forest:
 	func roll_daily_event(_date: String) -> String:
 		return "rain"
+	func is_summer_date(_date: String) -> bool:
+		return false
 
 class DryForest extends Forest:
 	func roll_daily_event(_date: String) -> String:
 		return "birds"
+	func is_summer_date(_date: String) -> bool:
+		return false
+
+class SummerForest extends Forest:
+	func roll_daily_event(_date: String) -> String:
+		return "birds"
+	func is_summer_date(_date: String) -> bool:
+		return true
+
+class SummerRainForest extends Forest:
+	func roll_daily_event(_date: String) -> String:
+		return "rain"
+	func is_summer_date(_date: String) -> bool:
+		return true
 
 func _initialize() -> void:
 	_test_dig()
@@ -156,6 +173,24 @@ func _test_rain() -> void:
 	w3.pond.water = 50
 	_days_pass(w3, 10)
 	_check(w3.pond.water == 50 and w3.pond.last_gain == 0, "雨が降らなければ増えない(減りもしない)")
+
+	# 夏の蒸発
+	var w4 := _world(SummerForest.new())
+	_dug(w4)
+	w4.pond.water = 50
+	_days_pass(w4, 10)
+	_check(w4.pond.water == 30 and w4.pond.last_gain == -20, "夏は 1 日 2% 減る(閉じていた 10 日ぶんも)")
+	_days_pass(w4, 100)
+	_check(w4.pond.water == 0, "0% より減らない")
+	var w5 := _world(SummerRainForest.new())
+	_dug(w5)
+	_days_pass(w5, 1)
+	_check(w5.pond.water == 25, "夏の雨の日: 空の池に 25% たまる(蒸発のあとに雨)")
+	_days_pass(w5, 1)
+	_check(w5.pond.water == 48, "次の雨の日: 2% 減って 25% 増える")
+	var f2 := Forest.new()
+	_check(f2.is_summer_date("2026-06-01") and f2.is_summer_date("2026-08-31"), "夏は 6 月 1 日から 8 月 31 日まで")
+	_check(not f2.is_summer_date("2026-05-31") and not f2.is_summer_date("2026-09-01"), "5 月と 9 月は夏ではない")
 
 	# 本物の天気: 2026 年の雨の日は 90 日(ROADMAP の記録どおり)。満杯まで 4 回
 	var f := Forest.new()
