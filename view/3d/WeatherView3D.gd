@@ -6,8 +6,9 @@ extends Node3D
 # これで、寄っても引いても画面の上では同じ密度・同じ太さに見える。
 # 半透明なので奥行きを持たず、輪郭線は付かない(outline.gdshader)
 const Forest = preload("res://logic/Forest.gd")
+const WorldMaterial = preload("res://view/3d/WorldMaterial.gd")
 
-const BASE_DIST := 28.0     # カメラがこの距離のとき、下の大きさ(m)がそのままになる
+const BASE_DIST := 28.0    # カメラがこの距離のとき、下の大きさ(m)がそのままになる
 const AREA := 32.0          # 降らせる範囲(半分の幅)
 const HEIGHT := 14.0        # 粒が出る高さ
 
@@ -59,7 +60,7 @@ func is_falling() -> bool:
 func set_night(amount: float) -> void:
 	var dim := lerpf(1.0, NIGHT_DIM, amount)
 	for p in [_rain, _ripples, _snow]:
-		var m: StandardMaterial3D = p.draw_pass_1.surface_get_material(0)
+		var m = p.draw_pass_1.surface_get_material(0)
 		var base: Color = m.get_meta("base_color")
 		m.albedo_color = Color(base.r * dim, base.g * dim, base.b * dim, base.a)
 
@@ -122,7 +123,12 @@ func _build_rain() -> GPUParticles3D:
 func _build_ripples() -> GPUParticles3D:
 	var mesh := PlaneMesh.new()
 	mesh.size = Vector2.ONE * RIPPLE_SIZE
-	mesh.material = _material(RIPPLE_COLOR, _ring_texture(), BaseMaterial3D.BILLBOARD_DISABLED)
+	# 地面に貼りつくものなので、地面と同じように曲がる材質にする
+	var m := WorldMaterial.new(RIPPLE_COLOR, true)
+	m.albedo_texture = _ring_texture()
+	m.vertex_color_use_as_albedo = true
+	m.set_meta("base_color", RIPPLE_COLOR)
+	mesh.material = m
 	var process := ParticleProcessMaterial.new()
 	process.initial_velocity_min = 0.0
 	process.initial_velocity_max = 0.0

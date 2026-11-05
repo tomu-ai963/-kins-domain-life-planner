@@ -6,6 +6,7 @@ extends SceneTree
 
 const TEST_SAVE := "user://test_views.json"
 const DAY := 86400
+const WorldMaterial = preload("res://view/3d/WorldMaterial.gd")
 
 var _failed := 0
 var _passed := 0
@@ -26,6 +27,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_seasons_and_growth()
 			_test_tree_shapes()
 			_test_player_figure()
+			_test_ground()
 			_test_3d_market_and_pickups()
 			_test_3d_garden()
 			_test_3d_cabin()
@@ -142,7 +144,7 @@ func _test_3d_seasons_and_growth() -> void:
 	_check(trees.is_bare("birch") and birch_crown.material_override == trees.twig_material("birch"), "冬の白樺は葉が落ちて枝だけになる")
 	_check(birch_crown.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "冬の枝にも影が落ちる")
 	var ground_grass: MeshInstance3D = main.get_node("Ground").get_child(1)
-	_check((ground_grass.material_override as StandardMaterial3D).albedo_color.b > 0.9, "冬の地面は雪原の色")
+	_check(ground_grass.material_override.albedo_color.b > 0.9, "冬の地面は雪原の色")
 
 # 面の向き(表が外)と、箱に収まっているかを、形ごとに確かめる
 func _mesh_faces_outward(mesh: ArrayMesh) -> bool:
@@ -235,6 +237,85 @@ func _test_player_figure() -> void:
 	_check(not figure.moving, "市場を開いて止まっている間は歩かない")
 	player.set_physics_process(true)
 
+func _test_ground() -> void:
+	print("地面の作り込み")
+	var ground: Node3D = main.get_node("Ground")
+	var player = main.get_node("Player")
+	var f = main.world.forest
+	var w = main.world
+
+	# 曲がる世界: 中心は下がらず、遠いほど下がる。奥行きのほうが強く曲がる
+	_check(WorldMaterial.drop(0, 0) == 0.0, "カメラが見ている場所は下がらない")
+	_check(WorldMaterial.drop(0, 40) > WorldMaterial.drop(0, 20) and WorldMaterial.drop(0, 20) > 0.0, "遠いほど下がる")
+	_check(WorldMaterial.drop(0, 30) > WorldMaterial.drop(30, 0), "東西より奥行きのほうが強く曲がる")
+	_check(WorldMaterial.drop(3, 3) < 0.05, "足元の近くはほとんど曲がらない(小屋や畑の形が崩れない)")
+	var opaque := WorldMaterial.new(Color.RED)
+	var clear := WorldMaterial.new(Color(1, 0, 0, 0.5))
+	_check(opaque.shader != clear.shader and clear.shader.code.contains("ALPHA") and not opaque.shader.code.contains("ALPHA"), "半透明の色だけ半透明のシェーダーになる")
+	_check(WorldMaterial.new(Color.BLUE).shader == opaque.shader, "同じ種類の材質はシェーダーを使い回す")
+	opaque.albedo_color = Color(1, 0, 0, 0.5)
+	_check(opaque.shader == clear.shader, "あとから半透明にしても切り替わる")
+	var unlit := WorldMaterial.new(Color.RED, true)
+	_check(unlit.shader.code.contains("unshaded") and not unlit.shader.code.contains("diffuse_toon"), "光を受けない材質はトゥーンにしない")
+
+	# 長い帯は頂点があるので曲がる
+	var strip := main.get_node("Ground").get_child(2) as MeshInstance3D
+	_check((strip.mesh as PlaneMesh).subdivide_width >= 40, "グリッドの長い帯は細かく分かれている(曲がれる)")
+
+	# 起伏は土地の外だけ
+	var flat := true
+	for p in [Vector2(0, 0), Vector2(49, 49), Vector2(0, 54), Vector2(78, 78), Vector2(-78, 0)]:
+		flat = flat and is_equal_approx(ground.height_at(p.x, p.y), -0.02)
+	_check(flat, "土地・市場・歩ける範囲は平ら")
+	_check(ground.height_at(200, 0) > 5.0 and ground.height_at(0, -200) > 5.0, "外には丘がある")
+	_check(ground.height_at(170, 30) != ground.height_at(170, 110), "丘の高さは場所で変わる(起伏がある)")
+	_check(player.WALK_LIMIT < ground.HILL_START, "歩ける範囲は丘の手前まで")
+	_check(ground.get_child(0).cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "丘は土地に影を落とさない")
+
+	# 歩ける範囲の外へは出られない
+	player.global_position = Vector3(500, 0, -500)
+	player._physics_process(0.016)
+	_check(player.global_position.x == player.WALK_LIMIT and player.global_position.z == -player.WALK_LIMIT, "歩いて丘へは入れない")
+	player.global_position = Vector3.ZERO
+
+	# 草の株と花
+	f.set_season("summer")
+	_check(ground._tufts.visible and ground._flowers.visible, "夏は草の株と花がある")
+	_check(ground._tufts.multimesh.instance_count == ground.TUFT_COUNT, "草の株が土地に散らばっている")
+	f.set_season("autumn")
+	_check(ground._tufts.visible and not ground._flowers.visible, "秋は花が終わる")
+	f.set_season("winter")
+	_check(not ground._tufts.visible and not ground._flowers.visible, "冬は雪の下")
+	f.set_season("summer")
+
+	# 区画・池・小屋の上には生えない
+	var first: Transform3D = ground._tufts.get_meta("base")[0]
+	var pos := Vector2(first.origin.x, first.origin.z)
+	var plots_before: Array = w.land.plots.duplicate()
+	w.land.plots = []
+	w.land.changed.emit()
+	var before: int = ground.hidden_count()
+	_check(ground._tufts.get_meta("hidden")[0] == 0, "はじめは株が見えている")
+	w.land.plots.append(w.land.plot_center(pos))
+	w.land.changed.emit()
+	_check(ground._tufts.get_meta("hidden")[0] == 1 and ground.hidden_count() > before, "区画を置くと、その上の株が隠れる")
+	w.land.plots = []
+	w.land.changed.emit()
+	_check(ground._tufts.get_meta("hidden")[0] == 0 and ground.hidden_count() == before, "区画を取り消すと、また生える")
+	w.land.pond = pos
+	w.land.changed.emit()
+	_check(ground._tufts.get_meta("hidden")[0] == 1, "池の上にも生えない")
+	w.land.pond = null
+	var c = w.cabin
+	var site_before = c.site
+	c.site = pos
+	c.changed.emit()
+	_check(ground._tufts.get_meta("hidden")[0] == 1, "小屋の下にも生えない")
+	c.site = site_before
+	w.land.plots = plots_before
+	c.changed.emit()
+	w.land.changed.emit()
+
 func _test_3d_market_and_pickups() -> void:
 	print("市場と落ちた種")
 	var w = main.world
@@ -300,11 +381,11 @@ func _test_3d_garden() -> void:
 	_check(view.get_child_count() == 1 + 12 + 12, "収穫できると、株ごとに実が見える")
 	_check(view.get_child(1).scale.x > small.x, "育つと葉が大きくなる")
 	_check(main.plot_line().contains("あと3日で傷む"), "HUD に傷むまでの日数が出る")
-	var fruit_before: Color = (view.get_child(2).material_override as StandardMaterial3D).albedo_color
+	var fruit_before: Color = view.get_child(2).material_override.albedo_color
 	c.sown_day -= 8
 	g.changed.emit()
 	_check(main.plot_line().contains("傷みはじめた"), "傷むと HUD が変わる")
-	_check((view.get_child(2).material_override as StandardMaterial3D).albedo_color != fruit_before, "傷むと実の色が変わる")
+	_check(view.get_child(2).material_override.albedo_color != fruit_before, "傷むと実の色が変わる")
 	main._harvest()
 	_check(g.produce.radish == 3 and main.get_node("HUD")._message.contains("半分"), "傷んだ野菜は半分だけ採れて、そう知らせる")
 	g.produce.radish = 0
@@ -717,7 +798,15 @@ func _test_toon() -> void:
 	_collect_materials(main, mats)
 	var bad := 0
 	var toon := 0
+	var bending := 0
 	for m in mats:
+		# 共通の材質(世界といっしょに曲がる)は、光を受けるならトゥーンで作ってある
+		if m is WorldMaterial:
+			bending += 1
+			if not m.unshaded:
+				toon += 1
+				bad += 0 if m.shader.code.contains("diffuse_toon") else 1
+			continue
 		var s := m as StandardMaterial3D
 		if s == null or s.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED:
 			continue
@@ -725,7 +814,8 @@ func _test_toon() -> void:
 			toon += 1
 		else:
 			bad += 1
-	print("    トゥーンの材質 %d 個 / それ以外 %d 個" % [toon, bad])
+	print("    トゥーンの材質 %d 個 / それ以外 %d 個 / 世界といっしょに曲がる材質 %d 個" % [toon, bad, bending])
+	_check(bending > 20, "地面・木・小屋などの材質は世界といっしょに曲がる")
 	_check(toon > 20 and bad == 0, "光を受ける材質は全部トゥーン(地面・木・小屋・プレイヤーなど)")
 	var outline: MeshInstance3D = main.get_node("Player/Camera3D/Outline")
 	var outline_mat := outline.get_surface_override_material(0) as ShaderMaterial

@@ -10,7 +10,7 @@ uniform sampler2D normal_texture : hint_normal_roughness_texture, filter_nearest
 uniform vec3 line_color : source_color = vec3(0.13, 0.09, 0.07);
 uniform float line_alpha = 0.7;
 uniform float thickness = 1.0;          // 線の太さ(画素)
-uniform float depth_threshold = 0.012;  // 奥行きの差(今の距離に対する割合)。地面の傾きで線が出ない大きさ
+uniform float depth_threshold = 0.012;  // 奥行きの差(今の距離に対する割合)
 uniform float normal_threshold = 0.5;   // 面の向きの差(1 - 内積)
 
 float view_depth(vec2 uv, mat4 inv_projection) {
@@ -38,8 +38,11 @@ void fragment() {
 	float dc = view_depth(c, INV_PROJECTION_MATRIX);
 	float dd = view_depth(d, INV_PROJECTION_MATRIX);
 	float nearest = min(min(da, db), min(dc, dd));
-	// 自分より手前のものが隣にあるときだけ線にする。線は物の外側に付くので、細い幹の色をつぶさない
-	float depth_edge = (view_depth(SCREEN_UV, INV_PROJECTION_MATRIX) - nearest) / nearest;
+	float here = view_depth(SCREEN_UV, INV_PROJECTION_MATRIX);
+	// 自分より手前のものが隣にあるときだけ線にする。線は物の外側に付くので、細い幹の色をつぶさない。
+	// 向かい合う 2 点との差を足す: 斜めの面では片方が手前、片方が奥で打ち消し合い、線にならない
+	// (世界が曲がって奥の面が斜めに見えても、面全体が線で塗られない)
+	float depth_edge = max(2.0 * here - da - db, 2.0 * here - dc - dd) / nearest;
 
 	float normal_edge = max(
 		1.0 - dot(view_normal(a), view_normal(b)),

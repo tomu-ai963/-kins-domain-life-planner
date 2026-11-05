@@ -79,7 +79,7 @@ func _process(delta: float) -> void:
 		_layout()
 
 # 頂点の色(かたまりごとの明るさ)を効かせた単色の材質
-func _material(key: String, c: Color) -> StandardMaterial3D:
+func _material(key: String, c: Color) -> Material:
 	if not _mats.has(key):
 		var m := Look.mat(c)
 		m.vertex_color_use_as_albedo = true
@@ -90,7 +90,7 @@ func _material(key: String, c: Color) -> StandardMaterial3D:
 func is_bare(species: String) -> bool:
 	return forest.season == "winter" and not forest.SPECIES[species].evergreen
 
-func twig_material(species: String) -> StandardMaterial3D:
+func twig_material(species: String) -> Material:
 	return _material(species + "_twig", KINDS[species].twig)
 
 func _leaf_color(species: String) -> Color:

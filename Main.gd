@@ -48,6 +48,7 @@ func _ready() -> void:
 	var weather := get_node_or_null("Weather")
 	if weather != null:
 		weather.refresh(true)  # セーブを読んだあとの今日の天気で始める
+		$Ground.hide_covered()  # セーブにあった区画や小屋の上には草を生やさない
 
 # 昼夜の光と小屋の中は 3D だけ(2D のシーンには DayLight がない)
 func _setup_3d_only() -> void:
@@ -59,6 +60,7 @@ func _setup_3d_only() -> void:
 	day_light.night_changed.connect($Market.set_night)
 	day_light.setup(world.clock, $Sun, $WorldEnvironment.environment)
 	$Weather.setup(world.forest, $Player, day_light)
+	$Ground.set_land(world.land, world.cabin)
 	$Player.shadow_light = $Sun
 	$Player.update_shadow_distance()
 	$Cabin.set_player($Player)

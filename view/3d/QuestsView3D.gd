@@ -27,7 +27,7 @@ func _process(delta: float) -> void:
 		return
 	_glow += delta
 	for i in range(_rings.size()):
-		var m: StandardMaterial3D = _rings[i].material_override
+		var m = _rings[i].material_override
 		m.emission_energy_multiplier = 0.6 + 0.4 * sin(_glow * 1.2 - i * 0.6)
 
 func _rebuild() -> void:

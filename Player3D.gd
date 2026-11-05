@@ -21,6 +21,7 @@ const SHADOW_DIST_MAX := 200.0
 const INDOOR_CAM_DIST := 10.0
 const INDOOR_CAM_MAX := 14.0
 const STEP_SPEED := 1.5   # 床の高さまで体が上がる速さ(m/s)
+const WALK_LIMIT := 78.0  # 歩ける範囲(東西南北)。この外は丘(GroundView3D.HILL_START)で、体が地面に埋まる
 
 @onready var _body: Node3D = $Body
 @onready var _figure: Node3D = $Body/Figure
@@ -50,6 +51,8 @@ func _physics_process(delta: float) -> void:
 	dir = dir.normalized()
 	velocity = dir * SPEED
 	move_and_slide()
+	position.x = clampf(position.x, -WALK_LIMIT, WALK_LIMIT)
+	position.z = clampf(position.z, -WALK_LIMIT, WALK_LIMIT)
 	if dir != Vector3.ZERO:
 		# 進む向きに体を回す(-z が正面)
 		var target := atan2(-dir.x, -dir.z)
@@ -62,6 +65,8 @@ func _process(delta: float) -> void:
 	var goal := global_position + _cam_offset()
 	_camera.global_position = _camera.global_position.lerp(goal, 1.0 - exp(-CAM_FOLLOW * delta))
 	_camera.look_at(_camera.global_position - _cam_offset())
+	# 世界が丸く曲がる中心は、カメラが見ている地面の場所
+	RenderingServer.global_shader_parameter_set("bend_center", _camera.global_position - _cam_offset())
 
 func _cam_offset() -> Vector3:
 	var pitch := deg_to_rad(CAM_PITCH_DEG)

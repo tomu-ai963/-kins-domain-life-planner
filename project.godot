@@ -23,3 +23,10 @@ theme/custom="res://fonts/hud_theme.tres"
 
 anti_aliasing/quality/msaa_3d=2
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+
+[shader_globals]
+
+bend_center={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
