@@ -23,6 +23,7 @@ const INDOOR_CAM_MAX := 14.0
 const STEP_SPEED := 1.5   # 床の高さまで体が上がる速さ(m/s)
 
 @onready var _body: Node3D = $Body
+@onready var _figure: Node3D = $Body/Figure
 @onready var _camera: Camera3D = $Camera3D
 @onready var _lantern: Node3D = $Body/Lantern
 @onready var _lantern_light: OmniLight3D = $LanternLight
@@ -34,6 +35,8 @@ var _indoor_dist := INDOOR_CAM_DIST
 var _floor_y := 0.0
 
 func _ready() -> void:
+	_body.rotation.y = PI  # 始めはカメラのほうを向いて、顔が見えるように
+	_figure.hold(_lantern)
 	_camera.top_level = true  # プレイヤーの回転に引きずられないように、カメラは独立して動かす
 	_camera.global_position = global_position + _cam_offset()
 	_camera.look_at(global_position)
@@ -53,6 +56,8 @@ func _physics_process(delta: float) -> void:
 		_body.rotation.y = lerp_angle(_body.rotation.y, target, minf(1.0, TURN_SPEED * delta))
 
 func _process(delta: float) -> void:
+	# 市場を開いている間(物理が止まる)や、壁に当たって進めないときは足を止める
+	_figure.moving = is_physics_processing() and get_real_velocity().length() > 0.1
 	_body.position.y = move_toward(_body.position.y, _floor_y if _indoors else 0.0, STEP_SPEED * delta)
 	var goal := global_position + _cam_offset()
 	_camera.global_position = _camera.global_position.lerp(goal, 1.0 - exp(-CAM_FOLLOW * delta))
@@ -98,6 +103,7 @@ func update_shadow_distance() -> void:
 # 暗くなるとランタンをともす(0 = 昼、1 = 夜)
 func set_night(amount: float) -> void:
 	_lantern.visible = amount > 0.0
+	_figure.holding_lantern = amount > 0.0
 	_lantern_light.visible = amount > 0.0
 	_lantern_light.light_energy = LANTERN_ENERGY * amount
 

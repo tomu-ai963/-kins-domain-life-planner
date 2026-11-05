@@ -24,6 +24,8 @@ func _process(_delta: float) -> bool:
 			_test_3d_follows_logic()
 			_test_3d_quest_marks()
 			_test_3d_seasons_and_growth()
+			_test_tree_shapes()
+			_test_player_figure()
 			_test_3d_market_and_pickups()
 			_test_3d_garden()
 			_test_3d_cabin()
@@ -137,9 +139,101 @@ func _test_3d_seasons_and_growth() -> void:
 	f.trees[-1].planted_at = int(Time.get_unix_time_from_system()) - 3 * DAY
 	f.set_season("winter")
 	var birch_crown: MeshInstance3D = trees.get_child(trees.get_child_count() - 1)
-	_check((birch_crown.material_override as StandardMaterial3D).albedo_color.a < 1.0, "冬の白樺は葉が落ちて樹冠が半透明")
+	_check(trees.is_bare("birch") and birch_crown.material_override == trees.twig_material("birch"), "冬の白樺は葉が落ちて枝だけになる")
+	_check(birch_crown.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "冬の枝にも影が落ちる")
 	var ground_grass: MeshInstance3D = main.get_node("Ground").get_child(1)
 	_check((ground_grass.material_override as StandardMaterial3D).albedo_color.b > 0.9, "冬の地面は雪原の色")
+
+# 面の向き(表が外)と、箱に収まっているかを、形ごとに確かめる
+func _mesh_faces_outward(mesh: ArrayMesh) -> bool:
+	var arrays := mesh.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	for i in range(0, indices.size(), 3):
+		var a := indices[i]
+		var b := indices[i + 1]
+		var c := indices[i + 2]
+		var face := (verts[b] - verts[a]).cross(verts[c] - verts[a])
+		if face.dot(normals[a] + normals[b] + normals[c]) > 0.0:  # Godot は時計回りが表
+			return false
+	return indices.size() > 0
+
+func _test_tree_shapes() -> void:
+	print("木の形")
+	const Shapes = preload("res://view/3d/TreeShapes3D.gd")
+	var fits := true
+	var outward := true
+	var anchored := true
+	for species in ["birch", "apple", "cedar"]:
+		for v in range(Shapes.VARIANTS):
+			var c: Dictionary = Shapes.crown(species, v)
+			var box: AABB = c.mesh.get_aabb()
+			# かたまりの表面の波打ちの分だけ、はみ出してもよい
+			fits = fits and box.position.y > -0.56 and box.end.y < 0.56 and box.position.x > -0.56 and box.end.x < 0.56 and box.position.z > -0.56 and box.end.z < 0.56
+			outward = outward and _mesh_faces_outward(c.mesh) and _mesh_faces_outward(Shapes.trunk(species, v))
+			if species != "cedar":
+				outward = outward and _mesh_faces_outward(Shapes.bare_branches(species, v))
+				anchored = anchored and c.anchors.size() >= 5
+	_check(fits, "樹冠は幅・高さ 1 の箱に収まる(scale で樹冠の大きさがそのまま決まる)")
+	_check(outward, "樹冠・幹・枝の面はすべて外を向いている")
+	_check(anchored, "リンゴと白樺の樹冠には、実を付ける場所が 5 つ以上ある")
+	_check(_mesh_faces_outward(Shapes.sprout()), "苗木の面も外を向いている")
+	var a0: ArrayMesh = Shapes.crown("birch", 0).mesh
+	var a1: ArrayMesh = Shapes.crown("birch", 1).mesh
+	var a0_again: ArrayMesh = Shapes.crown("birch", 0).mesh
+	_check(a0.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] != a1.surface_get_arrays(0)[Mesh.ARRAY_VERTEX], "種類が違えば形も違う")
+	_check(a0.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] == a0_again.surface_get_arrays(0)[Mesh.ARRAY_VERTEX], "同じ種類は毎回同じ形")
+
+	# 実は樹冠の表面にある(樹冠の外や中に浮かない)
+	var f = main.world.forest
+	var trees: Node3D = main.get_node("Trees")
+	f.seeds["apple"] = 1
+	f.add_tree(Vector2(-30, 5), "apple")
+	f.trees[-1].planted_at = int(Time.get_unix_time_from_system()) - 6 * DAY
+	f.set_season("summer")
+	f.set_season("autumn")
+	var n := trees.get_child_count()
+	var crown: MeshInstance3D = trees.get_child(n - 6)
+	var near := true
+	for i in range(5):
+		var local := crown.basis.inverse() * ((trees.get_child(n - 5 + i) as Node3D).position - crown.position)
+		near = near and local.length() > 0.2 and local.length() < 0.6
+	_check(near, "リンゴの実は葉のかたまりの表面に付く")
+	f.remove_nearest(Vector2(-30, 5), 2.0)
+
+func _test_player_figure() -> void:
+	print("プレイヤーの体")
+	var player = main.get_node("Player")
+	var figure: Node3D = player.get_node("Body/Figure")
+	_check(figure.get_node("Hips/Upper/Head/Face") != null and figure.get_node("Hips/LegL") != null \
+			and figure.get_node("Hips/Upper/ArmRSpread/ArmR/Hand") != null, "顔と手足がある")
+	var eye: Node3D = figure.get_node("Hips/Upper/Head/Eye")
+	_check(eye.position.z < 0.0, "目は体の正面(-z)にある")
+	figure.moving = false
+	figure._process(1.0)
+	_check(is_zero_approx(figure.swing_amount()), "立っているとき足は振れない")
+	figure.moving = true
+	var biggest := 0.0
+	for i in range(30):
+		figure._process(0.03)
+		biggest = maxf(biggest, figure.swing_amount())
+	_check(biggest > 0.5, "歩くと足を振る")
+	figure.moving = false
+	for i in range(60):
+		figure._process(0.03)
+	_check(figure.swing_amount() < 0.01, "止まると足がそろう")
+	var lantern: Node3D = player._lantern
+	_check(lantern.get_parent() == figure.right_hand, "ランタンは右手に持っている")
+	player.set_night(1.0)
+	_check(lantern.visible and figure.holding_lantern, "夜はランタンを手に持ってともす")
+	player.set_night(0.0)
+	_check(not lantern.visible and not figure.holding_lantern, "昼はしまう")
+	player.set_physics_process(false)
+	player.velocity = Vector3.ZERO
+	player._process(0.016)
+	_check(not figure.moving, "市場を開いて止まっている間は歩かない")
+	player.set_physics_process(true)
 
 func _test_3d_market_and_pickups() -> void:
 	print("市場と落ちた種")
