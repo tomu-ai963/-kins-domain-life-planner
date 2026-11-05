@@ -110,7 +110,8 @@ func _test_sun_position() -> void:
 func _test_light_keys() -> void:
 	print("光の表")
 	var day: Dictionary = DayLight.sample(40.0)
-	_check(day.energy == 1.0 and day.ambient == 0.4 and day.light == Color.WHITE, "昼は今までの見た目のまま(太陽 1.0・環境光 0.4・白)")
+	_check(day.energy > 0.5 and is_equal_approx(day.ambient, 0.4) and day.light.is_equal_approx(Color.WHITE), "昼は白い光で、環境光 0.4")
+	_check(DayLight.sample(60.0).energy > DayLight.sample(15.0).energy, "太陽が高いほど明るい")
 	_check(DayLight.sample(5.0).light.b < 0.8, "太陽が低いと光が暖色になる")
 	_check(DayLight.sample(-30.0).light.b > DayLight.sample(-30.0).light.r, "夜の光は青い")
 	_check(DayLight.sample(-1.0).energy == 0.0, "太陽と月が入れ替わるところでは光が 0(向きが飛んでも見えない)")
@@ -128,7 +129,6 @@ func _test_light_keys() -> void:
 	var low_moon := DayLight.light_dir(Vector3(0.9, -0.1, 0.4).normalized())
 	_check(is_equal_approx(DayClock.elevation_deg(low_moon), 40.0) and low_moon.x < 0.0, "日没直後の低い月も 40 度の高さから照らす")
 	_check(is_equal_approx(DayLight.light_dir(DayClock.to_sun(12.0, 172)).length(), 1.0) and is_equal_approx(low.length(), 1.0), "光の向きの長さは 1")
-	_check(DayLight.sample(78.0).energy == 0.8 and DayLight.sample(45.0).energy == 1.0, "真夏の高い太陽は弱める(白っぽくしない)")
 	_check(DayLight.sample(-30.0).energy > 0.0, "深夜の月も光る")
 
 func _at(hour: int) -> void:
@@ -140,7 +140,7 @@ func _test_scene_light() -> void:
 	var sun: DirectionalLight3D = main.get_node("Sun")
 	var env: Environment = main.get_node("WorldEnvironment").environment
 	_at(12)
-	_check(is_equal_approx(sun.light_energy, 1.0), "正午の太陽は強さ 1.0")
+	_check(sun.light_energy > 0.5, "正午の太陽は強い")
 	var travel := -sun.global_transform.basis.z
 	_check(travel.y < -0.5 and travel.z < -0.3, "正午の光は上から北へ向かって差す(影は画面の上へ伸びる)")
 	var noon_sky := (env.sky.sky_material as ProceduralSkyMaterial).sky_top_color

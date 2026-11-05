@@ -7,11 +7,17 @@ extends RefCounted
 static func at(p: Vector2, height := 0.0) -> Vector3:
 	return Vector3(p.x, height, p.y)
 
-# 単色のマテリアル。alpha < 1 なら半透明、unshaded なら光の影響を受けない(印・線用)
+# 光と影の境目のぼかし(トゥーンでは roughness がこの幅になる。小さいほどくっきり)
+const TOON_SOFTNESS := 0.1
+
+# 単色のマテリアル。トゥーン(光と影を色の面で塗り分ける)で、照りはない。
+# alpha < 1 なら半透明、unshaded なら光の影響を受けない(印・線用)
 static func mat(c: Color, unshaded := false, emission := 0.0) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = c
-	m.roughness = 0.9
+	m.roughness = TOON_SOFTNESS
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	if c.a < 1.0:
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	if unshaded:
@@ -30,11 +36,12 @@ static func mesh_node(mesh: Mesh, material: Material, pos := Vector3.ZERO, scl :
 	mi.scale = scl
 	return mi
 
-# 地面に置く細長い帯(a から b まで、幅 width、厚さ height)。境界線・メルカバ用
+# 地面に貼る細長い平らな帯(a から b まで、幅 width、地面から y + height の高さ)。境界線・メルカバ用。
+# 側面があると輪郭線が点線になって出るので、厚みを持たせない
 static func strip(a: Vector2, b: Vector2, width: float, height: float, material: Material, y := 0.0) -> MeshInstance3D:
-	var box := BoxMesh.new()
-	box.size = Vector3(a.distance_to(b) + width, height, width)
-	var mi := mesh_node(box, material, at((a + b) * 0.5, y + height * 0.5))
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(a.distance_to(b) + width, width)
+	var mi := mesh_node(plane, material, at((a + b) * 0.5, y + height))
 	mi.rotation.y = -(b - a).angle()
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi

@@ -43,7 +43,7 @@ func _rebuild() -> void:
 		var gold := Look.mat(Color(1.0, 0.78, 0.10), false, 0.8)
 		var c := [Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)]
 		for i in range(4):
-			add_child(Look.strip(c[i], c[(i + 1) % 4], 0.6, 0.2, gold))
+			add_child(Look.strip(c[i], c[(i + 1) % 4], 0.6, 0.04, gold))
 		return
 	match quests.current_id():
 		"hedge":

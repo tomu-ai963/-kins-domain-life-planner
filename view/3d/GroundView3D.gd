@@ -71,7 +71,7 @@ func _build() -> void:
 	var edge := Look.mat(Color(0.18, 0.44, 0.14))
 	var c := [Vector2(-HALF, -HALF), Vector2(HALF, -HALF), Vector2(HALF, HALF), Vector2(-HALF, HALF)]
 	for i in range(4):
-		add_child(Look.strip(c[i], c[(i + 1) % 4], 0.3, 0.12, edge))
+		add_child(Look.strip(c[i], c[(i + 1) % 4], 0.3, 0.03, edge))
 
 	# 原点の目印
 	var dot := CylinderMesh.new()

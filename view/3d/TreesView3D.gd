@@ -35,7 +35,7 @@ var _items := []  # 木ごとの {tree, trunk, crown, fruits: []} (forest.trees 
 # 形は単位の大きさで 1 つずつ作り、scale で大きさを変える
 var _trunk_mesh := _cylinder(0.5, 0.5)
 var _cone_mesh := _cylinder(0.0, 0.5)
-var _sphere_mesh := _sphere(0.5, 16)
+var _sphere_mesh := _sphere(0.5, 32)  # 輪郭線が角ばらない細かさ
 var _fruit_mesh := _sphere(0.5, 8)
 var _sapling_mat := Look.mat(Color(0.20, 0.65, 0.20))
 var _mound_mat := Look.mat(Color(0.36, 0.25, 0.15))  # 種をまいた土の盛り上がり

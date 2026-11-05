@@ -18,3 +18,8 @@ config/icon="res://icon.png"
 [gui]
 
 theme/custom="res://fonts/hud_theme.tres"
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=2
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3

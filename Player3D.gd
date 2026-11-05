@@ -13,6 +13,10 @@ const CAM_DIST_MIN := 6.0
 const CAM_DIST_MAX := 140.0
 const CAM_FOLLOW := 6.0   # 追いかけの速さ(大きいほどぴったり付いてくる)
 const LANTERN_ENERGY := 0.8
+# 影を描く距離はカメラの距離に合わせる(寄ったときに影がくっきりする)
+const SHADOW_DIST_PER_CAM := 3.0
+const SHADOW_DIST_MIN := 60.0
+const SHADOW_DIST_MAX := 200.0
 
 @onready var _body: Node3D = $Body
 @onready var _camera: Camera3D = $Camera3D
@@ -20,6 +24,7 @@ const LANTERN_ENERGY := 0.8
 @onready var _lantern_light: OmniLight3D = $LanternLight
 
 var _cam_dist := 28.0
+var shadow_light: DirectionalLight3D  # Main が太陽を渡す
 
 func _ready() -> void:
 	_camera.top_level = true  # プレイヤーの回転に引きずられないように、カメラは独立して動かす
@@ -60,6 +65,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cam_dist = clampf(_cam_dist * 0.85, CAM_DIST_MIN, CAM_DIST_MAX)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_cam_dist = clampf(_cam_dist / 0.85, CAM_DIST_MIN, CAM_DIST_MAX)
+		update_shadow_distance()
+
+func update_shadow_distance() -> void:
+	if shadow_light != null:
+		shadow_light.directional_shadow_max_distance = clampf(_cam_dist * SHADOW_DIST_PER_CAM, SHADOW_DIST_MIN, SHADOW_DIST_MAX)
 
 # 暗くなるとランタンをともす(0 = 昼、1 = 夜)
 func set_night(amount: float) -> void:

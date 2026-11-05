@@ -14,18 +14,17 @@ const MOON_BELOW_DEG := -1.0          # 太陽がこれより沈むと、光の�
 const APPLY_SECONDS := 5.0            # 太陽は 5 秒で 0.02 度しか動かない。毎フレーム計算しない
 const PREVIEW_HOURS_PER_SECOND := 6.0 # N で先へ送ったとき、光が動いていく速さ
 
-# 太陽の高さ(度)ごとの光。あいだは直線でつなぐ。25〜45 度が、ふだんの昼の見た目。
-# 夏の高い太陽は地面にまっすぐ当たるので、白っぽくならないように少し弱める
+# 太陽の高さ(度)ごとの光。あいだは直線でつなぐ。
+# トゥーンでは光が当たる面の明るさが角度で変わらないので、太陽の高さによる明るさの差はこの表の energy で作る
 const KEYS := [
-	{"elev": -12.0, "energy": 0.30, "light": Color(0.42, 0.55, 1.00), "top": Color(0.03, 0.05, 0.14), "horizon": Color(0.07, 0.10, 0.22), "ambient": 1.60},
-	{"elev": -4.0, "energy": 0.20, "light": Color(0.50, 0.58, 0.95), "top": Color(0.22, 0.28, 0.52), "horizon": Color(0.40, 0.32, 0.46), "ambient": 3.00},
+	{"elev": -12.0, "energy": 0.22, "light": Color(0.42, 0.55, 1.00), "top": Color(0.03, 0.05, 0.14), "horizon": Color(0.07, 0.10, 0.22), "ambient": 1.60},
+	{"elev": -4.0, "energy": 0.14, "light": Color(0.50, 0.58, 0.95), "top": Color(0.22, 0.28, 0.52), "horizon": Color(0.40, 0.32, 0.46), "ambient": 3.00},
 	{"elev": -1.0, "energy": 0.00, "light": Color(1.00, 0.55, 0.40), "top": Color(0.36, 0.40, 0.60), "horizon": Color(0.85, 0.50, 0.42), "ambient": 2.00},
-	# 低い太陽は地面に斜めに当たって弱くなるので、夕焼けの色が地面に乗るように強めにする
-	{"elev": 3.0, "energy": 1.30, "light": Color(1.00, 0.62, 0.36), "top": Color(0.36, 0.44, 0.62), "horizon": Color(1.00, 0.66, 0.46), "ambient": 0.80},
-	{"elev": 12.0, "energy": 1.15, "light": Color(1.00, 0.86, 0.68), "top": Color(0.40, 0.57, 0.80), "horizon": Color(0.92, 0.80, 0.66), "ambient": 0.50},
-	{"elev": 25.0, "energy": 1.00, "light": Color(1.00, 1.00, 1.00), "top": Color(0.42, 0.62, 0.86), "horizon": Color(0.78, 0.84, 0.88), "ambient": 0.40},
-	{"elev": 45.0, "energy": 1.00, "light": Color(1.00, 1.00, 1.00), "top": Color(0.42, 0.62, 0.86), "horizon": Color(0.78, 0.84, 0.88), "ambient": 0.40},
-	{"elev": 78.0, "energy": 0.80, "light": Color(1.00, 1.00, 1.00), "top": Color(0.42, 0.62, 0.86), "horizon": Color(0.78, 0.84, 0.88), "ambient": 0.40},
+	{"elev": 3.0, "energy": 0.42, "light": Color(1.00, 0.62, 0.36), "top": Color(0.36, 0.44, 0.62), "horizon": Color(1.00, 0.66, 0.46), "ambient": 0.80},
+	{"elev": 12.0, "energy": 0.48, "light": Color(1.00, 0.86, 0.68), "top": Color(0.40, 0.57, 0.80), "horizon": Color(0.92, 0.80, 0.66), "ambient": 0.50},
+	{"elev": 25.0, "energy": 0.56, "light": Color(1.00, 1.00, 1.00), "top": Color(0.42, 0.62, 0.86), "horizon": Color(0.78, 0.84, 0.88), "ambient": 0.40},
+	{"elev": 45.0, "energy": 0.68, "light": Color(1.00, 1.00, 1.00), "top": Color(0.42, 0.62, 0.86), "horizon": Color(0.78, 0.84, 0.88), "ambient": 0.40},
+	{"elev": 78.0, "energy": 0.75, "light": Color(1.00, 1.00, 1.00), "top": Color(0.42, 0.62, 0.86), "horizon": Color(0.78, 0.84, 0.88), "ambient": 0.40},
 ]
 
 var clock: DayClock

@@ -55,6 +55,8 @@ func _setup_day_light() -> void:
 	day_light.night_changed.connect($Cabin.set_night)
 	day_light.night_changed.connect($Market.set_night)
 	day_light.setup(world.clock, $Sun, $WorldEnvironment.environment)
+	$Player.shadow_light = $Sun
+	$Player.update_shadow_distance()
 
 func _process(delta: float) -> void:
 	# 季節と日付は現実の日付から。1 分に 1 回チェックすれば十分(開いたまま日付をまたいでも拾う)

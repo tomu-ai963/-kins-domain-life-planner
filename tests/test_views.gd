@@ -30,6 +30,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_pond()
 			_test_fell_confirm()
 			_test_hud()
+			_test_toon()
 		10:
 			_test_3d_cabin_collision()  # 当たり判定が物理サーバーに入るのを待ってから
 			main.queue_free()
@@ -503,6 +504,54 @@ func _test_hud() -> void:
 	hud._process(0.6)
 	_check(not hud.is_message_visible(), "時間が来ると消える")
 	player.global_position = Vector3(20, 0, 23)  # 次の当たり判定のテストのために小屋の南へ戻す
+
+# シーンの中の形を全部たどって、材質を集める
+func _collect_materials(n: Node, out: Array) -> void:
+	if n is MeshInstance3D:
+		var mi: MeshInstance3D = n
+		if mi.material_override != null:
+			out.append(mi.material_override)
+		for i in range(mi.get_surface_override_material_count()):
+			if mi.get_surface_override_material(i) != null:
+				out.append(mi.get_surface_override_material(i))
+	for c in n.get_children():
+		_collect_materials(c, out)
+
+func _test_toon() -> void:
+	print("トゥーン")
+	var mats := []
+	_collect_materials(main, mats)
+	var bad := 0
+	var toon := 0
+	for m in mats:
+		var s := m as StandardMaterial3D
+		if s == null or s.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED:
+			continue
+		if s.diffuse_mode == BaseMaterial3D.DIFFUSE_TOON and s.specular_mode == BaseMaterial3D.SPECULAR_DISABLED:
+			toon += 1
+		else:
+			bad += 1
+	print("    トゥーンの材質 %d 個 / それ以外 %d 個" % [toon, bad])
+	_check(toon > 20 and bad == 0, "光を受ける材質は全部トゥーン(地面・木・小屋・プレイヤーなど)")
+	var outline: MeshInstance3D = main.get_node("Player/Camera3D/Outline")
+	var outline_mat := outline.get_surface_override_material(0) as ShaderMaterial
+	_check(outline.visible and outline_mat != null and outline_mat.shader != null, "カメラの前に輪郭線の板がある")
+	_check(outline.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "輪郭線の板は影を落とさない")
+
+	var player = main.get_node("Player")
+	var sun: DirectionalLight3D = main.get_node("Sun")
+	var wheel := InputEventMouseButton.new()
+	wheel.pressed = true
+	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	for i in range(30):
+		player._unhandled_input(wheel)
+	_check(sun.directional_shadow_max_distance == player.SHADOW_DIST_MAX, "カメラを引くと影を遠くまで描く")
+	wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+	for i in range(30):
+		player._unhandled_input(wheel)
+	_check(sun.directional_shadow_max_distance == player.SHADOW_DIST_MIN, "寄ると影の範囲を狭めてくっきりさせる")
+	player._cam_dist = 28.0
+	player.update_shadow_distance()
 
 func _test_2d_still_works() -> void:
 	print("2D のシーン(比較用)")
