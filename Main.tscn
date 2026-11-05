@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://Main.gd" id="1"]
 [ext_resource type="PackedScene" path="res://Player3D.tscn" id="2"]
@@ -12,6 +12,7 @@
 [ext_resource type="Script" path="res://view/3d/GardenView3D.gd" id="10"]
 [ext_resource type="Script" path="res://view/3d/CabinView3D.gd" id="11"]
 [ext_resource type="Script" path="res://view/3d/PondView3D.gd" id="12"]
+[ext_resource type="Script" path="res://view/3d/DayLightView3D.gd" id="13"]
 
 [sub_resource type="ProceduralSkyMaterial" id="1"]
 sky_top_color = Color(0.42, 0.62, 0.86, 1)
@@ -40,7 +41,11 @@ environment = SubResource("3")
 transform = Transform3D(0.866025, 0.383022, -0.321394, 0.000000, 0.642788, 0.766044, 0.500000, -0.663414, 0.556670, 0, 30, 0)
 light_energy = 1.0
 shadow_enabled = true
+shadow_blur = 1.5
 directional_shadow_max_distance = 160.0
+
+[node name="DayLight" type="Node" parent="."]
+script = ExtResource("13")
 
 [node name="Ground" type="Node3D" parent="."]
 script = ExtResource("7")

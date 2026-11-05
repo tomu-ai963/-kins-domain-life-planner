@@ -16,8 +16,13 @@ const DOOR_W := 0.9       # ドアの幅(m)
 const DOOR_H := 1.9       # ドアの高さ(m)
 const ROOF_H := 1.3       # 屋根の高さ(m)
 const ROOF_OVER := 0.3    # 屋根のひさし(m)
+const LAMP_ENERGY := 0.9 # 完成した小屋の軒の明かり
+const WINDOW_GLOW := 1.6  # 夜の窓の明るさ
 
 var cabin: Cabin
+var _night := 0.0
+var _lamp_light: OmniLight3D  # 完成するまでは null
+var _lamp := Look.mat(Color(1.0, 0.78, 0.45))
 var seedlings: Seedlings
 var _box := BoxMesh.new()
 var _ball := SphereMesh.new()
@@ -45,8 +50,29 @@ func setup(c: Cabin, s: Seedlings = null) -> void:
 func _piece(parent: Node3D, m: Material, pos: Vector3, scl: Vector3) -> void:
 	parent.add_child(Look.mesh_node(_box, m, pos, scl))
 
+# 暗くなると、完成した小屋の窓と軒に明かりがともる(0 = 昼、1 = 夜)
+func set_night(amount: float) -> void:
+	_night = amount
+	_apply_night()
+
+func _apply_night() -> void:
+	var lit := _night > 0.0 and cabin != null and cabin.is_complete()
+	for m in [_window, _lamp]:
+		m.emission_enabled = lit
+		m.emission = Color(1.0, 0.72, 0.38)
+	_window.emission_energy_multiplier = WINDOW_GLOW * _night
+	_lamp.emission_energy_multiplier = 3.0 * _night
+	if _lamp_light != null:
+		_lamp_light.visible = lit
+		_lamp_light.light_energy = LAMP_ENERGY * _night
+
 func _rebuild() -> void:
 	Look.clear_children(self)
+	_lamp_light = null
+	_rebuild_pieces()
+	_apply_night()
+
+func _rebuild_pieces() -> void:
 	if cabin.site == null:
 		return
 	var spot := Node3D.new()
@@ -65,6 +91,7 @@ func _rebuild() -> void:
 		_collider(spot)
 	if cabin.is_complete():
 		_roof_full(spot)
+		_porch_lamp(spot)
 		_pots(spot)
 	elif cabin.stage == 2 and cabin.days_done >= 1:
 		_rafters(spot)
@@ -147,6 +174,16 @@ func _roof_full(spot: Node3D) -> void:
 	var prism := PrismMesh.new()
 	prism.size = Vector3(Cabin.WIDTH + ROOF_OVER * 2.0, ROOF_H, Cabin.DEPTH + ROOF_OVER * 2.0)
 	spot.add_child(Look.mesh_node(prism, _roof, Vector3(0, FLOOR_Y + WALL_H + ROOF_H * 0.5, 0)))
+
+# ドアの上の軒の明かり。光は少し南に置いて、ドアの前を照らす
+func _porch_lamp(spot: Node3D) -> void:
+	var z: float = Cabin.DEPTH * 0.5 + WALL_T
+	_piece(spot, _lamp, Vector3(0, FLOOR_Y + DOOR_H + 0.15, z), Vector3(0.2, 0.24, 0.16))
+	_lamp_light = OmniLight3D.new()
+	_lamp_light.position = Vector3(0, FLOOR_Y + DOOR_H, z + 0.8)
+	_lamp_light.light_color = Color(1.0, 0.78, 0.5)
+	_lamp_light.omni_range = 10.0
+	spot.add_child(_lamp_light)
 
 # 通り抜けられないように(作業は外からなので、ここで閉じ込められることはない)
 func _collider(spot: Node3D) -> void:

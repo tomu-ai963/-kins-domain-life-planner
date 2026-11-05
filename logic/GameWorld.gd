@@ -12,6 +12,7 @@ const Pond = preload("res://logic/Pond.gd")
 const Seedlings = preload("res://logic/Seedlings.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
+const DayClock = preload("res://logic/DayClock.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
 const SAVE_UNIT := "m"           # セーブの座標の単位。この印がない古いセーブは px(40px = 1m)
@@ -28,6 +29,7 @@ var pond := Pond.new()
 var seedlings := Seedlings.new()
 var quests := Quests.new()
 var market := Market.new()
+var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
 var backup_dir := ""             # 控えを置くフォルダ。空なら控えを取らない(本物のセーブのときだけ Main が設定する)
 

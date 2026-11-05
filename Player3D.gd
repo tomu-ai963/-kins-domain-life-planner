@@ -12,9 +12,12 @@ const CAM_PITCH_DEG := 55.0
 const CAM_DIST_MIN := 6.0
 const CAM_DIST_MAX := 140.0
 const CAM_FOLLOW := 6.0   # 追いかけの速さ(大きいほどぴったり付いてくる)
+const LANTERN_ENERGY := 0.8
 
 @onready var _body: Node3D = $Body
 @onready var _camera: Camera3D = $Camera3D
+@onready var _lantern: Node3D = $Body/Lantern
+@onready var _lantern_light: OmniLight3D = $LanternLight
 
 var _cam_dist := 28.0
 
@@ -57,6 +60,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cam_dist = clampf(_cam_dist * 0.85, CAM_DIST_MIN, CAM_DIST_MAX)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_cam_dist = clampf(_cam_dist / 0.85, CAM_DIST_MIN, CAM_DIST_MAX)
+
+# 暗くなるとランタンをともす(0 = 昼、1 = 夜)
+func set_night(amount: float) -> void:
+	_lantern.visible = amount > 0.0
+	_lantern_light.visible = amount > 0.0
+	_lantern_light.light_energy = LANTERN_ENERGY * amount
 
 # 足元の位置(m)。ロジックの座標 Vector2(x, y) は 3D の (x, z)
 func ground_pos() -> Vector2:

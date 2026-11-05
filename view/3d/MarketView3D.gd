@@ -5,11 +5,23 @@ extends Node3D
 const Market = preload("res://logic/Market.gd")
 const Look = preload("res://view/3d/Look.gd")
 
+const LANTERN_ENERGY := 1.0
+
 var market: Market
+var _lantern_light: OmniLight3D
+var _lantern_mat := Look.mat(Color(1.0, 0.78, 0.45))
 
 func setup(m: Market) -> void:
 	market = m
 	_build()
+
+# 暗くなると、屋台の軒のランタンをともす(0 = 昼、1 = 夜)
+func set_night(amount: float) -> void:
+	_lantern_light.visible = amount > 0.0
+	_lantern_light.light_energy = LANTERN_ENERGY * amount
+	_lantern_mat.emission_enabled = amount > 0.0
+	_lantern_mat.emission = Color(1.0, 0.72, 0.38)
+	_lantern_mat.emission_energy_multiplier = 3.0 * amount
 
 func _build() -> void:
 	var wood := Look.mat(Color(0.55, 0.38, 0.22))
@@ -35,3 +47,11 @@ func _build() -> void:
 	var goods := [Color(0.85, 0.80, 0.55), Color(0.30, 0.55, 0.25), Color(0.80, 0.20, 0.15)]
 	for i in range(3):
 		spot.add_child(Look.mesh_node(box, Look.mat(goods[i]), Vector3(-1.2 + i * 1.2, 1.15, -1.0), Vector3(0.6, 0.3, 0.4)))
+	# 軒のランタン(買いに来る北側に吊るす)
+	spot.add_child(Look.mesh_node(box, _lantern_mat, Vector3(0, 2.2, -1.5), Vector3(0.22, 0.28, 0.22)))
+	_lantern_light = OmniLight3D.new()
+	_lantern_light.position = Vector3(0, 2.1, -1.8)
+	_lantern_light.light_color = Color(1.0, 0.78, 0.5)
+	_lantern_light.omni_range = 9.0
+	_lantern_light.visible = false
+	spot.add_child(_lantern_light)

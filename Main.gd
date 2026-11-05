@@ -41,9 +41,20 @@ func _ready() -> void:
 	$HUD.setup($Player, world.forest, self)
 	$HUD.shop_action.connect(_on_shop_action)
 	$Player.plant_tree.connect(_on_plant_tree)
+	_setup_day_light()
 	world.load_game()
 	_check_new_day()
 	_check_quests()  # 旧セーブで条件を満たしていれば、開いた時点で達成する
+
+# 昼夜の光は 3D だけ(2D のシーンには DayLight がない)
+func _setup_day_light() -> void:
+	var day_light := get_node_or_null("DayLight")
+	if day_light == null:
+		return
+	day_light.night_changed.connect($Player.set_night)
+	day_light.night_changed.connect($Cabin.set_night)
+	day_light.night_changed.connect($Market.set_night)
+	day_light.setup(world.clock, $Sun, $WorldEnvironment.environment)
 
 func _process(delta: float) -> void:
 	# 季節と日付は現実の日付から。1 分に 1 回チェックすれば十分(開いたまま日付をまたいでも拾う)
@@ -622,8 +633,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			world.forest.advance_years(1.0)   # 1年先送り(プレビュー。保存しない)
 		KEY_G:
 			world.forest.advance_years(10.0)  # 10年先送り
+		KEY_N:
+			world.clock.advance_preview()     # 1時間先送り(光のプレビュー。ルールには効かない)
 		KEY_R:
 			world.forest.reset_preview()      # 今日に戻す
+			world.clock.reset_preview()
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:

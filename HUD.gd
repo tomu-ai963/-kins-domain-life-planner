@@ -157,10 +157,13 @@ func _status_lines() -> PackedStringArray:
 	var offset := ""
 	if _trees.time_offset_years > 0.0:
 		offset = "  (+%d年後をプレビュー中)" % int(_trees.time_offset_years)
+	var clock = _main.world.clock
+	if clock.is_preview():
+		offset += "  (+%d時間をプレビュー中)" % int(clock.preview_hours)
 
 	var lines := PackedStringArray()
-	lines.append("%04d/%02d/%02d  %s%s   所持金: %s₽   丸太: %d本" % [
-		dt.year, dt.month, dt.day, season_jp, offset,
+	lines.append("%04d/%02d/%02d %s  %s%s   所持金: %s₽   丸太: %d本" % [
+		dt.year, dt.month, dt.day, clock.time_text(), season_jp, offset,
 		_money_text(_main.world.market.money), int(_main.world.cabin.materials.log),
 	])
 	# 今日の発見は一日中見られるように常に出す
@@ -206,5 +209,5 @@ func _help_lines() -> PackedStringArray:
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク [9]トマト",
 		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る",
 		"F:菜園  P:池  H:小屋(完成したら苗づくり)",
-		"T:+1年  G:+10年  R:今日に戻す(未来をプレビュー)",
+		"T:+1年  G:+10年  N:+1時間  R:今に戻す(未来をプレビュー)",
 	])

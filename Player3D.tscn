@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://Player3D.gd" id="1"]
 
@@ -20,6 +20,16 @@ size = Vector3(0.22, 0.12, 0.22)
 [sub_resource type="StandardMaterial3D" id="5"]
 albedo_color = Color(0.98, 0.92, 0.80, 1)
 
+[sub_resource type="SphereMesh" id="6"]
+radius = 0.08
+height = 0.16
+
+[sub_resource type="StandardMaterial3D" id="7"]
+albedo_color = Color(1, 0.78, 0.45, 1)
+emission_enabled = true
+emission = Color(1, 0.72, 0.38, 1)
+emission_energy_multiplier = 3.0
+
 [node name="Player" type="CharacterBody3D"]
 motion_mode = 1
 script = ExtResource("1")
@@ -39,6 +49,18 @@ surface_material_override/0 = SubResource("3")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, -0.3)
 mesh = SubResource("4")
 surface_material_override/0 = SubResource("5")
+
+[node name="Lantern" type="MeshInstance3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.38, 0.8, -0.1)
+visible = false
+mesh = SubResource("6")
+surface_material_override/0 = SubResource("7")
+
+[node name="LanternLight" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, 0)
+visible = false
+light_color = Color(1, 0.78, 0.5, 1)
+omni_range = 8.0
 
 [node name="Camera3D" type="Camera3D" parent="."]
 current = true
