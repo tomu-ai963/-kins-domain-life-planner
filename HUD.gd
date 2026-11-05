@@ -168,7 +168,7 @@ func _status_lines() -> PackedStringArray:
 	])
 	# 今日の発見は一日中見られるように常に出す
 	if _trees.last_day == _trees.today() and _trees.today_event != "":
-		lines.append("今日の発見: " + _main.DAILY_MESSAGES[_trees.today_event])
+		lines.append("今日の発見: " + _main.daily_message(_trees.today_event))
 	lines.append(_main.quest_line())
 	lines.append(_main.cabin_line())
 	lines.append(_main.pond_line())

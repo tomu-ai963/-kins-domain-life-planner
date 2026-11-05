@@ -26,7 +26,9 @@ func _process(_delta: float) -> bool:
 	_frame += 1
 	match _frame:
 		2:
+			_clear_weather()  # 天気は日付で決まる。テストを走らせる日によって結果が変わらないように、晴れにする
 			_test_scene_light()
+			_test_overcast()
 			_test_night_lamps()
 			_test_preview_keys()
 			_test_rules_ignore_clock()
@@ -155,6 +157,89 @@ func _test_scene_light() -> void:
 	_check(env.fog_light_color.get_luminance() < 0.3, "夜は遠くのかすみも暗い")
 	_check(sun.light_energy >= 0.2 and env.ambient_light_energy >= 1.0, "夜でも真っ暗にはしない(月の光と、強めの環境光)")
 	_at(12)
+
+func _clear_weather() -> void:
+	main.world.forest.today_event = "birds"
+	main.get_node("Weather").refresh(true)
+
+func _test_overcast() -> void:
+	print("雨の光")
+	var f = main.world.forest
+	var weather = main.get_node("Weather")
+	var light = main.get_node("DayLight")
+	var sun: DirectionalLight3D = main.get_node("Sun")
+	var env: Environment = main.get_node("WorldEnvironment").environment
+	_at(12)
+	var clear_energy := sun.light_energy
+	var clear_top: Color = (env.sky.sky_material as ProceduralSkyMaterial).sky_top_color
+	var clear_fog := env.fog_density
+	_check(not weather.is_falling(), "晴れの日は何も降らない")
+
+	f.last_day = f.today()
+	f.today_event = "rain"
+	f.season = "summer"
+	weather.refresh(true)
+	var top: Color = (env.sky.sky_material as ProceduralSkyMaterial).sky_top_color
+	_check(sun.light_energy < clear_energy * 0.5, "雨の日は太陽の光が弱い")
+	_check(top.b - top.r < clear_top.b - clear_top.r, "雨の日は空が灰色に寄る")
+	_check(env.fog_density > clear_fog, "雨の日は遠くがかすむ")
+	_check(weather.get_node("Rain").emitting and weather.get_node("Ripples").emitting, "雨粒が降り、地面に波紋が出る")
+	_check(not weather.get_node("Snow").emitting, "冬でなければ雪は降らない")
+
+	f.season = "winter"
+	weather.refresh(true)
+	_check(weather.get_node("Snow").emitting and not weather.get_node("Rain").emitting, "冬の同じ日は雪になる")
+	_check(sun.light_energy < clear_energy * 0.5, "雪の日も暗い")
+	_check(main.daily_message("rain").begins_with("雪"), "冬の文言は雪になる")
+	f.season = "summer"
+	_check(main.daily_message("rain").begins_with("雨"), "冬でなければ文言は雨のまま")
+
+	# 雨の夜が晴れの夜より明るくならない
+	_at(0)
+	var rain_ambient := env.ambient_light_energy
+	var rain_night_top: Color = (env.sky.sky_material as ProceduralSkyMaterial).sky_top_color
+	_clear_weather()
+	_at(0)
+	var clear_night_top: Color = (env.sky.sky_material as ProceduralSkyMaterial).sky_top_color
+	_check(rain_night_top.get_luminance() <= clear_night_top.get_luminance() + 0.02, "雨の夜の空が晴れの夜より明るくならない")
+	_check(rain_ambient >= 1.0, "雨の夜も真っ暗にはならない")
+
+	# 雨が上がる・降りだすときは少しずつ変わる
+	_at(12)
+	f.today_event = "rain"
+	weather.refresh(false)
+	_check(light.overcast == 0.0 and sun.light_energy == clear_energy, "降りだしの瞬間はまだ晴れの光")
+	light._process(1.0)
+	_check(light.overcast > 0.0 and light.overcast < 1.0 and sun.light_energy < clear_energy, "少しずつ暗くなる")
+	light._process(10.0)
+	_check(is_equal_approx(light.overcast, 1.0), "やがて雨の光になる")
+
+	# 前の日の雨は続かない
+	f.last_day = "2000-01-01"
+	weather.refresh(true)
+	_check(not f.is_raining() and not weather.is_falling(), "日付が変わるまでの前の日の雨は降らない")
+
+	# 小屋の中には降らない
+	f.last_day = f.today()
+	weather.refresh(true)
+	var player = main.get_node("Player")
+	player.set_indoors(true, 0.3)
+	weather._process(0.016)
+	_check(not weather.visible, "小屋の中では雨を見せない")
+	player.set_indoors(false)
+	weather._process(0.016)
+	_check(weather.visible, "外に出るとまた降っている")
+
+	# カメラについてきて、距離に合わせて広がる
+	player.global_position = Vector3(10, 0, -5)
+	player._cam_dist = weather.BASE_DIST * 2.0
+	weather._process(0.016)
+	_check(is_equal_approx(weather.global_position.x, 10.0) and is_equal_approx(weather.global_position.z, -5.0), "降る範囲はプレイヤーについてくる")
+	_check(is_equal_approx(weather.scale.x, 2.0), "カメラを引くと降る範囲も広がる")
+	player.global_position = Vector3.ZERO
+	player._cam_dist = weather.BASE_DIST
+
+	_clear_weather()
 
 func _test_night_lamps() -> void:
 	print("夜の明かり")

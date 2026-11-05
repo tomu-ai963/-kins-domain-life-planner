@@ -125,10 +125,14 @@ func add_tree(pos: Vector2, species: String, form := "seed") -> bool:
 		"last_harvest": "", "last_watered": "", "bonus_years": 0.0,
 	})
 	# 雨の日は一日中降っている扱い。あとから植えた木も水やり済みにする
-	if last_day == today() and today_event == "rain":
+	if is_raining():
 		_water(trees[-1])
 	_commit()
 	return true
+
+# 今日は雨の日か(一日中降っている扱い)
+func is_raining() -> bool:
+	return last_day == today() and today_event == "rain"
 
 # 根付いているか(苗木・移行前の木はいつも。種は芽が出て 1 日たってから)
 func is_established(tree: Dictionary) -> bool:

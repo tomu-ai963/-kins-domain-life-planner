@@ -27,10 +27,19 @@ const KEYS := [
 	{"elev": 78.0, "energy": 0.75, "light": Color(1.00, 1.00, 1.00), "top": Color(0.42, 0.62, 0.86), "horizon": Color(0.78, 0.84, 0.88), "ambient": 0.40},
 ]
 
+# 雨雲の下の光: 太陽は弱く(影が薄くなる)、空は同じ明るさのまま灰色に、遠くはかすむ
+const OVERCAST_SUN := 0.25        # 太陽の光に掛ける倍率
+const OVERCAST_SKY_MIX := 0.85    # 空の色をどれだけ灰色に寄せるか
+const OVERCAST_FOG := 0.0035      # 雨のときのかすみの濃さ
+const OVERCAST_SECONDS := 3.0     # 晴れから雨に変わるのにかかる時間
+
 var clock: DayClock
 var sun: DirectionalLight3D
 var environment: Environment
 var night := -1.0  # 今の暗さ。まだ一度も決めていないときは -1
+var overcast := 0.0  # 雲の厚さ。0 = 晴れ、1 = 雨
+var _overcast_goal := 0.0
+var _clear_fog := 0.0
 var _shown_offset := 0.0  # 画面に出しているプレビューの時間。clock.preview_hours を追いかける
 var _timer := 0.0
 
@@ -38,11 +47,22 @@ func setup(c: DayClock, s: DirectionalLight3D, e: Environment) -> void:
 	clock = c
 	sun = s
 	environment = e
+	_clear_fog = e.fog_density
 	apply_light()
+
+# 雲の厚さを変える。instant でなければ少しずつ変わる
+func set_overcast(amount: float, instant := false) -> void:
+	_overcast_goal = amount
+	if instant:
+		overcast = amount
+		apply_light()
 
 func _process(delta: float) -> void:
 	if clock == null:
 		return
+	if not is_equal_approx(overcast, _overcast_goal):
+		overcast = move_toward(overcast, _overcast_goal, delta / OVERCAST_SECONDS)
+		apply_light()
 	var diff := wrapf(clock.preview_hours - _shown_offset, -12.0, 12.0)
 	if absf(diff) > 0.001:
 		var step := PREVIEW_HOURS_PER_SECOND * delta
@@ -57,7 +77,7 @@ func _process(delta: float) -> void:
 func apply_light() -> void:
 	var dir := DayClock.to_sun(clock.real_hours() + _shown_offset, clock.today_of_year())
 	var elev := DayClock.elevation_deg(dir)
-	var k := sample(elev)
+	var k := cloudy(sample(elev), overcast)
 	sun.basis = Basis.looking_at(-light_dir(dir))
 	sun.light_energy = k.energy
 	sun.light_color = k.light
@@ -67,6 +87,7 @@ func apply_light() -> void:
 	sky.ground_horizon_color = k.horizon
 	environment.ambient_light_energy = k.ambient
 	environment.fog_light_color = k.horizon
+	environment.fog_density = lerpf(_clear_fog, OVERCAST_FOG, overcast)
 	var amount := DayClock.darkness(elev)
 	if absf(amount - night) > 0.001:
 		night = amount
@@ -82,6 +103,21 @@ static func light_dir(to_sun: Vector3) -> Vector3:
 		var flat := Vector3(d.x, 0.0, d.z).normalized()
 		d = flat * cos(min_elev) + Vector3.UP * sin(min_elev)
 	return d
+
+# 晴れの光 k に雲をかける(amount: 0 = 晴れ、1 = 雨)。夜が明るくならないよう、空は明るさを保って灰色にする
+static func cloudy(k: Dictionary, amount: float) -> Dictionary:
+	if amount <= 0.0:
+		return k
+	var c := k.duplicate()
+	c.energy = k.energy * lerpf(1.0, OVERCAST_SUN, amount)
+	c.light = (k.light as Color).lerp(Color.WHITE, amount * 0.5)
+	c.top = _to_gray(k.top, amount)
+	c.horizon = _to_gray(k.horizon, amount)
+	return c
+
+static func _to_gray(c: Color, amount: float) -> Color:
+	var l := c.get_luminance()
+	return c.lerp(Color(l * 0.95, l, l * 1.06), amount * OVERCAST_SKY_MIX)
 
 # 太陽の高さ elev のときの光(KEYS のあいだを直線でつなぐ)
 static func sample(elev: float) -> Dictionary:

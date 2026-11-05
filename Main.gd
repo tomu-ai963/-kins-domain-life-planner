@@ -45,6 +45,9 @@ func _ready() -> void:
 	world.load_game()
 	_check_new_day()
 	_check_quests()  # 旧セーブで条件を満たしていれば、開いた時点で達成する
+	var weather := get_node_or_null("Weather")
+	if weather != null:
+		weather.refresh(true)  # セーブを読んだあとの今日の天気で始める
 
 # 昼夜の光と小屋の中は 3D だけ(2D のシーンには DayLight がない)
 func _setup_3d_only() -> void:
@@ -55,6 +58,7 @@ func _setup_3d_only() -> void:
 	day_light.night_changed.connect($Cabin.set_night)
 	day_light.night_changed.connect($Market.set_night)
 	day_light.setup(world.clock, $Sun, $WorldEnvironment.environment)
+	$Weather.setup(world.forest, $Player, day_light)
 	$Player.shadow_light = $Sun
 	$Player.update_shadow_distance()
 	$Cabin.set_player($Player)
@@ -74,7 +78,7 @@ func _check_new_day() -> void:
 	var id: String = world.check_new_day()
 	if id == "":
 		return
-	var lines := ["今日の発見: " + DAILY_MESSAGES[id]]
+	var lines := ["今日の発見: " + daily_message(id)]
 	if not f.pickups.is_empty():
 		lines.append("育った木の根元に種が落ちている(%dか所)" % f.pickups.size())
 	for sp in f.last_failed:
@@ -86,7 +90,7 @@ func _check_new_day() -> void:
 		lines.append("もうすぐ霜が降りる(12月)。ニンニク以外の野菜は枯れるので、早めに収穫を")
 	var pond := world.pond
 	if pond.last_gain > 0:
-		lines.append("雨で池に水がたまった(%d%%)" % pond.water)
+		lines.append("%sで池に水がたまった(%d%%)" % ["雪" if f.season == "winter" else "雨", pond.water])
 	for c in pond.last_arrivals:
 		lines.append("池に%sが来た" % pond.CREATURES[c].name)
 	$HUD.show_message("\n".join(PackedStringArray(lines)), 10.0)
@@ -115,6 +119,12 @@ const WATER_MESSAGES := {
 	"none": "近くに木がない",
 	"done": "この木には今日もう水をあげた",
 }
+
+# 発見の文言。雨の日は冬なら雪になる(降るものは WeatherView3D と同じ。効き目は雨と同じ)
+func daily_message(id: String) -> String:
+	if id == "rain" and world.forest.season == "winter":
+		return "雪が降った。今日は全部の木と野菜に水やり済み"
+	return DAILY_MESSAGES[id]
 
 # 日替わりの発見(Forest.DAILY_EVENTS の id)ごとの文言
 const DAILY_MESSAGES := {

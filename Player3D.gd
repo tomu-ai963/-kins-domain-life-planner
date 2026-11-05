@@ -71,6 +71,9 @@ func _cam_offset() -> Vector3:
 func view_distance() -> float:
 	return _indoor_dist if _indoors else _cam_dist
 
+func is_indoors() -> bool:
+	return _indoors
+
 # 小屋に入った / 出た。floor_y は床の高さ(m)
 func set_indoors(indoors: bool, floor_y := 0.0) -> void:
 	_indoors = indoors

@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://Main.gd" id="1"]
 [ext_resource type="PackedScene" path="res://Player3D.tscn" id="2"]
@@ -13,6 +13,7 @@
 [ext_resource type="Script" path="res://view/3d/CabinView3D.gd" id="11"]
 [ext_resource type="Script" path="res://view/3d/PondView3D.gd" id="12"]
 [ext_resource type="Script" path="res://view/3d/DayLightView3D.gd" id="13"]
+[ext_resource type="Script" path="res://view/3d/WeatherView3D.gd" id="14"]
 
 [sub_resource type="ProceduralSkyMaterial" id="1"]
 sky_top_color = Color(0.42, 0.62, 0.86, 1)
@@ -73,6 +74,9 @@ script = ExtResource("8")
 
 [node name="Market" type="Node3D" parent="."]
 script = ExtResource("9")
+
+[node name="Weather" type="Node3D" parent="."]
+script = ExtResource("14")
 
 [node name="Audio" type="Node" parent="."]
 

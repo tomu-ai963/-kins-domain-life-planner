@@ -89,7 +89,7 @@ func sow(pos: Vector2, kind: String, from_seedling := false) -> String:
 		"head": SEEDLING_HEAD_START if from_seedling else 0.0,
 	})
 	# 雨の日は一日中降っている扱い。あとからまいた区画も水やり済みにする
-	if forest.last_day == forest.today() and forest.today_event == "rain":
+	if forest.is_raining():
 		_water(crops[-1])
 	_commit()
 	return "sown"
