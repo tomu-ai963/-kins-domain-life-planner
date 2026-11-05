@@ -17,6 +17,10 @@ const LANTERN_ENERGY := 0.8
 const SHADOW_DIST_PER_CAM := 3.0
 const SHADOW_DIST_MIN := 60.0
 const SHADOW_DIST_MAX := 200.0
+# 小屋の中ではカメラが寄る。外の距離は覚えておき、出ると戻る
+const INDOOR_CAM_DIST := 10.0
+const INDOOR_CAM_MAX := 14.0
+const STEP_SPEED := 1.5   # 床の高さまで体が上がる速さ(m/s)
 
 @onready var _body: Node3D = $Body
 @onready var _camera: Camera3D = $Camera3D
@@ -25,6 +29,9 @@ const SHADOW_DIST_MAX := 200.0
 
 var _cam_dist := 28.0
 var shadow_light: DirectionalLight3D  # Main が太陽を渡す
+var _indoors := false
+var _indoor_dist := INDOOR_CAM_DIST
+var _floor_y := 0.0
 
 func _ready() -> void:
 	_camera.top_level = true  # プレイヤーの回転に引きずられないように、カメラは独立して動かす
@@ -46,13 +53,30 @@ func _physics_process(delta: float) -> void:
 		_body.rotation.y = lerp_angle(_body.rotation.y, target, minf(1.0, TURN_SPEED * delta))
 
 func _process(delta: float) -> void:
+	_body.position.y = move_toward(_body.position.y, _floor_y if _indoors else 0.0, STEP_SPEED * delta)
 	var goal := global_position + _cam_offset()
 	_camera.global_position = _camera.global_position.lerp(goal, 1.0 - exp(-CAM_FOLLOW * delta))
 	_camera.look_at(_camera.global_position - _cam_offset())
 
 func _cam_offset() -> Vector3:
 	var pitch := deg_to_rad(CAM_PITCH_DEG)
-	return Vector3(0, sin(pitch), cos(pitch)) * _cam_dist
+	return Vector3(0, sin(pitch), cos(pitch)) * view_distance()
+
+# 今のカメラの距離(小屋の中と外で別に覚える)
+func view_distance() -> float:
+	return _indoor_dist if _indoors else _cam_dist
+
+# 小屋に入った / 出た。floor_y は床の高さ(m)
+func set_indoors(indoors: bool, floor_y := 0.0) -> void:
+	_indoors = indoors
+	_floor_y = floor_y
+	update_shadow_distance()
+
+func _zoom(factor: float) -> void:
+	if _indoors:
+		_indoor_dist = clampf(_indoor_dist * factor, CAM_DIST_MIN, INDOOR_CAM_MAX)
+	else:
+		_cam_dist = clampf(_cam_dist * factor, CAM_DIST_MIN, CAM_DIST_MAX)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey \
@@ -62,14 +86,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		plant_tree.emit(ground_pos())
 	elif event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_cam_dist = clampf(_cam_dist * 0.85, CAM_DIST_MIN, CAM_DIST_MAX)
+			_zoom(0.85)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_cam_dist = clampf(_cam_dist / 0.85, CAM_DIST_MIN, CAM_DIST_MAX)
+			_zoom(1.0 / 0.85)
 		update_shadow_distance()
 
 func update_shadow_distance() -> void:
 	if shadow_light != null:
-		shadow_light.directional_shadow_max_distance = clampf(_cam_dist * SHADOW_DIST_PER_CAM, SHADOW_DIST_MIN, SHADOW_DIST_MAX)
+		shadow_light.directional_shadow_max_distance = clampf(view_distance() * SHADOW_DIST_PER_CAM, SHADOW_DIST_MIN, SHADOW_DIST_MAX)
 
 # 暗くなるとランタンをともす(0 = 昼、1 = 夜)
 func set_night(amount: float) -> void:

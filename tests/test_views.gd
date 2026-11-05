@@ -347,9 +347,86 @@ func _test_3d_cabin() -> void:
 
 func _test_3d_cabin_collision() -> void:
 	var player: CharacterBody3D = main.get_node("Player")
-	var from_south := Transform3D(Basis.IDENTITY, Vector3(20, 0, 23))
-	_check(player.test_move(from_south, Vector3(0, 0, -3)), "南から歩いて小屋にぶつかる(通り抜けられない)")
-	_check(not player.test_move(from_south, Vector3(5, 0, 0)), "小屋の外は歩ける")
+	var at_wall := Transform3D(Basis.IDENTITY, Vector3(21.2, 0, 23))
+	var at_door := Transform3D(Basis.IDENTITY, Vector3(20, 0, 23))
+	var indoors := Transform3D(Basis.IDENTITY, Vector3(20, 0, 20))
+	_check(player.test_move(at_wall, Vector3(0, 0, -3)), "南の壁には歩いてぶつかる(通り抜けられない)")
+	_check(not player.test_move(at_door, Vector3(5, 0, 0)), "小屋の外は歩ける")
+	_check(not player.test_move(at_door, Vector3(0, 0, -2.5)), "南のドアからは中へ入れる")
+	_check(not player.test_move(indoors, Vector3(0, 0, 3)), "中からドアを通って外へ出られる")
+	_check(player.test_move(indoors, Vector3(3, 0, 0)) and player.test_move(indoors, Vector3(-3, 0, 0)), "中からは東西の壁にぶつかる")
+	_check(player.test_move(indoors, Vector3(0, 0, -3)), "中からは北の壁にぶつかる")
+	_test_cabin_inside()
+
+func _test_cabin_inside() -> void:
+	print("小屋の中")
+	var player: CharacterBody3D = main.get_node("Player")
+	var view: Node3D = main.get_node("Cabin")
+	var c = main.world.cabin
+	var spot: Node3D = view.get_child(0)
+	var room: Node3D = spot.get_node("Interior")
+	var roof: MeshInstance3D = view._cut_pieces.filter(func(n): return n.mesh is PrismMesh)[0]
+	var sl = main.world.seedlings
+	var shows := GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	var hides := GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	_check(room.get_child_count() >= 15, "部屋にベッド・ストーブ・テーブルなどがある(%d 個)" % room.get_child_count())
+
+	# 外: 屋根が見え、部屋の明かりは消えている
+	player.global_position = Vector3(20, 0, 30)
+	view._process(0.1)
+	_check(roof.cast_shadow == shows and view._inside_pieces.all(func(n): return not n.visible), "外にいると屋根が見え、部屋の明かりは消えている")
+	view._process(10.0)
+	_check(view._door_hinge.rotation.y == 0.0, "離れているとドアは閉まっている")
+
+	# ドアの前に来ると開く
+	player.global_position = Vector3(20, 0, 22.5)
+	view._process(10.0)
+	_check(is_equal_approx(view._door_hinge.rotation.y, view.DOOR_OPEN_ANGLE), "近づくとドアが開く")
+	_check(not c.is_inside(player.ground_pos()) and roof.cast_shadow == shows, "ドアの前はまだ外")
+
+	# 中に入る: 屋根と南の壁を見せず、カメラが寄る
+	var far_dist: float = player.view_distance()
+	player.global_position = Vector3(20, 0, 20)
+	view._process(0.1)
+	_check(c.is_inside(player.ground_pos()), "ドアを入ると中にいる")
+	_check(view._cut_pieces.size() >= 6 and view._cut_pieces.all(func(n): return n.cast_shadow == hides), "中では屋根と南の壁を見せない(影だけ落とす)")
+	_check(view._inside_pieces.all(func(n): return n.visible), "中では部屋の明かりと腰の高さの壁を見せる")
+	_check(player.view_distance() == player.INDOOR_CAM_DIST and player.view_distance() < far_dist, "中ではカメラが寄る")
+	player._process(10.0)
+	_check(is_equal_approx(player.get_node("Body").position.y, view.FLOOR_Y), "体が床の高さに上がる")
+
+	# 中でのズームは外の距離を変えない
+	var wheel := InputEventMouseButton.new()
+	wheel.pressed = true
+	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	player._unhandled_input(wheel)
+	_check(player.view_distance() > player.INDOOR_CAM_DIST and player._cam_dist == far_dist, "中のズームは外の距離を変えない")
+
+	# 中で苗づくりができる。見た目を作り直しても中のまま
+	main.selected_crop = "cucumber"
+	main.world.garden.seeds.cucumber = 1
+	var pots: int = sl.pots.size()
+	main._cabin_action()
+	_check(sl.pots.size() == pots + 1, "中からも H で苗づくりができる")
+	var roof2: MeshInstance3D = view._cut_pieces.filter(func(n): return n.mesh is PrismMesh)[0]
+	_check(roof2.cast_shadow == hides and view._inside_pieces.all(func(n): return n.visible), "作り直しても中の見え方のまま")
+	sl.pots.clear()
+	sl.changed.emit()
+	main.selected_crop = "radish"
+
+	# 夜の明かりと一緒に動いても大丈夫
+	view.set_night(1.0)
+	_check(view._lamp_light.visible, "中にいても夜の軒の明かりはつく")
+	view.set_night(0.0)
+
+	# 外へ出ると戻る
+	player.global_position = Vector3(20, 0, 23)
+	view._process(0.1)
+	_check(view._cut_pieces.all(func(n): return n.cast_shadow == shows), "外へ出ると屋根と南の壁が戻る")
+	_check(view._inside_pieces.all(func(n): return not n.visible), "外へ出ると部屋の明かりが消える")
+	_check(player.view_distance() == far_dist, "外へ出るとカメラが元の距離に戻る")
+	player._process(10.0)
+	_check(player.get_node("Body").position.y == 0.0, "体が地面の高さに戻る")
 
 func _test_3d_pond() -> void:
 	print("池")

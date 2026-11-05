@@ -67,7 +67,7 @@ func needs_care() -> bool:
 			return true
 	return false
 
-# 小屋の外で H を押したときの作業。育った苗を受け取る → 世話をする → 種をまく の順に、1 回に 1 つ進む
+# 小屋の中かそばで H を押したときの作業。育った苗を受け取る → 世話をする → 種をまく の順に、1 回に 1 つ進む
 # 結果: collected / tended / sown / none / far / not_seedling / full / no_seed
 func act(pos: Vector2, kind: String) -> String:
 	if not cabin.is_complete():

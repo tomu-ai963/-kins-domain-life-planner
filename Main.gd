@@ -41,13 +41,13 @@ func _ready() -> void:
 	$HUD.setup($Player, world.forest, self)
 	$HUD.shop_action.connect(_on_shop_action)
 	$Player.plant_tree.connect(_on_plant_tree)
-	_setup_day_light()
+	_setup_3d_only()
 	world.load_game()
 	_check_new_day()
 	_check_quests()  # 旧セーブで条件を満たしていれば、開いた時点で達成する
 
-# 昼夜の光は 3D だけ(2D のシーンには DayLight がない)
-func _setup_day_light() -> void:
+# 昼夜の光と小屋の中は 3D だけ(2D のシーンには DayLight がない)
+func _setup_3d_only() -> void:
 	var day_light := get_node_or_null("DayLight")
 	if day_light == null:
 		return
@@ -57,6 +57,7 @@ func _setup_day_light() -> void:
 	day_light.setup(world.clock, $Sun, $WorldEnvironment.environment)
 	$Player.shadow_light = $Sun
 	$Player.update_shadow_distance()
+	$Cabin.set_player($Player)
 
 func _process(delta: float) -> void:
 	# 季節と日付は現実の日付から。1 分に 1 回チェックすれば十分(開いたまま日付をまたいでも拾う)
@@ -214,7 +215,7 @@ func _cabin_action() -> void:
 		"stage_done":
 			$HUD.show_message("%sができた(丸太 -%d本)。明日から%s" % [CABIN_STAGE_NAMES[s.id], s.logs_per_day, CABIN_STAGE_NAMES[c.current_stage().id]], 5.0)
 		"finished":
-			$HUD.show_message("小屋が建った。窓辺で苗を育てられる(トマト [9] か きゅうり [6] を選んで H)", 8.0)
+			$HUD.show_message("小屋が建った。南のドアから入れる。窓辺で苗を育てられる(トマト [9] か きゅうり [6] を選んで H)", 8.0)
 		"far":
 			$HUD.show_message("小屋の場所まで行って作業する(%.0fm以内)" % c.REACH)
 		"inside":

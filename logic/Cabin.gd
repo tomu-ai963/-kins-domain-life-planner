@@ -129,6 +129,14 @@ func work(pos: Vector2) -> String:
 func is_near(pos: Vector2) -> bool:
 	return site != null and rect().grow(REACH).has_point(pos)
 
+# 完成した小屋の中にいるか(南のドアから歩いて入る)
+func is_inside(pos: Vector2) -> bool:
+	return is_complete() and covers(pos)
+
+# ドアの位置(南の壁の真ん中)
+func door_pos() -> Vector2:
+	return site + Vector2(0.0, DEPTH * 0.5)
+
 # 足元に立っているのが小屋の敷地か(木は植えられない)
 func covers(pos: Vector2) -> bool:
 	return site != null and rect().has_point(pos)

@@ -104,6 +104,11 @@ func _test_work() -> void:
 	_check(c.work(OUTSIDE) == "finished" and c.is_complete() and c.materials.log == 0, "屋根 2 日目: 完成(丸太はちょうど使い切る)")
 	_next_day(c)
 	_check(c.work(OUTSIDE) == "complete" and c.current_stage().is_empty(), "完成したらもう作業はない")
+	_check(c.is_inside(SITE) and not c.is_inside(OUTSIDE), "完成した小屋の中にいるかが分かる")
+	_check(c.door_pos() == SITE + Vector2(0, 1.5), "ドアは南の壁の真ん中")
+	c.stage = 2
+	_check(not c.is_inside(SITE), "完成するまでは中に入れない")
+	c.stage = 3
 
 func _test_wood() -> void:
 	print("木を伐って丸太にする")
