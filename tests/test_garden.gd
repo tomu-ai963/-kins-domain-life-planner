@@ -25,6 +25,7 @@ func _initialize() -> void:
 	_test_spoiling()
 	_test_rain()
 	_test_plot_guard_and_remove()
+	_test_new_plot_limit()
 	_test_preview()
 	_test_save()
 	_remove_save()
@@ -238,6 +239,36 @@ func _test_plot_guard_and_remove() -> void:
 	_check(not g.remove_at(SPOT), "もう抜くものがない")
 	_check(g.toggle_plot(SPOT) == "removed" and w.land.plot_at(SPOT) == null, "空きの区画は取り消せる")
 	_check(g.toggle_plot(Vector2(49.75, 0)) == "outside", "土地の外は今までどおり置けない")
+
+func _test_new_plot_limit() -> void:
+	print("新しく耕せる区画は 1 日 2 つまで")
+	var w := _world()
+	var g := w.garden
+	var a := Vector2(1, 1)
+	var b := Vector2(4, 1)
+	var c := Vector2(7, 1)
+	_check(g.plots_left_today() == 2, "はじめは今日あと 2 区画")
+	_check(g.toggle_plot(a) == "placed" and g.plots_left_today() == 1, "1 つ目を耕せる")
+	_check(g.toggle_plot(b) == "placed" and g.plots_left_today() == 0, "2 つ目を耕せる")
+	_check(g.toggle_plot(c) == "limit" and w.land.plot_at(c) == null, "3 つ目は今日はもう耕せない")
+	_check(g.toggle_plot(Vector2(49.75, 0)) == "limit", "上限のときは、場所を見る前に上限と知らせる")
+	_check(g.toggle_plot(b) == "removed" and g.plots_left_today() == 1, "取り消すと今日の分が 1 つ戻る(置き間違いで損をしない)")
+	_check(g.toggle_plot(c) == "placed" and g.plots_left_today() == 0, "戻った分で別の場所を耕せる")
+	_check(g.toggle_plot(a) == "removed" and g.toggle_plot(a) == "placed" and w.land.plots.size() == 2, "取り消しと耕し直しでは区画は増えない")
+	g.tilled_day = "2000-01-01"
+	g.tilled_count = 2
+	_check(g.plots_left_today() == 2, "日付が変わると、また 2 区画耕せる")
+	_check(g.toggle_plot(b) == "placed" and g.tilled_day == w.forest.today() and g.tilled_count == 1, "新しい日の分として数える")
+	var d := Vector2(10, 1)
+	g.toggle_plot(d)
+	w.save_game()
+	var w2 := _world("autumn", false)
+	w2.load_game()
+	_check(w2.garden.plots_left_today() == 0 and w2.land.plots.size() == 4, "開き直しても今日の分は戻らない(セーブに入っている)")
+	_check(w2.garden.toggle_plot(Vector2(13, 1)) == "limit", "開き直したあとも 3 つ目は耕せない")
+	var old := _world()  # 保存先をテスト用にしておく(GameWorld.new() のままだと本物のセーブに向く)
+	old.garden.from_save({"seeds": {}, "produce": {}, "crops": []})
+	_check(old.garden.tilled_day == "" and old.garden.tilled_count == 0, "前のセーブは今日の分を使っていない状態で読む")
 
 func _test_preview() -> void:
 	print("先送りプレビュー")

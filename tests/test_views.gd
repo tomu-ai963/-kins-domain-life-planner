@@ -30,6 +30,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_pond()
 			_test_fell_confirm()
 			_test_hud()
+			_test_plot_limit()
 			_test_toon()
 		10:
 			_test_3d_cabin_collision()  # 当たり判定が物理サーバーに入るのを待ってから
@@ -581,6 +582,28 @@ func _test_hud() -> void:
 	hud._process(0.6)
 	_check(not hud.is_message_visible(), "時間が来ると消える")
 	player.global_position = Vector3(20, 0, 23)  # 次の当たり判定のテストのために小屋の南へ戻す
+
+func _test_plot_limit() -> void:
+	print("耕す上限")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var player = main.get_node("Player")
+	var keep: Vector3 = player.global_position
+	w.garden.tilled_day = ""
+	w.garden.tilled_count = 0
+	var spots := [Vector3(-40, 0, 40), Vector3(-37, 0, 40), Vector3(-34, 0, 40)]
+	var plots: int = w.land.plots.size()
+	for s in spots:
+		player.global_position = s
+		main._toggle_plot()
+	_check(w.land.plots.size() == plots + 2, "F で耕せるのは 1 日 2 区画まで")
+	_check(hud._message.contains("1日2区画まで") and hud._message.contains("明日"), "上限になると、その理由を出す")
+	_check(main.QUEST_TEXTS.garden.hint.contains("1日2区画"), "クエストの案内にも上限が書いてある")
+	for i in range(2):
+		player.global_position = spots[i]
+		main._toggle_plot()
+	_check(w.land.plots.size() == plots, "取り消すと元に戻る")
+	player.global_position = keep
 
 # シーンの中の形を全部たどって、材質を集める
 func _collect_materials(n: Node, out: Array) -> void:

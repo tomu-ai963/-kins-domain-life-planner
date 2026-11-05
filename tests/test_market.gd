@@ -66,7 +66,7 @@ func _test_buy_and_sell() -> void:
 	f.produce.apple = 20
 	_check(m.sell_all("apple") == 300 and m.money == 740 and f.produce.apple == 0, "リンゴ 20 個を売ると 300₽(1 個 15₽)")
 	_check(m.sell_all("apple") == 0 and m.money == 740, "売るリンゴがなければ 0₽")
-	_check(Forest.apple_yield(6.0) == 5 and Forest.apple_yield(10.0) == 25 and Forest.apple_yield(40.0) == 60, "収穫量は樹齢 6 年で 5 個、10 年で 25 個、上限 60 個")
+	_check(Forest.apple_yield(6.0) == 5 and Forest.apple_yield(8.0) == 15 and Forest.apple_yield(9.0) == 20 and Forest.apple_yield(40.0) == 20, "収穫量は樹齢 6 年で 5 個、1 年ごとに 5 個増えて、上限 20 個")
 
 func _test_saplings() -> void:
 	print("苗木")

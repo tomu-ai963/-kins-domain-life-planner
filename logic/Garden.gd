@@ -13,6 +13,7 @@ signal dirty    # セーブに入る状態が変わった
 
 const DRY_GROWTH := 0.5  # 水をやらなかった日の育ち(1 日あたり)
 const SEEDLING_HEAD_START := 2.0  # 苗から植えると、これだけ育った状態から始まる(日)
+const NEW_PLOTS_PER_DAY := 2  # 1 日に新しく耕せる区画の数(手で耕すのは重労働。区画はお金がかからないので、ここで増え方を決める)
 
 # seasons: まける季節(苗を植えられる季節) / grow_days: 毎日水をやったときの日数(現実の日数から縮めたもの)
 # yield_kg: 1 区画(9m²)の収量。現実の 1m² あたりの目安 × 9
@@ -37,6 +38,8 @@ var produce := {}  # 野菜ごとの収穫物(kg)。市場で売る
 var last_harvest_kg := 0  # 直前の収穫の量(文言用)
 var last_harvest_spoiled := false  # 直前の収穫が傷んでいたか(文言用)
 var last_frost := {}      # 今日の確認で霜で枯れた区画の数 {kind: 数}(知らせる用・保存しない)
+var tilled_day := ""      # 最後に区画を耕した日(YYYY-MM-DD)
+var tilled_count := 0     # その日に耕した区画の数
 
 func _init() -> void:
 	seeds = _zero_counts()
@@ -171,10 +174,28 @@ func remove_at(pos: Vector2) -> bool:
 
 # 足元の 3m マスに区画を置く / 取り消す。野菜が育っている区画は取り消せない
 # 結果: placed / removed / outside(Land)、has_crop
+# 今日あと何区画耕せるか
+func plots_left_today() -> int:
+	return NEW_PLOTS_PER_DAY - (tilled_count if tilled_day == forest.today() else 0)
+
+# 結果: Land.toggle_plot の結果か has_crop / limit(今日はもう耕せない)。
+# 区画を取り消すと今日の分が 1 つ戻る(置き間違いで損をしないように)
 func toggle_plot(pos: Vector2) -> String:
 	if not crop_at(pos).is_empty():
 		return "has_crop"
-	return land.toggle_plot(pos)
+	if land.plot_at(pos) == null and plots_left_today() <= 0:
+		return "limit"
+	var used: int = NEW_PLOTS_PER_DAY - plots_left_today()
+	var result: String = land.toggle_plot(pos)
+	if result == "placed":
+		used += 1
+	elif result == "removed":
+		used = maxi(0, used - 1)
+	else:
+		return result
+	tilled_day = forest.today()
+	tilled_count = used
+	return result
 
 # 育った日数。今日の分はまだ数えない(今日の水やりは、明日の時点で 1 日ぶんになる)
 func growth_days(c: Dictionary) -> float:
@@ -244,9 +265,11 @@ func to_save() -> Dictionary:
 			"x": c.pos.x, "y": c.pos.y, "kind": c.kind, "sown_day": c.sown_day,
 			"water_days": c.water_days, "last_watered": c.last_watered, "head": c.get("head", 0.0),
 		})
-	return {"crops": list, "seeds": seeds, "produce": produce}
+	return {"crops": list, "seeds": seeds, "produce": produce, "tilled_day": tilled_day, "tilled_count": tilled_count}
 
 func from_save(d: Dictionary) -> void:
+	tilled_day = str(d.get("tilled_day", ""))
+	tilled_count = int(d.get("tilled_count", 0))
 	seeds = _zero_counts()
 	produce = _zero_counts()
 	for k in CROPS:

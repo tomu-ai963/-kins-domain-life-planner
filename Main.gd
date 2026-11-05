@@ -127,7 +127,7 @@ const DAILY_MESSAGES := {
 # 段階クエスト(Quests.QUESTS の id)ごとの名前と進み具合の単位
 const QUEST_TEXTS := {
 	"hedge": {"name": "境界を生垣で囲む", "unit": "区画", "hint": "境界から3m以内に、10mごとに1本"},
-	"garden": {"name": "菜園を作る", "unit": "区画", "hint": "F で3m四方の区画を置く"},
+	"garden": {"name": "菜園を作る", "unit": "区画", "hint": "F で3m四方の区画を置く・1日2区画まで"},
 	"pond": {"name": "池を掘る", "unit": "", "hint": "P で場所を決めて、1日1回 5日かけて掘る"},
 	"family_cedar": {"name": "中心に家族の杉を植える", "unit": "", "hint": "中心から5m以内にシベリア杉"},
 }
@@ -139,6 +139,7 @@ const PLOT_MESSAGES := {
 	"outside": "土地の外には作れない",
 	"has_crop": "野菜が育っている区画は戻せない(Z で抜くか、E で収穫してから)",
 	"cabin": "小屋にかかる場所には作れない",
+	"limit": "新しく耕せるのは1日%d区画まで(続きは明日)",
 }
 const POND_MESSAGES := {
 	"placed": "ここに池を掘ることにした(P で 1日1回 掘る。掘りはじめる前なら Z で取り消せる)",
@@ -465,6 +466,8 @@ func _toggle_plot() -> void:
 	var msg: String = PLOT_MESSAGES[result]
 	if result == "placed":
 		msg = msg % world.land.plots.size()
+	elif result == "limit":
+		msg = msg % world.garden.NEW_PLOTS_PER_DAY
 	$HUD.show_message(msg)
 	_after_land_change(result)
 

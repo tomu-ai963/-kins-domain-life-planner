@@ -273,9 +273,11 @@ func _apply_event(id: String) -> void:
 		"rain":
 			water_all()
 
-# リンゴ 1 本の 1 年(= 1 日)の収穫量。樹齢 6 年で 5 個、1 年ごとに 5 個ずつ増えて 60 個まで
+# リンゴ 1 本の 1 年(= 1 日)の収穫量。樹齢 6 年で 5 個、1 年ごとに 5 個ずつ増えて上限まで。
+# 現実の 1 年分より少ない。秋のあいだ毎日採れるので、多いと畑が要らなくなる
+const APPLE_MAX_YIELD := 20
 static func apple_yield(age: float) -> int:
-	return clampi(5 + int((age - APPLE_FRUIT_AGE) * 5.0), 5, 60)
+	return clampi(5 + int((age - APPLE_FRUIT_AGE) * 5.0), 5, APPLE_MAX_YIELD)
 
 var last_harvest_count := 0  # 直前の収穫で採れた個数(文言用)
 
