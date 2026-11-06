@@ -18,6 +18,7 @@ func _initialize() -> void:
 	for s in SHOTS:
 		_test_shot(s)
 	_test_variants_differ()
+	_test_character()
 	_test_imported()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -59,9 +60,9 @@ func _test_loop(sound: String) -> void:
 	var s := _samples(sound)
 	_check(s.size() > 22050 * 5, "%s は 5 秒以上ある(%.1f 秒)" % [sound, s.size() / 22050.0])
 	var peak := _peak(s)
-	_check(peak > 0.5 and peak < 0.95, "%s は割れない大きさ(最大 %.2f)" % [sound, peak])
+	_check(peak > 0.3 and peak < 0.6, "%s は大きすぎない(最大 %.2f)" % [sound, peak])
 	var rms := _rms(s)
-	_check(rms > 0.03, "%s は鳴り続ける(平均 %.3f)" % [sound, rms])
+	_check(rms > 0.02, "%s は鳴り続ける(平均 %.3f)" % [sound, rms])
 	# 最後から最初へ戻るところで、音が大きく飛ばない。ふだんの隣どうしの差と比べる
 	var normal := 0.0
 	for i in range(1, s.size()):
@@ -90,6 +91,42 @@ func _test_variants_differ() -> void:
 		_check(a != b, "%s の 3 つは同じ音ではない" % surface)
 	var grass := _rms(_samples("step_grass_0"))
 	_check(grass > 0.0, "草の足音が鳴る")
+
+# 音の高さの目安: 隣の値と符号が変わる割合(大きいほど高い音)
+static func _zero_rate(s: PackedFloat32Array) -> float:
+	var n := 0
+	for i in range(1, s.size()):
+		if (s[i] >= 0.0) != (s[i - 1] >= 0.0):
+			n += 1
+	return float(n) / s.size()
+
+# 音量の波打ち: 1 秒ごとの大きさのばらつき(平均に対する割合)。大きいと波の音のように聞こえる
+func _swell(s: PackedFloat32Array) -> float:
+	var levels := []
+	for i in range(0, s.size() - 22050, 22050):
+		levels.append(_rms(s.slice(i, i + 22050)))
+	var total := 0.0
+	for v in levels:
+		total += v
+	var mean: float = total / levels.size()
+	var spread := 0.0
+	for v in levels:
+		spread += (v - mean) * (v - mean)
+	return sqrt(spread / levels.size()) / mean
+
+func _test_character() -> void:
+	print("音の性質(2026-11-06 とむの感想: 耳障り・川が海に聞こえる)")
+	var wind := _samples("wind")
+	var brook := _samples("brook")
+	var leaves := _samples("leaves")
+	var rain := _samples("rain")
+	_check(_swell(brook) < 0.12, "川の音量は波打たない(ばらつき %.1f%%)" % (_swell(brook) * 100.0))
+	_check(_swell(wind) < 0.2, "風の音量は大きく波打たない(ばらつき %.1f%%)" % (_swell(wind) * 100.0))
+	_check(_zero_rate(brook) > _zero_rate(wind) * 2.0, "川は風より高い音(%.3f / %.3f)" % [_zero_rate(brook), _zero_rate(wind)])
+	# 雑音が多いと符号の変わり方が 0.5 に近づく。高音を削っていれば小さくなる
+	for pair in [["葉", leaves], ["雨", rain], ["川", brook]]:
+		var rate := _zero_rate(pair[1])
+		_check(rate < 0.35, "%s に高い音が多すぎない(%.3f)" % [pair[0], rate])
 
 func _test_imported() -> void:
 	print("読み込み")

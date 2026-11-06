@@ -17,9 +17,9 @@ const INDOOR_OUTSIDE := 0.3  # 小屋の中で聞こえる外の音の割合
 const LOOPS := ["wind", "leaves", "brook", "rain", "fire"]
 # 短い音の音量(1 = そのまま)
 const VOLUMES := {
-	"water": 0.5, "dig": 0.7, "chop": 0.8, "build": 0.6, "pick": 0.6, "plant": 0.55, "pull": 0.6,
-	"tree_fall": 0.9, "click": 0.3, "open": 0.35, "coin": 0.4,
-	"step_grass": 0.3, "step_soil": 0.35, "step_wood": 0.45,
+	"water": 0.25, "dig": 0.35, "chop": 0.4, "build": 0.3, "pick": 0.3, "plant": 0.28, "pull": 0.3,
+	"tree_fall": 0.45, "click": 0.15, "open": 0.18, "coin": 0.2,
+	"step_grass": 0.14, "step_soil": 0.16, "step_wood": 0.22,
 }
 const ALIASES := {"pick_high": "pick"}  # 作業の動きの名前 → 音の名前
 const STEP_VARIANTS := 3
@@ -141,9 +141,10 @@ func update_ambient() -> void:
 	var outside: float = INDOOR_OUTSIDE if inside else 1.0
 	var night: float = world.wildlife.darkness()
 	var raining: bool = f.is_raining() and f.season != "winter"  # 雪は音がしない
-	_loops.wind.goal = (0.7 if f.season == "winter" else 0.4) * lerpf(1.0, 0.75, night) * outside
-	_loops.leaves.goal = 0.55 * minf(1.0, leafy_trees_near(pos) / LEAF_FULL_TREES) * outside * (0.6 if raining else 1.0)
-	_loops.brook.goal = 0.2 * outside
-	_loops.rain.goal = (0.65 if raining else 0.0) * outside
+	# 音量は小さめに(2026-11-06 とむの感想で約半分にした)
+	_loops.wind.goal = (0.32 if f.season == "winter" else 0.2) * lerpf(1.0, 0.75, night) * outside
+	_loops.leaves.goal = 0.3 * minf(1.0, leafy_trees_near(pos) / LEAF_FULL_TREES) * outside * (0.6 if raining else 1.0)
+	_loops.brook.goal = 0.16 * outside
+	_loops.rain.goal = (0.3 if raining else 0.0) * outside
 	var cooking: bool = world.kitchen.days_left() > 0
-	_loops.fire.goal = 0.5 if inside and cooking else 0.0
+	_loops.fire.goal = 0.25 if inside and cooking else 0.0

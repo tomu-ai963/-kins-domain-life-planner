@@ -784,7 +784,7 @@ func _test_sound_view() -> void:
 	# 小屋の中
 	var c = w.cabin
 	player.global_position = Vector3(c.site.x, 0, c.site.y)
-	var outdoor_wind: float = 0.4
+	var outdoor_wind: float = 0.2
 	audio.update_ambient()
 	_check(c.is_inside(main.player_pos()) and loops.wind.goal < outdoor_wind * 0.5, "小屋の中では外の音が小さい")
 	_check(loops.fire.goal == 0.0, "鍋が空なら火の音はしない")

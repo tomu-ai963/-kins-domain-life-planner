@@ -56,7 +56,7 @@ func _save_loop(sound: String, samples: PackedFloat32Array) -> void:
 	for i in range(fade):
 		var t := float(i) / fade
 		out[i] = samples[i] * sqrt(t) + samples[n + i] * sqrt(1.0 - t)
-	_normalize(out, 0.7)
+	_normalize(out, 0.5)
 	_write(sound, out)
 
 func _write(sound: String, samples: PackedFloat32Array) -> void:
@@ -94,6 +94,7 @@ static func _lp_coef(cutoff: float) -> float:
 func _add_noise(s: PackedFloat32Array, start: float, seconds: float, low: float, high: float, env: Callable, amount := 1.0) -> void:
 	var a_high := _lp_coef(high)
 	var a_low := _lp_coef(low)
+	var lp0 := 0.0  # ローパスは 2 段重ねる(1 段では高い音が残って耳障りになる)
 	var lp1 := 0.0
 	var lp2 := 0.0
 	var from := int(start * RATE)
@@ -102,7 +103,8 @@ func _add_noise(s: PackedFloat32Array, start: float, seconds: float, low: float,
 		if from + i >= s.size():
 			break
 		var w := rng.randf_range(-1.0, 1.0)
-		lp1 += a_high * (w - lp1)
+		lp0 += a_high * (w - lp0)
+		lp1 += a_high * (lp0 - lp1)
 		lp2 += a_low * (lp1 - lp2)
 		s[from + i] += (lp1 - lp2) * float(env.call(float(i) / n)) * amount
 
@@ -125,19 +127,21 @@ static func _hit(t: float) -> float:
 	return minf(1.0, t * 40.0) * exp(-t * 6.0)
 
 # ── 流し続ける音 ───────────────────────────────────────────
-# 風: 低い雑音。強さがゆっくり変わる
+# 風: 低い雑音。強さは少しだけ変わる(周期的に大きく変わると、波の音に聞こえる。2026-11-06 とむの感想)
 func _wind(seconds: float) -> PackedFloat32Array:
 	rng.seed = 11
 	var s := _empty(seconds)
+	var lp0 := 0.0
 	var lp := 0.0
 	var lp2 := 0.0
 	var p1 := rng.randf() * TAU
 	var p2 := rng.randf() * TAU
 	for i in range(s.size()):
 		var t := float(i) / RATE
-		var swell := 0.55 + 0.3 * sin(t * 0.7 + p1) + 0.15 * sin(t * 1.9 + p2)
-		var a := _lp_coef(180.0 + 420.0 * swell)
-		lp += a * (rng.randf_range(-1.0, 1.0) - lp)
+		var swell := 0.8 + 0.1 * sin(t * 0.37 + p1) + 0.1 * sin(t * 1.13 + p2)
+		var a := _lp_coef(140.0 + 160.0 * swell)
+		lp0 += a * (rng.randf_range(-1.0, 1.0) - lp0)
+		lp += a * (lp0 - lp)
 		lp2 += 0.002 * (lp - lp2)
 		s[i] = (lp - lp2) * swell
 	return s
@@ -146,8 +150,9 @@ func _wind(seconds: float) -> PackedFloat32Array:
 func _leaves(seconds: float) -> PackedFloat32Array:
 	rng.seed = 12
 	var s := _empty(seconds)
-	var a_high := _lp_coef(7000.0)
-	var a_low := _lp_coef(1800.0)
+	var a_high := _lp_coef(3000.0)  # 高すぎると耳障り(2026-11-06 とむの感想)
+	var a_low := _lp_coef(800.0)
+	var lp0 := 0.0
 	var lp1 := 0.0
 	var lp2 := 0.0
 	var flutter := 0.0
@@ -160,39 +165,46 @@ func _leaves(seconds: float) -> PackedFloat32Array:
 		flutter += 0.002 * (flutter_goal - flutter)
 		var gust := 0.5 + 0.35 * sin(t * 0.9 + p) + 0.15 * sin(t * 2.3)
 		var w := rng.randf_range(-1.0, 1.0)
-		lp1 += a_high * (w - lp1)
+		lp0 += a_high * (w - lp0)
+		lp1 += a_high * (lp0 - lp1)
 		lp2 += a_low * (lp1 - lp2)
 		s[i] = (lp1 - lp2) * flutter * gust
 	return s
 
-# 川のせせらぎ: 流れの雑音に、音程の上がる小さな泡の音をたくさん重ねる
+# 川のせせらぎ: 音程の上がる小さな泡の音をたくさん重ねる。ちょろちょろした音が主役で、下の雑音はごく薄く
+# (雑音が多いと海の音に聞こえる。2026-11-06 とむの感想)
 func _brook(seconds: float) -> PackedFloat32Array:
 	rng.seed = 13
 	var s := _empty(seconds)
-	_add_noise(s, 0.0, seconds, 300.0, 2500.0, func(_t): return 1.0, 0.12)
-	var bubbles := int(seconds * 55.0)
-	for _i in range(bubbles):
+	_add_noise(s, 0.0, seconds, 700.0, 2200.0, func(_t): return 1.0, 0.025)
+	# 細かい水音
+	_add_bubbles(s, seconds, int(seconds * 130.0), 650.0, 1900.0, 0.012, 0.04, 0.2)
+	# ときどき、少し低いとぷんという音
+	_add_bubbles(s, seconds, int(seconds * 14.0), 320.0, 620.0, 0.04, 0.09, 0.3)
+	return s
+
+func _add_bubbles(s: PackedFloat32Array, seconds: float, count: int, f_low: float, f_high: float, len_low: float, len_high: float, loud: float) -> void:
+	for _i in range(count):
 		var start := rng.randf_range(0.0, seconds - 0.1)
-		var f := rng.randf_range(450.0, 1700.0)
-		var length := rng.randf_range(0.02, 0.07)
-		var amp := rng.randf_range(0.05, 0.3) * pow(rng.randf(), 1.5)
+		var f := rng.randf_range(f_low, f_high)
+		var length := rng.randf_range(len_low, len_high)
+		var amp := loud * rng.randf_range(0.25, 1.0) * pow(rng.randf(), 1.5)
 		var from := int(start * RATE)
 		var n := int(length * RATE)
 		var phase := 0.0
 		for j in range(n):
 			var t := float(j) / n
-			phase += TAU * f * (1.0 + 0.5 * t) / RATE
+			phase += TAU * f * (1.0 + 0.45 * t) / RATE
 			s[from + j] += sin(phase) * _hump(t) * amp
-	return s
 
 # 雨: 高めの雑音と、ぽつぽつ当たる音
 func _rain(seconds: float) -> PackedFloat32Array:
 	rng.seed = 14
 	var s := _empty(seconds)
-	_add_noise(s, 0.0, seconds, 900.0, 8000.0, func(_t): return 1.0, 0.5)
-	for _i in range(int(seconds * 45.0)):
+	_add_noise(s, 0.0, seconds, 400.0, 3200.0, func(_t): return 1.0, 0.5)
+	for _i in range(int(seconds * 35.0)):
 		var start := rng.randf_range(0.0, seconds - 0.05)
-		_add_noise(s, start, 0.015, 1500.0, 9000.0, func(t): return _hit(t), rng.randf_range(0.2, 0.8))
+		_add_noise(s, start, 0.02, 700.0, 4000.0, func(t): return _hit(t), rng.randf_range(0.15, 0.6))
 	return s
 
 # ストーブの火: 低いごうごうという音と、ぱちぱち
@@ -202,14 +214,14 @@ func _fire(seconds: float) -> PackedFloat32Array:
 	_add_noise(s, 0.0, seconds, 40.0, 500.0, func(_t): return 1.0, 0.8)
 	for _i in range(int(seconds * 7.0)):
 		var start := rng.randf_range(0.0, seconds - 0.05)
-		_add_noise(s, start, 0.02, 1200.0, 7000.0, func(t): return _hit(t), rng.randf_range(0.3, 1.2))
+		_add_noise(s, start, 0.02, 800.0, 4000.0, func(t): return _hit(t), rng.randf_range(0.3, 1.0))
 	return s
 
 # ── 足音 ──────────────────────────────────────────────────
 func _step_grass(seed_value: int) -> PackedFloat32Array:
 	rng.seed = seed_value
 	var s := _empty(0.2)
-	_add_noise(s, 0.0, 0.14, 1200.0, 6500.0, func(t): return _hump(t) * (0.6 + 0.4 * sin(t * 40.0)), 0.8)
+	_add_noise(s, 0.0, 0.14, 700.0, 3200.0, func(t): return _hump(t) * (0.6 + 0.4 * sin(t * 40.0)), 0.8)
 	_add_noise(s, 0.0, 0.08, 60.0, 400.0, func(t): return _hit(t), 0.5)
 	return s
 
@@ -234,7 +246,7 @@ func _step_wood(seed_value: int) -> PackedFloat32Array:
 func _water() -> PackedFloat32Array:
 	rng.seed = 21
 	var s := _empty(0.95)
-	_add_noise(s, 0.0, 0.9, 900.0, 5000.0, func(t): return minf(1.0, t * 8.0) * minf(1.0, (1.0 - t) * 5.0), 0.5)
+	_add_noise(s, 0.0, 0.9, 700.0, 3000.0, func(t): return minf(1.0, t * 8.0) * minf(1.0, (1.0 - t) * 5.0), 0.5)
 	for _i in range(40):
 		var start := rng.randf_range(0.05, 0.85)
 		var f := rng.randf_range(700.0, 2200.0)
@@ -254,7 +266,7 @@ func _dig() -> PackedFloat32Array:
 func _chop() -> PackedFloat32Array:
 	rng.seed = 23
 	var s := _empty(0.4)
-	_add_noise(s, 0.0, 0.02, 1500.0, 9000.0, func(t): return _hit(t), 1.0)
+	_add_noise(s, 0.0, 0.02, 800.0, 4500.0, func(t): return _hit(t), 0.7)
 	_add_tone(s, 0.0, 0.25, 240.0, 200.0, 9.0, 0.9)
 	_add_tone(s, 0.0, 0.16, 520.0, 460.0, 10.0, 0.45)
 	_add_noise(s, 0.0, 0.1, 300.0, 2000.0, func(t): return _hit(t), 0.4)
@@ -264,9 +276,9 @@ func _chop() -> PackedFloat32Array:
 func _hammer() -> PackedFloat32Array:
 	rng.seed = 24
 	var s := _empty(0.25)
-	_add_noise(s, 0.0, 0.01, 2000.0, 9000.0, func(t): return _hit(t), 0.7)
-	_add_tone(s, 0.0, 0.14, 620.0, 560.0, 12.0, 0.8)
-	_add_tone(s, 0.0, 0.08, 1500.0, 1400.0, 14.0, 0.3)
+	_add_noise(s, 0.0, 0.01, 1000.0, 4500.0, func(t): return _hit(t), 0.4)
+	_add_tone(s, 0.0, 0.14, 520.0, 470.0, 12.0, 0.8)
+	_add_tone(s, 0.0, 0.08, 1100.0, 1000.0, 14.0, 0.2)
 	_add_tone(s, 0.0, 0.1, 150.0, 120.0, 10.0, 0.5)
 	return s
 
@@ -318,7 +330,7 @@ func _tree_fall() -> PackedFloat32Array:
 # ── 画面の音 ───────────────────────────────────────────────
 func _click() -> PackedFloat32Array:
 	var s := _empty(0.05)
-	_add_tone(s, 0.0, 0.04, 1250.0, 1100.0, 6.0, 1.0)
+	_add_tone(s, 0.0, 0.04, 800.0, 720.0, 6.0, 1.0)
 	return s
 
 func _open_panel() -> PackedFloat32Array:
@@ -329,6 +341,6 @@ func _open_panel() -> PackedFloat32Array:
 
 func _coin() -> PackedFloat32Array:
 	var s := _empty(0.3)
-	_add_tone(s, 0.0, 0.12, 2300.0, 2300.0, 6.0, 0.7)
-	_add_tone(s, 0.06, 0.22, 3100.0, 3100.0, 6.0, 0.8)
+	_add_tone(s, 0.0, 0.12, 1500.0, 1500.0, 6.0, 0.7)
+	_add_tone(s, 0.06, 0.22, 2000.0, 2000.0, 6.0, 0.8)
 	return s
