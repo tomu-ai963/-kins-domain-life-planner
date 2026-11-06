@@ -11,6 +11,7 @@ const WorldMaterial = preload("res://view/3d/WorldMaterial.gd")
 var _failed := 0
 var _passed := 0
 var _frame := 0
+var _wait_until := 0  # この時刻(ms)まで次へ進まない(当たり判定が物理サーバーに入るのを待つ)
 var main  # いま試しているシーン(Main.gd)
 
 func _initialize() -> void:
@@ -18,6 +19,8 @@ func _initialize() -> void:
 	main = _open("res://Main.tscn")
 
 func _process(_delta: float) -> bool:
+	if Time.get_ticks_msec() < _wait_until:
+		return false
 	_frame += 1
 	match _frame:
 		2:
@@ -38,14 +41,21 @@ func _process(_delta: float) -> bool:
 			_test_toon()
 		10:
 			_test_3d_cabin_collision()  # 当たり判定が物理サーバーに入るのを待ってから
+			_prepare_visitor_collision()
+			_wait_until = Time.get_ticks_msec() + 200
+		11:
+			_test_visitor_collision()
+			_wait_until = Time.get_ticks_msec() + 200
+		12:
+			_test_visitor_collision_off()
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
-		12:
+		14:
 			_test_2d_still_works()
 			main.queue_free()
 			_remove_save()
-		14:
+		16:
 			print("RESULT: %d passed, %d failed" % [_passed, _failed])
 			quit(1 if _failed > 0 else 0)
 	return false
@@ -612,6 +622,43 @@ func _test_cabin_inside() -> void:
 	_check(player.view_distance() == far_dist, "外へ出るとカメラが元の距離に戻る")
 	player._process(10.0)
 	_check(player.get_node("Body").position.y == 0.0, "体が地面の高さに戻る")
+
+# 訪問者を開けた場所で待たせる(当たり判定が物理サーバーに入るのを、次の段階まで待つ)
+func _prepare_visitor_collision() -> void:
+	var w = main.world
+	var view: Node3D = main.get_node("Visitor")
+	var player: CharacterBody3D = main.get_node("Player")
+	w.forest.trees.clear()
+	player.global_position = Vector3(-30, 0, -35)
+	w.visitors.visit = {"day": w.forest.day_number(), "who": "nina", "kind": "chat", "done": false, "line": 0}
+	view.sync_visit()
+	_check(view._solid_shape.disabled, "歩いているあいだは当たり判定がない(プレイヤーを押さない)")
+	for _i in range(600):
+		if view.state() == "wait":
+			break
+		view.step(0.1)
+	_check(view.state() == "wait" and not view._solid_shape.disabled, "待っているあいだは当たり判定がある")
+
+func _test_visitor_collision() -> void:
+	print("待っている訪問者の当たり判定")
+	var w = main.world
+	var view: Node3D = main.get_node("Visitor")
+	var player: CharacterBody3D = main.get_node("Player")
+	var at: Vector2 = view.ground_pos()
+	var south := Transform3D(Basis.IDENTITY, Vector3(at.x, 0, at.y + 2.0))
+	_check(player.test_move(south, Vector3(0, 0, -2.0)), "プレイヤーは待っている訪問者を通り抜けられない")
+	_check(not player.test_move(south, Vector3(1.5, 0, 0)), "訪問者の横は歩ける")
+	_check(view.can_talk(Vector2(at.x, at.y + 0.7)), "ぶつかるまで近づいても話せる")
+	w.visitors.finish_chat()
+	view.sync_visit()
+	_check(view.state() == "leave" and view._solid_shape.disabled, "帰りはじめると当たり判定が消える")
+
+func _test_visitor_collision_off() -> void:
+	var view: Node3D = main.get_node("Visitor")
+	var player: CharacterBody3D = main.get_node("Player")
+	var at: Vector2 = view.ground_pos()
+	var south := Transform3D(Basis.IDENTITY, Vector3(at.x, 0, at.y + 2.0))
+	_check(not player.test_move(south, Vector3(0, 0, -2.0)), "帰っているあいだは通り抜けられる(閉じ込められない)")
 
 func _test_hint_panel() -> void:
 	print("ヒントの表示")

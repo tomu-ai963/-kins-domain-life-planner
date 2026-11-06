@@ -4,7 +4,8 @@ extends Node3D
 # 誰がいつ来るかは logic/Visitors.gd。ここは南の境界から歩いて来て、足元の近くで待ち、用が済むと帰る動きだけ。
 # 体は PlayerFigure3D を色違いで使い、帽子などを足す。小屋・池・木・プレイヤーは回り込む
 # (道は歩きだすときに決める。歩いている途中にプレイヤーが道に入ると、その場でよける)。
-# 待っているあいだは頭の上に印を出す(頼みごとや分けてくれるものがあれば橙、話すだけなら白)。当たり判定はない
+# 待っているあいだは頭の上に印を出す(頼みごとや分けてくれるものがあれば橙、話すだけなら白)。
+# 当たり判定は待っているあいだだけ付ける(歩いているあいだは訪問者がよけるので、プレイヤーを押さないように付けない)
 const Visitors = preload("res://logic/Visitors.gd")
 const Look = preload("res://view/3d/Look.gd")
 const PlayerFigure = preload("res://view/3d/PlayerFigure3D.gd")
@@ -23,6 +24,8 @@ const AVOID_RADIUS := 0.9        # 歩いている途中、プレイヤーがこ
 const ROUTE_TURNS := 12          # 道を曲がる回数の上限(木が多いときのため)
 const MARK_Y := 2.2              # 印の高さ(頭に重ならないところ)
 const MARK_BOB := 0.08
+const BODY_RADIUS := 0.3         # 当たり判定の太さ(プレイヤーと同じ)
+const BODY_HEIGHT := 1.6
 
 # 服の色(PlayerFigure3D の look)と、足す物。scale は体の大きさ
 const LOOKS := {
@@ -38,6 +41,8 @@ var _state := "away"   # away / arrive / wait / leave
 var _who := ""
 var _figure: Node3D
 var _mark: Node3D
+var _solid: StaticBody3D      # 待っているあいだの当たり判定
+var _solid_shape: CollisionShape3D
 var _pos := GATE
 var _route_points := []
 var _timer := 0.0
@@ -100,6 +105,7 @@ func _leave() -> void:
 	_route_points = route(_pos, GATE)
 	_state = "leave"
 	_mark.visible = false
+	_solid_shape.disabled = true
 
 # 足元の近くで、立てる場所。北から探す。なければ土地の入口
 func goal_near(pos: Vector2) -> Vector2:
@@ -249,6 +255,8 @@ func _reached() -> void:
 	if _state == "arrive":
 		_state = "wait"
 		_figure.play("wave")
+		_solid.position = Vector3(_pos.x, 0.0, _pos.y)
+		_solid_shape.disabled = false
 	else:
 		_state = "away"
 		_figure.queue_free()
@@ -285,6 +293,7 @@ func _build(who: String) -> void:
 	_figure.position = Vector3(_pos.x, 0.0, _pos.y)
 	add_child(_figure)
 	_extra(str(info.extra))
+	_build_solid(float(info.scale))
 	if _mark == null:
 		_mark = Node3D.new()
 		_mark.name = "VisitorMark"
@@ -294,6 +303,21 @@ func _build(who: String) -> void:
 		for piece in [dot, bar]:
 			piece.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			_mark.add_child(piece)
+
+# 当たり判定を、その人の体の大きさで作る。歩いているあいだは切っておく
+func _build_solid(body_scale: float) -> void:
+	if _solid == null:
+		_solid = StaticBody3D.new()
+		_solid.name = "VisitorBody"
+		_solid_shape = CollisionShape3D.new()
+		_solid.add_child(_solid_shape)
+		add_child(_solid)
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = BODY_RADIUS * body_scale
+	capsule.height = BODY_HEIGHT * body_scale
+	_solid_shape.shape = capsule
+	_solid_shape.position = Vector3(0, capsule.height * 0.5, 0)
+	_solid_shape.disabled = true
 
 # 頭と体に足す物
 func _extra(kind: String) -> void:
