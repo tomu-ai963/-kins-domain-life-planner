@@ -64,5 +64,3 @@ cast_shadow = 0
 extra_cull_margin = 16384.0
 mesh = SubResource("8")
 surface_material_override/0 = SubResource("9")
-
-[node name="FootstepsAudio" type="AudioStreamPlayer3D" parent="."]

@@ -40,6 +40,7 @@ var bees := Bees.new()
 var quests := Quests.new()
 var market := Market.new()
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
+var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
 var backup_dir := ""             # 控えを置くフォルダ。空なら控えを取らない(本物のセーブのときだけ Main が設定する)
 
@@ -173,6 +174,7 @@ func save_game() -> void:
 	data["visitors"] = visitors.to_save()
 	data["guide"] = guide.to_save()
 	data["bees"] = bees.to_save()
+	data["sound_level"] = sound_level
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
@@ -251,6 +253,7 @@ func load_game() -> void:
 	visitors.from_save(vd)
 	guide.from_save(gud)
 	bees.from_save(bd)
+	sound_level = clampi(int(data.get("sound_level", 3)), 0, 3)
 	quests.from_save(qd)
 	market.from_save(md)
 	forest.from_save(data)

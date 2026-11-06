@@ -3,6 +3,7 @@ extends CharacterBody3D
 # ── 3D のプレイヤーと、見下ろしの固定カメラ ─────────────────────────
 # 1 unit = 1m。地面は y = 0 の平面。WASD/矢印で東西南北に歩く(画面の上 = 北 = -z)
 signal plant_tree(pos)  # 足元の位置(m)
+signal work_sound(kind)  # 作業の道具が当たった(音を鳴らす)
 
 const WorkEffects = preload("res://view/3d/WorkEffects3D.gd")
 
@@ -132,7 +133,15 @@ func act(kind: String, target = null, item := "") -> void:
 	if _effect_tween != null:
 		_effect_tween.kill()
 	_effect_tween = create_tween()
-	_effect_tween.tween_callback(_effects.play.bind(kind, spot, item)).set_delay(float(_figure.ACTIONS[kind].hit))
+	_effect_tween.tween_callback(_on_work_hit.bind(kind, spot, item)).set_delay(float(_figure.ACTIONS[kind].hit))
+
+func _on_work_hit(kind: String, spot: Vector3, item: String) -> void:
+	_effects.play(kind, spot, item)
+	work_sound.emit(kind)
+
+# 歩いているか(足音を鳴らす)
+func is_walking() -> bool:
+	return is_physics_processing() and get_real_velocity().length() > 0.1
 
 func _on_action_finished() -> void:
 	_apply_lantern()

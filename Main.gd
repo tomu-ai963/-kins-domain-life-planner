@@ -11,6 +11,9 @@ const FELL_CONFIRM_SECONDS := 4.0  # 根付いた木は、この時間内にも�
 const WILDLIFE_CHECK_SECONDS := 5.0  # はじめて来た生き物がいないか見る間隔
 const GUIDE_CHECK_SECONDS := 0.5     # ヒントを見直す間隔
 const HIVE_FRONT := 1.2              # 巣箱を置く場所(体の前、m)。足元に置くと当たり判定に埋まる
+const SOUND_LEVELS := [0.0, 0.3, 0.6, 1.0]        # M で切り替える音量
+const SOUND_LEVEL_NAMES := ["消す", "小", "中", "大"]
+const TREE_FALL_SOUND_DELAY := 0.45  # 斧を振ってから、木が倒れる音を出すまで(秒)。木が倒れきる時に「どさっ」が合う
 
 # ヒント(logic/Guide.gd の id)の文言。実際のルールに合わせて書く
 const GUIDE_TEXTS := {
@@ -84,6 +87,7 @@ func _ready() -> void:
 		weather.refresh(true)  # セーブを読んだあとの今日の天気で始める
 		$Ground.hide_covered()  # セーブにあった区画や小屋の上には草を生やさない
 		$Wildlife.sync_animals()  # セーブにあった木や畑に合わせて、最初からいるように
+		_apply_sound_level()
 
 # 昼夜の光と小屋の中は 3D だけ(2D のシーンには DayLight がない)
 func _setup_3d_only() -> void:
@@ -104,6 +108,8 @@ func _setup_3d_only() -> void:
 	$Visitor.setup(world.visitors, $Player)
 	$Hives.setup(world.bees)
 	world.guide.has_people = true
+	$Audio.setup(world, $Player)
+	$Player.work_sound.connect($Audio.play)
 
 func _process(delta: float) -> void:
 	_guide_timer += delta
@@ -290,6 +296,7 @@ func _talk() -> void:
 		return
 	world.visitors.check_today()  # 今日のうちに手詰まりになっていたら、助けてくれる
 	$Visitor.greet()
+	_sfx("open")
 	_panel = "visitor"
 	$Player.set_physics_process(false)
 	$HUD.open_shop()
@@ -326,12 +333,14 @@ func _visitor_action(id: String) -> void:
 	if id == "receive":
 		var person: String = v.CAST[who].name
 		if v.receive_help() == "received":
+			_sfx("coin")
 			$HUD.show_message("%sから%sをもらった" % [person, reward_text(v.last_reward)], 6.0)
 			_close_shop()
 			_act("pick", $Visitor.ground_pos(), "radish")
 		return
 	var item: String = v.visit.item
 	if v.give() == "given":
+		_sfx("coin")
 		$HUD.show_message("%s(%sをもらった)" % [VISITOR_THANKS[who], reward_text(v.last_reward)], 6.0)
 		_close_shop()
 		_act("pick", $Visitor.ground_pos(), item)
@@ -487,6 +496,24 @@ const CABIN_STAGE_NAMES := {"foundation": "基礎", "walls": "壁", "roof": "屋
 func player_pos() -> Vector2:
 	return $Player.ground_pos()
 
+# 画面の音を鳴らす(3D だけ)
+func _sfx(sound: String) -> void:
+	if $Audio.has_method("play"):
+		$Audio.play(sound)
+
+# M: 音量を切り替える(大 → 中 → 小 → 消す → 大)
+func _next_sound_level() -> void:
+	world.sound_level = posmod(world.sound_level - 1, SOUND_LEVELS.size())
+	_apply_sound_level()
+	world.save_game()
+	$HUD.show_message("音量: %s" % SOUND_LEVEL_NAMES[world.sound_level])
+
+func _apply_sound_level() -> void:
+	var v: float = SOUND_LEVELS[world.sound_level]
+	AudioServer.set_bus_mute(0, v <= 0.0)
+	if v > 0.0:
+		AudioServer.set_bus_volume_db(0, linear_to_db(v))
+
 # 作業の動きをする(3D だけ)。ルールには関わらない。作業が成功したときに呼ぶ
 func _act(kind: String, target = null, item := "") -> void:
 	if $Player.has_method("act"):
@@ -598,6 +625,7 @@ func _seedling_action(pos: Vector2) -> void:
 # ── ストーブ ───────────────────────────────────────────────
 func _open_kitchen() -> void:
 	_panel = "kitchen"
+	_sfx("open")
 	$Player.set_physics_process(false)  # 料理中は歩かない
 	$HUD.open_shop()
 
@@ -986,11 +1014,13 @@ func _toggle_shop() -> void:
 		$HUD.show_message("市場は南の境界の外にある(あと%dm)" % ceili(d))
 		return
 	_panel = "market"
+	_sfx("open")
 	$Player.set_physics_process(false)  # 買い物中は歩かない
 	$HUD.open_shop()
 
 func _close_shop() -> void:
 	var was_chat: bool = _panel == "visitor" and not world.visitors.has_request()
+	_sfx("click")
 	$HUD.close_shop()
 	$Player.set_physics_process(true)
 	if was_chat:
@@ -1003,6 +1033,7 @@ func _on_shop_action(id: String) -> void:
 		_close_shop()
 		return
 	if _panel == "kitchen":
+		_sfx("click")
 		_kitchen_action(id)
 		return
 	if _panel == "visitor":
@@ -1011,10 +1042,13 @@ func _on_shop_action(id: String) -> void:
 	if id.begins_with("sell_"):
 		var item := id.trim_prefix("sell_")
 		var income: int = m.sell_all(item)
+		_sfx("coin" if income > 0 else "click")
 		$HUD.show_message("%sを売った(+%d₽)" % [produce_name(item), income] if income > 0 else "売る%sがない" % produce_name(item))
 	else:
 		var g: Dictionary = m.good(id)
-		if m.buy(id) == "bought":
+		var bought: bool = m.buy(id) == "bought"
+		_sfx("coin" if bought else "click")
+		if bought:
 			$HUD.show_message("%sを買った(-%d₽)" % [good_name(g), g.price])
 		else:
 			$HUD.show_message("お金が足りない(%d₽ 必要)" % g.price)
@@ -1142,6 +1176,8 @@ func _remove() -> void:
 	var logs: int = world.cabin.fell(pos, REACH)
 	if not felled.is_empty():
 		_act("chop" if falls else "pull", felled.pos)
+	if falls and $Audio.has_method("play_after"):
+		$Audio.play_after("tree_fall", TREE_FALL_SOUND_DELAY)
 	if logs > 0:
 		$HUD.show_message("木を伐った(丸太 +%d本)" % logs)
 	elif logs == 0:
@@ -1214,6 +1250,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			world.guide.dismiss()
 		KEY_J:
 			_bee_action()
+		KEY_M:
+			_next_sound_level()
 		KEY_F:
 			_toggle_plot()
 		KEY_P:

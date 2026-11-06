@@ -557,6 +557,7 @@ func _test_3d_cabin_collision() -> void:
 	_test_hint_panel()
 	_test_hive_view()
 	_test_fruit_view()
+	_test_sound_view()
 
 func _test_cabin_inside() -> void:
 	print("小屋の中")
@@ -707,6 +708,203 @@ func _test_visitor_collision_off() -> void:
 	var at: Vector2 = view.ground_pos()
 	var south := Transform3D(Basis.IDENTITY, Vector3(at.x, 0, at.y + 2.0))
 	_check(not player.test_move(south, Vector3(0, 0, -2.0)), "帰っているあいだは通り抜けられる(閉じ込められない)")
+
+func _test_sound_view() -> void:
+	print("音")
+	var w = main.world
+	var f = w.forest
+	var audio: Node = main.get_node("Audio")
+	var player: CharacterBody3D = main.get_node("Player")
+	var figure: Node3D = player.get_node("Body/Figure")
+	var saved_trees: Array = f.trees.duplicate()
+	var noon := {"month": 10, "day": 15, "hour": 12, "minute": 0, "second": 0}
+	f.trees.clear()
+	f.set_season("autumn")
+	f.today_event = "birds"
+	f.last_day = f.today()
+	w.clock.fixed_now = noon
+	w.kitchen.pot = {}
+	player.global_position = Vector3(-40, 0, -40)
+
+	# 流し続ける音
+	for sound in audio.LOOPS:
+		var l: Dictionary = audio._loops[sound]
+		_check(l.player.playing and l.player.stream.loop_mode == AudioStreamWAV.LOOP_FORWARD, "%s がくり返し鳴る" % sound)
+	audio.update_ambient()
+	var loops: Dictionary = audio._loops
+	_check(loops.wind.goal > 0.0 and loops.brook.goal > 0.0, "風と遠くの川はいつも聞こえる")
+	_check(loops.brook.goal < loops.wind.goal, "川は遠くの音なので、風より小さい")
+	_check(loops.leaves.goal == 0.0, "まわりに木がないと葉の音はしない")
+	_check(loops.rain.goal == 0.0 and loops.fire.goal == 0.0, "晴れていれば雨の音はなく、火の音もない")
+
+	# 葉の音はまわりの木で変わる
+	var tree := func(age: float, at: Vector2) -> void:
+		f.trees.append({"pos": at, "species": "birch", "form": "sapling", "planted_at": f._now(), "start_age": age, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	tree.call(0.5, Vector2(-40, -38))
+	_check(audio.leafy_trees_near(main.player_pos()) == 0, "小さな苗木は数えない")
+	f.trees.clear()
+	tree.call(20.0, Vector2(-40, -38))
+	audio.update_ambient()
+	var one: float = loops.leaves.goal
+	_check(one > 0.0, "木のそばで葉の音がする")
+	for i in range(5):
+		tree.call(20.0, Vector2(-38 + i, -36))
+	audio.update_ambient()
+	_check(loops.leaves.goal > one, "木が多いと葉の音が大きい")
+	var full: float = loops.leaves.goal
+	f.trees.append({"pos": Vector2(40, 40), "species": "birch", "form": "sapling", "planted_at": f._now(), "start_age": 20.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	audio.update_ambient()
+	_check(loops.leaves.goal == full and audio.leafy_trees_near(Vector2(40, 40)) == 1, "遠くの木は聞こえない")
+	f.set_season("winter")
+	audio.update_ambient()
+	_check(loops.leaves.goal == 0.0, "冬の白樺は葉がないので音がしない")
+	var winter_wind: float = loops.wind.goal
+	f.trees.append({"pos": Vector2(-40, -38), "species": "cedar", "form": "sapling", "planted_at": f._now(), "start_age": 40.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	audio.update_ambient()
+	_check(loops.leaves.goal > 0.0, "冬でも杉の葉は鳴る")
+	f.set_season("autumn")
+	audio.update_ambient()
+	_check(loops.wind.goal < winter_wind, "冬は風が強い")
+
+	# 雨(冬の雪は音がしない)
+	f.today_event = "rain"
+	audio.update_ambient()
+	_check(loops.rain.goal > 0.0, "雨の日は雨の音がする")
+	var rainy_leaves: float = loops.leaves.goal
+	f.today_event = "birds"
+	audio.update_ambient()
+	_check(rainy_leaves < loops.leaves.goal, "雨の日は葉の音が小さい")
+	f.set_season("winter")
+	f.today_event = "rain"
+	audio.update_ambient()
+	_check(loops.rain.goal == 0.0, "雪は音がしない")
+	f.set_season("autumn")
+	f.today_event = "birds"
+
+	# 小屋の中
+	var c = w.cabin
+	player.global_position = Vector3(c.site.x, 0, c.site.y)
+	var outdoor_wind: float = 0.4
+	audio.update_ambient()
+	_check(c.is_inside(main.player_pos()) and loops.wind.goal < outdoor_wind * 0.5, "小屋の中では外の音が小さい")
+	_check(loops.fire.goal == 0.0, "鍋が空なら火の音はしない")
+	w.kitchen.pot = {"recipe": "pickles", "start_day": f.day_number()}
+	audio.update_ambient()
+	_check(loops.fire.goal > 0.0, "仕込んでいると、小屋の中で火の音がする")
+	player.global_position = Vector3(c.site.x, 0, c.site.y + 6)
+	audio.update_ambient()
+	_check(loops.fire.goal == 0.0, "小屋の外では火の音はしない")
+	w.kitchen.pot = {"recipe": "jam", "start_day": f.day_number() - 1}
+	player.global_position = Vector3(c.site.x, 0, c.site.y)
+	audio.update_ambient()
+	_check(loops.fire.goal == 0.0, "できあがった鍋は火が落ちているので音がしない")
+	w.kitchen.pot = {}
+
+	# 強さはゆっくり変わる
+	audio._ambient_timer = 0.0  # 見直しで goal が書き換わらないように
+	loops.rain.level = 0.0
+	loops.rain.goal = 1.0
+	audio._process(0.1)
+	_check(loops.rain.level > 0.0 and loops.rain.level < 0.1, "急に大きくならない(%.2f)" % loops.rain.level)
+	loops.rain.goal = 0.0
+	audio._process(5.0)
+	_check(loops.rain.level == 0.0, "ゆっくり消える")
+
+	# 足音: 歩く場所で変わる
+	var plot: Vector2 = w.land.plots[0] if not w.land.plots.is_empty() else Vector2.ZERO
+	_check(audio.surface_at(Vector2(c.site.x, c.site.y)) == "step_wood", "小屋の中は床の音")
+	if not w.land.plots.is_empty():
+		_check(audio.surface_at(plot) == "step_soil", "区画の上は土の音")
+	_check(audio.surface_at(Vector2(-47, -47)) == "step_grass", "ほかは草の音")
+	player.global_position = Vector3(-47, 0, -47)
+	player.velocity = Vector3.ZERO
+	audio.last_played = ""
+	audio._update_steps(1.0)
+	_check(audio.last_played == "", "止まっているときは足音がしない")
+
+	# 作業音: 道具が当たるときに鳴る
+	for kind in ["water", "dig", "chop", "build", "pick", "pick_high", "plant", "pull"]:
+		audio.last_played = ""
+		player.act(kind, Vector2(-47, -44))
+		_check(audio.last_played == "", "%s: 押した瞬間にはまだ鳴らない" % kind)
+		player._effect_tween.custom_step(10.0)
+		_check(audio.last_played == audio.ALIASES.get(kind, kind), "%s の音が鳴る" % kind)
+		figure._process(10.0)
+	audio.play("no_such_sound")
+	_check(audio.last_played != "no_such_sound", "知らない音は鳴らさない(止まらない)")
+	# たくさん同時に鳴らしても止まらない
+	for _i in range(audio.VOICES * 2):
+		audio.play("click")
+	_check(audio.last_played == "click", "同時に鳴らしすぎても大丈夫")
+
+	# 画面の音
+	w.market.money = 5000
+	main._panel = "market"
+	player.global_position = Vector3(0, 0, 54)
+	audio.last_played = ""
+	main._toggle_shop()
+	_check(audio.last_played == "open", "市場を開く音")
+	main._on_shop_action("birch_seed")
+	_check(audio.last_played == "coin", "買うとお金の音")
+	f.produce.apple = 2
+	main._on_shop_action("sell_apple")
+	_check(audio.last_played == "coin", "売るとお金の音")
+	main._on_shop_action("sell_apple")
+	_check(audio.last_played == "click", "売るものがなければ、お金の音はしない")
+	w.market.money = 0
+	main._on_shop_action("cedar_sapling")
+	_check(audio.last_played == "click", "買えなければ、お金の音はしない")
+	main._on_shop_action("close")
+	_check(audio.last_played == "click", "閉じる音")
+
+	# 音量
+	var hud = main.get_node("HUD")
+	w.sound_level = 3
+	main._apply_sound_level()
+	_check(not AudioServer.is_bus_mute(0) and absf(AudioServer.get_bus_volume_db(0)) < 0.01, "はじめは大")
+	var key := InputEventKey.new()
+	key.keycode = KEY_M
+	key.pressed = true
+	main._unhandled_input(key)
+	_check(w.sound_level == 2 and hud._message.contains("中") and AudioServer.get_bus_volume_db(0) < -1.0, "M で中")
+	main._unhandled_input(key)
+	_check(w.sound_level == 1 and hud._message.contains("小"), "M で小")
+	main._unhandled_input(key)
+	_check(w.sound_level == 0 and AudioServer.is_bus_mute(0) and hud._message.contains("消す"), "M で消す")
+	main._unhandled_input(key)
+	_check(w.sound_level == 3 and not AudioServer.is_bus_mute(0) and absf(AudioServer.get_bus_volume_db(0)) < 0.01, "M で大に戻る")
+
+	# 音量はセーブに残る
+	w.sound_level = 1
+	w.save_game()
+	var w2 = load("res://logic/GameWorld.gd").new()
+	w2.save_path = TEST_SAVE
+	w2.load_game()
+	_check(w2.sound_level == 1, "音量がセーブに残る")
+	w.sound_level = 3
+	main._apply_sound_level()
+	w.save_game()
+
+	# 木が倒れる音はあとで鳴る
+	audio.last_played = ""
+	f.trees.clear()
+	f.trees.append({"pos": Vector2(-47, -45), "species": "birch", "form": "sapling", "planted_at": f._now(), "start_age": 30.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	f.changed.emit()
+	player.global_position = Vector3(-47, 0, -44)
+	main._remove()
+	main._remove()
+	_check(f.trees.is_empty(), "前提: 木を伐った")
+	_check(audio.last_played != "tree_fall", "倒れる音は、斧のあとで鳴る")
+	audio.play("tree_fall")
+	_check(audio.last_played == "tree_fall", "倒れる音が鳴る")
+	figure._process(10.0)
+	if player._effect_tween != null:
+		player._effect_tween.kill()
+
+	f.trees.assign(saved_trees)
+	f.changed.emit()
+	w.clock.fixed_now = {}
+	player.global_position = Vector3(20, 0, 23)
 
 func _test_fruit_view() -> void:
 	print("果樹")
@@ -2014,6 +2212,8 @@ func _test_2d_still_works() -> void:
 	main._talk()
 	_check(main.visitor_line() == "" and not main.get_node("HUD").is_shop_open(), "2D には訪問者の姿がないので、話せない")
 	main.world.visitors.visit = {}
+	main._sfx("click")  # 2D には音がない
+	_check(not main.get_node("Audio").has_method("play"), "2D では音を鳴らさない")
 	main.world.guide.update(main.player_pos(), 10.0)
 	main.get_node("HUD")._update_hint()
 	_check(not main.world.guide.has_people, "2D では訪問者と生き物のヒントを出さない")
