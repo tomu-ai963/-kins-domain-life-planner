@@ -76,15 +76,25 @@ func buy(id: String) -> String:
 	forest.changed.emit()
 	return "bought"
 
+# 収穫物 item の持ち物の入れ物と、その中のキー
+func pile_of(item: String) -> Dictionary:
+	if item.begins_with("seedling_"):
+		return seedlings.ready
+	if Kitchen.RECIPES.has(item):
+		return kitchen.stock
+	return garden.produce if garden.produce.has(item) else forest.produce
+
+func key_of(item: String) -> String:
+	return item.trim_prefix("seedling_")
+
+# 収穫物 item をいくつ持っているか
+func count_of(item: String) -> int:
+	return int(pile_of(item).get(key_of(item), 0))
+
 # 収穫物 item を全部売る。売れた金額を返す(持っていなければ 0)
 func sell_all(item: String) -> int:
-	var pile: Dictionary = garden.produce if garden.produce.has(item) else forest.produce
-	var key := item
-	if item.begins_with("seedling_"):
-		pile = seedlings.ready
-		key = item.trim_prefix("seedling_")
-	elif Kitchen.RECIPES.has(item):
-		pile = kitchen.stock
+	var pile: Dictionary = pile_of(item)
+	var key := key_of(item)
 	var n := int(pile.get(key, 0))
 	if n <= 0 or not SELL_PRICES.has(item):
 		return 0

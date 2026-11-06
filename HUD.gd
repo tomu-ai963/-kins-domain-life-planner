@@ -186,7 +186,8 @@ func status_text() -> String:
 	var lines := _status_lines()
 	# 市場を開いているあいだは持ち物を自動で出す。ストーブの画面は行の中に持っている数が出るので、重ならないよう出さない
 	var in_kitchen: bool = is_shop_open() and _main._panel == "kitchen"
-	if (inventory_open or is_shop_open()) and not in_kitchen:
+	var talking: bool = is_shop_open() and _main._panel == "visitor"  # 話しているときも、持っている数は行の中に出る
+	if (inventory_open or is_shop_open()) and not in_kitchen and not talking:
 		lines.append_array(_inventory_lines())
 	if help_open:
 		lines.append_array(_help_lines())
@@ -224,6 +225,9 @@ func _status_lines() -> PackedStringArray:
 	var furniture: String = _main.furniture_line()
 	if furniture != "":
 		lines.append(furniture)
+	var visitor: String = _main.visitor_line()
+	if visitor != "":
+		lines.append(visitor)
 	var plot: String = _main.plot_line()
 	if plot != "":
 		lines.append(plot)
@@ -254,7 +258,7 @@ func _inventory_lines() -> PackedStringArray:
 func _help_lines() -> PackedStringArray:
 	return PackedStringArray([
 		"─ 操作 ─",
-		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)",
+		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者と話す",
 		"[1]白樺 [2]リンゴ [3]シベリア杉 [V]種/苗木",
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク [9]トマト",
 		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る",

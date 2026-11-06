@@ -12,6 +12,7 @@ const Pond = preload("res://logic/Pond.gd")
 const Seedlings = preload("res://logic/Seedlings.gd")
 const Kitchen = preload("res://logic/Kitchen.gd")
 const Wildlife = preload("res://logic/Wildlife.gd")
+const Visitors = preload("res://logic/Visitors.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 const DayClock = preload("res://logic/DayClock.gd")
@@ -31,6 +32,7 @@ var pond := Pond.new()
 var seedlings := Seedlings.new()
 var kitchen := Kitchen.new()
 var wildlife := Wildlife.new()
+var visitors := Visitors.new()
 var quests := Quests.new()
 var market := Market.new()
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
@@ -64,6 +66,10 @@ func _init() -> void:
 	wildlife.garden = garden
 	wildlife.cabin = cabin
 	wildlife.clock = clock
+	visitors.forest = forest
+	visitors.garden = garden
+	visitors.seedlings = seedlings
+	visitors.market = market
 	forest.dirty.connect(save_game)
 	garden.dirty.connect(save_game)
 	cabin.dirty.connect(save_game)
@@ -71,6 +77,7 @@ func _init() -> void:
 	seedlings.dirty.connect(save_game)
 	kitchen.dirty.connect(save_game)
 	wildlife.dirty.connect(save_game)
+	visitors.dirty.connect(save_game)
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
 # 結果: Garden.toggle_plot の結果か cabin
@@ -93,11 +100,13 @@ func pond_action(pos: Vector2) -> String:
 func check_new_day() -> String:
 	var id: String = forest.check_new_day()
 	if id == "":
+		visitors.check_today()  # 前のセーブを同じ日に開いたとき
 		return id
 	garden.apply_frost()
 	if id == "rain":
 		garden.water_all()
 	pond.catch_up()
+	visitors.check_today()  # 霜のあとの畑を見て、今日の頼みごとを決める
 	return id
 
 # 明日の日付(YYYY-MM-DD)
@@ -132,6 +141,7 @@ func save_game() -> void:
 	data["seedlings"] = seedlings.to_save()
 	data["kitchen"] = kitchen.to_save()
 	data["wildlife"] = wildlife.to_save()
+	data["visitors"] = visitors.to_save()
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
@@ -185,6 +195,10 @@ func load_game() -> void:
 	var wd = data.get("wildlife", {})
 	if typeof(wd) != TYPE_DICTIONARY:
 		wd = {}
+	# 訪問者の記録がないセーブ(2026-11-06 より前)は、開いたときに今日の訪問を決める
+	var vd = data.get("visitors", {})
+	if typeof(vd) != TYPE_DICTIONARY:
+		vd = {}
 	# Godot 3 版(2026-11 より前)のセーブは座標が px。読むときに m に直す
 	if data.get("unit", "px") != SAVE_UNIT:
 		_px_to_m(data, ld)
@@ -195,6 +209,7 @@ func load_game() -> void:
 	seedlings.from_save(sd)
 	kitchen.from_save(kd)
 	wildlife.from_save(wd)
+	visitors.from_save(vd)
 	quests.from_save(qd)
 	market.from_save(md)
 	forest.from_save(data)

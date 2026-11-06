@@ -540,6 +540,7 @@ func _test_3d_cabin_collision() -> void:
 	_test_furniture()
 	_test_work_motions()
 	_test_wildlife_view()
+	_test_visitor_view()
 
 func _test_cabin_inside() -> void:
 	print("小屋の中")
@@ -610,6 +611,180 @@ func _test_cabin_inside() -> void:
 	_check(player.view_distance() == far_dist, "外へ出るとカメラが元の距離に戻る")
 	player._process(10.0)
 	_check(player.get_node("Body").position.y == 0.0, "体が地面の高さに戻る")
+
+func _test_visitor_view() -> void:
+	print("訪ねてくる人")
+	var w = main.world
+	var vs = w.visitors
+	var view: Node3D = main.get_node("Visitor")
+	var player: CharacterBody3D = main.get_node("Player")
+	var hud = main.get_node("HUD")
+	var today: int = w.forest.day_number()
+	# 歩かせる: 動かなくなるまで進める
+	var walk := func(state: String) -> void:
+		for _i in range(400):
+			if view.state() == state:
+				return
+			view.step(0.1)
+	var press := func(code: int) -> void:
+		var e := InputEventKey.new()
+		e.keycode = code
+		e.pressed = true
+		main._unhandled_input(e)
+
+	# 来ない日
+	vs.visit = {"day": today}
+	view.sync_visit()
+	_check(view.state() == "away" and main.visitor_line() == "", "来ない日は誰もいない")
+	player.global_position = Vector3(-20, 0, -10)
+	press.call(KEY_C)
+	_check(not hud.is_shop_open(), "誰もいなければ C を押しても何も起きない")
+
+	# 頼みごとの日: 入口から歩いて来て、足元の近くで待つ
+	vs.visit = {"day": today, "who": "nina", "kind": "request", "item": "tomato", "amount": 5, "reward": {"type": "money", "amount": 260}, "done": false, "line": 0}
+	w.garden.produce.tomato = 3
+	view.sync_visit()
+	_check(view.state() == "arrive" and view.ground_pos() == view.GATE, "土地の入口から来る")
+	var figure: Node3D = view._figure
+	_check(figure != null and figure.name.contains("nina"), "ニーナさんの姿が出る")
+	view.step(0.1)
+	_check(figure.moving and view.ground_pos() != view.GATE, "歩いて来る")
+	walk.call("wait")
+	var spot: Vector2 = view.ground_pos()
+	_check(view.state() == "wait" and not figure.moving, "着くと止まる")
+	_check(spot.distance_to(main.player_pos()) <= view.GOAL_RADII[0] + 0.01, "足元の近くで待つ(%.1fm)" % spot.distance_to(main.player_pos()))
+	_check(spot.y < main.player_pos().y, "プレイヤーの北に立つ(顔がカメラのほうを向く)")
+	_check(figure.current_action() == "wave", "着くと手を振る")
+	figure._process(0.5)
+	_check(figure._arm_r.rotation.x > 1.0, "手を上げている")
+	figure._process(10.0)
+	_check(not figure.is_acting() and absf(figure._arm_r.get_parent().rotation.z - figure.ARM_SPREAD) < 0.01, "振り終えると腕が戻る")
+	view.step(0.1)
+	var facing: Vector3 = -figure.global_basis.z
+	view.step(10.0)
+	facing = -figure.global_basis.z
+	var to_player: Vector2 = (main.player_pos() - spot).normalized()
+	_check(Vector2(facing.x, facing.z).dot(to_player) > 0.95, "プレイヤーのほうを向く")
+	_check(view._mark.visible and view._mark.get_child(0).material_override == view._request_mat, "頼みごとがあると橙の印が出る")
+
+	# 色は人ごとに違い、プレイヤーの色は変わらない
+	var tunic: MeshInstance3D = figure.get_node("Hips/Upper/Tunic")
+	var player_tunic: MeshInstance3D = player.get_node("Body/Figure/Hips/Upper/Tunic")
+	_check(tunic.material_override.albedo_color == view.LOOKS.nina.look.TUNIC, "ニーナさんの服の色になっている")
+	_check(player_tunic.material_override.albedo_color == player.get_node("Body/Figure").TUNIC, "プレイヤーの服の色は変わらない")
+
+	# HUD の案内: 離れていると向きと距離、近いと C
+	player.global_position = Vector3(spot.x + 20, 0, spot.y)
+	var far_line: String = main.visitor_line()
+	_check(far_line.contains("ニーナさん") and far_line.contains("西") and far_line.contains("20m") and far_line.contains("頼みごと"), "離れていると向きと距離が出る: %s" % far_line)
+	press.call(KEY_C)
+	_check(not hud.is_shop_open(), "離れていると話せない")
+	_check(hud._message.contains("ニーナさん"), "どこにいるかを知らせる")
+	player.global_position = Vector3(spot.x + 2, 0, spot.y)
+	_check(main.visitor_line().contains("C で話す"), "近いと C の案内が出る")
+	_check(main.diary_text().contains("ニーナさんの頼みごとがまだ"), "日記にも出る")
+	_check(main.compass(Vector2(1, 0)) == "東" and main.compass(Vector2(0, -1)) == "北" and main.compass(Vector2(-1, 1)) == "南西", "向きの文言が合う")
+
+	# 話す: 足りないと渡せない
+	press.call(KEY_C)
+	_check(hud.is_shop_open() and main._panel == "visitor" and not player.is_physics_processing(), "C で話す画面が開き、歩かなくなる")
+	_check(figure.current_action() == "wave", "話しかけると手を振る")
+	_check(main.shop_title() == "ニーナさん", "見出しが名前になる")
+	var text: String = main.shop_header()
+	_check(text.contains("トマト") and text.contains("5kg") and text.contains("260₽"), "何を頼むかが分かる: %s" % text)
+	_check(not hud.status_text().contains("─ 持ち物 ─"), "話す画面には持ち物を重ねない")
+	_check(main.visitor_rows().any(func(r): return r.id == "give" and r.text.contains("トマト 3kg")), "持っている量が分かる")
+	main._on_shop_action("give")
+	_check(hud._message.contains("あと2kg足りない") and vs.is_here() and hud.is_shop_open(), "足りなければ足りない量を知らせる")
+	press.call(KEY_C)
+	_check(not hud.is_shop_open() and player.is_physics_processing() and vs.is_here(), "C で閉じても、まだ待っている(断っても罰はない)")
+	_check(main._panel == "market", "閉じると市場の画面に戻る")
+
+	# 渡す: お礼をもらって帰っていく
+	w.garden.produce.tomato = 5
+	var money: int = w.market.money
+	press.call(KEY_C)
+	main._on_shop_action("give")
+	_check(w.market.money == money + 260 and w.garden.produce.tomato == 0, "渡すとお礼をもらう")
+	_check(hud._message.contains("260₽") and hud._message.contains("ありがとう"), "お礼の文言: %s" % hud._message)
+	_check(not hud.is_shop_open() and player.get_node("Body/Figure").current_action() == "pick", "画面が閉じて、渡す動きをする")
+	player.get_node("Body/Figure")._process(10.0)
+	view.sync_visit()
+	_check(view.state() == "leave" and not view._mark.visible, "帰っていく。印は消える")
+	walk.call("away")
+	_check(view.state() == "away" and view._figure == null, "入口まで行くと消える")
+	_check(main.visitor_line() == "", "帰ると案内が消える")
+
+	# 話すだけの日: 話し終えると帰る
+	vs.visit = {"day": today, "who": "pavel", "kind": "chat", "done": false, "line": 0}
+	player.global_position = Vector3(-20, 0, -10)
+	view.sync_visit()
+	walk.call("wait")
+	_check(view._mark.get_child(0).material_override == view._chat_mat, "話すだけの日は白い印")
+	_check(view._figure.get_node("Hips/Upper/Head").get_child_count() > 2, "帽子などが付いている")
+	press.call(KEY_C)
+	_check(main.shop_title() == "パーヴェルさん" and main.shop_header().contains("明日は"), "パーヴェルさんは明日の空模様を話す: %s" % main.shop_header())
+	_check(main.visitor_rows().any(func(r): return r.id == "chat_end"), "別れの行が出る")
+	main._on_shop_action("chat_end")
+	_check(not hud.is_shop_open() and not vs.is_here(), "話し終えると用が済む")
+	view.sync_visit()
+	_check(view.state() == "leave", "帰っていく")
+	view.sync_visit()
+	press.call(KEY_ESCAPE)
+	walk.call("away")
+
+	# Esc で閉じても帰る
+	vs.visit = {"day": today, "who": "tanya", "kind": "chat", "done": false, "line": 1}
+	view.sync_visit()
+	walk.call("wait")
+	var tanya_scale: float = view._figure.scale.x
+	_check(tanya_scale < 1.0, "ターニャさんは体が小さい")
+	press.call(KEY_C)
+	press.call(KEY_ESCAPE)
+	_check(not vs.is_here(), "Esc で閉じても話し終えたことになる")
+	view.sync_visit()
+	walk.call("away")
+
+	# 小屋があると回り込む。小屋の上で待たない
+	var c = w.cabin
+	var cabin_rect: Rect2 = c.rect()
+	var inside := false
+	var north: Vector2 = c.site + Vector2(0, -6)
+	var pts: Array = view.route(view.GATE, north)
+	var at: Vector2 = view.GATE
+	for p in pts:
+		for i in range(21):
+			if cabin_rect.has_point(at.lerp(p, i / 20.0)):
+				inside = true
+		at = p
+	_check(pts.size() >= 2 and not inside and pts[-1] == north, "小屋を通り抜けず、回り込む(%d 点)" % pts.size())
+	var straight: Array = view.route(Vector2(0, 49), Vector2(0, 40))
+	_check(straight == [Vector2(0, 40)], "何もなければまっすぐ")
+	var goal: Vector2 = view.goal_near(c.site)
+	_check(not cabin_rect.has_point(goal) and view._is_free(goal), "小屋の中にいるときは、外で待つ")
+	var pond_save = w.land.pond
+	w.land.pond = Vector2(0, 35)
+	var pond_pts: Array = view.route(view.GATE, Vector2(0, 25))
+	var in_pond := false
+	at = view.GATE
+	for p in pond_pts:
+		for i in range(21):
+			if at.lerp(p, i / 20.0).distance_to(w.land.pond) < w.land.POND_RADIUS:
+				in_pond = true
+		at = p
+	_check(not in_pond, "池も回り込む")
+	w.land.pond = pond_save
+	var edge_goal: Vector2 = view.goal_near(Vector2(0, 56))
+	_check(absf(edge_goal.y) <= 49.5, "プレイヤーが土地の外にいても、土地の中で待つ")
+
+	# 日記に明日来る人が出る
+	var tomorrow: int = today + 1
+	if vs.is_visit_day(tomorrow):
+		_check(main.diary_text().contains("%sが来そう" % vs.CAST[vs.who_on(tomorrow)].name), "明日来る人が日記に出る")
+	else:
+		_check(not main.diary_text().contains("が来そう"), "明日来ない日は出ない")
+	vs.visit = {"day": today}
+	player.global_position = Vector3(20, 0, 23)
 
 func _test_wildlife_view() -> void:
 	print("土地に来る生き物")
@@ -1309,6 +1484,10 @@ func _test_2d_still_works() -> void:
 	_check(not main.get_node("Player").has_method("act"), "2D では作業の動きを呼ばない")
 	main.check_wildlife()
 	_check(main.world.wildlife.seen.is_empty(), "2D には生き物の姿がないので、来たと数えない")
+	main.world.visitors.visit = {"day": main.world.forest.day_number(), "who": "nina", "kind": "chat", "done": false, "line": 0}
+	main._talk()
+	_check(main.visitor_line() == "" and not main.get_node("HUD").is_shop_open(), "2D には訪問者の姿がないので、話せない")
+	main.world.visitors.visit = {}
 	main.world.forest.seeds["birch"] = 1
 	main._on_plant_tree(main.player_pos())
 	_check(main.world.forest.trees.size() == 1 and main.world.forest.trees[0].pos == Vector2(10, -5), "2D でも植えられる")

@@ -70,6 +70,7 @@ func _setup_3d_only() -> void:
 	$Cabin.set_player($Player)
 	$Cabin.set_kitchen(world.kitchen)
 	$Wildlife.setup(world.wildlife, $Player)
+	$Visitor.setup(world.visitors, $Player)
 
 func _process(delta: float) -> void:
 	_wildlife_timer += delta
@@ -100,12 +101,132 @@ func _check_new_day() -> void:
 		lines.append("霜で%sが枯れた(%d区画)" % [g.CROPS[kind].name, g.last_frost[kind]])
 	if g.frost_is_near(f.today()):
 		lines.append("もうすぐ霜が降りる(12月)。ニンニク以外の野菜は枯れるので、早めに収穫を")
+	if has_node("Visitor") and world.visitors.is_here():
+		lines.append("%sが訪ねてきた(C で話す)" % world.visitors.CAST[world.visitors.who()].name)
 	var pond := world.pond
 	if pond.last_gain > 0:
 		lines.append("%sで池に水がたまった(%d%%)" % ["雪" if f.season == "winter" else "雨", pond.water])
 	for c in pond.last_arrivals:
 		lines.append("池に%sが来た" % pond.CREATURES[c].name)
 	$HUD.show_message("\n".join(PackedStringArray(lines)), 10.0)
+
+# ── 訪ねてくる人(3D だけ) ──────────────────────────────────────
+# 話すだけの日の言葉。{tomorrow} は明日の空模様に置き換える
+const VISITOR_CHATS := {
+	"nina": [
+		"区画はお金がいらないけど、耕すのは1日2区画まで。\n欲張らず少しずつね。",
+		"水をやった日は1日ぶん、やらない日は半日ぶん育つよ。\n毎日見てあげて。",
+		"冬が来る前に、ニンニク以外は収穫しておくんだよ。\n霜は待ってくれないからね。",
+	],
+	"fyodor": [
+		"ミツバチは野菜の花が好きでね。\n畑が増えると、うちの蜂も喜ぶよ。",
+		"木が増えると小鳥が来る。\n育った木にはリスも来るさ。",
+		"丸太は育った木を伐れば手に入る。\n市場で買うと高いからね。",
+	],
+	"tanya": [
+		"夜に畑へ行くと、ノウサギがいるんだよ!\nそっと近づいてもすぐ逃げちゃうけど。",
+		"ハリネズミは逃げないの。\nじっとしてるんだよ。",
+		"渡り鳥を見た?\n近づくと、みんなで飛んでっちゃうんだ。",
+	],
+	"pavel": [
+		"{tomorrow}",
+		"この先の家まで配達です。\nまた寄りますね。",
+		"小屋の窓辺なら、冬でも苗が育つそうですね。\n春が楽しみだ。",
+	],
+}
+const VISITOR_REQUESTS := {
+	"nina": "%sを%s分けてもらえない?\nお礼に%sをあげる。",
+	"fyodor": "%sを%s譲ってくれないか。\nお礼に%sを持ってきたんだ。",
+	"tanya": "%sを%sちょうだい!\nかわりに%sをあげるね。",
+	"pavel": "%sを%s分けていただけませんか。\nお礼に%sをお渡しします。",
+}
+const VISITOR_THANKS := {
+	"nina": "ありがとう、助かったよ。",
+	"fyodor": "ありがたい。また来るよ。",
+	"tanya": "やったあ!ありがとう!",
+	"pavel": "助かりました。では、配達に戻ります。",
+}
+
+# 「ラディッシュの種 6つ」「トマトの苗 1鉢」「260₽」
+func reward_text(r: Dictionary) -> String:
+	match r.type:
+		"crop_seed":
+			return "%s %dつ" % [world.garden.CROPS[r.kind].seed_name, r.count]
+		"seedling":
+			return "%sの苗 %d鉢" % [world.garden.CROPS[r.kind].name, r.count]
+	return "%s₽" % $HUD._money_text(int(r.amount))
+
+# 訪問者の言葉
+func visitor_text() -> String:
+	var v := world.visitors
+	var who: String = v.who()
+	if v.has_request():
+		var item: String = v.visit.item
+		return VISITOR_REQUESTS[who] % [produce_name(item), "%d%s" % [v.visit.amount, produce_unit(item)], reward_text(v.visit.reward)]
+	var lines: Array = VISITOR_CHATS[who]
+	var line: String = lines[int(v.visit.line) % lines.size()]
+	if line == "{tomorrow}":
+		var rainy: bool = world.tomorrow_rain()
+		return "明日は降りそうですよ。\n水やりは休めますね。" if rainy else "明日は降らなそうです。\n畑の水やりを忘れずに。"
+	return line
+
+# C: 近くの訪問者に話しかける
+func _talk() -> void:
+	if not has_node("Visitor") or not world.visitors.is_here():
+		return
+	if not $Visitor.can_talk(player_pos()):
+		$HUD.show_message(visitor_line())
+		return
+	$Visitor.greet()
+	_panel = "visitor"
+	$Player.set_physics_process(false)
+	$HUD.open_shop()
+
+func visitor_rows() -> Array:
+	var v := world.visitors
+	var rows := []
+	if v.has_request():
+		var item: String = v.visit.item
+		var have: int = world.market.count_of(item)
+		rows.append({"id": "give", "text": "渡す(%s 持っている)" % _amount_text(item, have), "column": 0})
+		rows.append({"id": "close", "text": "今はいい(C / Esc)", "column": 0})
+	else:
+		rows.append({"id": "chat_end", "text": "またね(C / Esc)", "column": 0})
+	return rows
+
+func _visitor_action(id: String) -> void:
+	var v := world.visitors
+	var who: String = v.who()
+	if id == "chat_end":
+		_close_shop()
+		return
+	var item: String = v.visit.item
+	if v.give() == "given":
+		$HUD.show_message("%s(%sをもらった)" % [VISITOR_THANKS[who], reward_text(v.last_reward)], 6.0)
+		_close_shop()
+		_act("pick", $Visitor.ground_pos(), item)
+		return
+	var need: int = int(v.visit.amount) - world.market.count_of(item)
+	var ripe := "。畑に収穫できるものがある" if world.garden.crops.any(func(c): return c.kind == item and world.garden.is_ripe(c)) else ""
+	$HUD.show_message("%sがあと%d%s足りない%s" % [produce_name(item), need, produce_unit(item), ripe], 5.0)
+
+# HUD に出す、訪問者の 1 行。いなければ ""
+func visitor_line() -> String:
+	if not has_node("Visitor") or not world.visitors.is_here():
+		return ""
+	var v := world.visitors
+	var person: String = v.CAST[v.who()].name
+	var errand := "頼みごとがあるらしい" if v.has_request() else "話がしたいらしい"
+	if $Visitor.can_talk(player_pos()):
+		return "%s(C で話す)" % person
+	var to: Vector2 = $Visitor.ground_pos() - player_pos()
+	return "%sが来ている・%s(%sへ%dm)" % [person, errand, compass(to), ceili(to.length())]
+
+# 向きの文言(画面の上が北)
+static func compass(to: Vector2) -> String:
+	const NAMES := ["東", "南東", "南", "南西", "西", "北西", "北", "北東"]
+	var i: int = posmod(roundi(to.angle() / (TAU / NAMES.size())), NAMES.size())
+	return NAMES[i]
 
 # はじめて来た生き物を知らせる(3D だけ。2D には姿がない)。ほかの知らせを消さないよう、出ていないときに見る
 func check_wildlife() -> void:
@@ -410,6 +531,8 @@ func diary_text() -> String:
 		todo.append("まだ水をやっていない区画が %d ある" % now.dry)
 	if world.seedlings.needs_care():
 		todo.append("苗の世話がまだ")
+	if has_node("Visitor") and world.visitors.has_request():
+		todo.append("%sの頼みごとがまだ" % world.visitors.CAST[world.visitors.who()].name)
 	lines.append("今日")
 	lines.append_array(_bullets(todo, "やり残したことはない"))
 	lines.append("")
@@ -448,6 +571,8 @@ func _tomorrow_lines() -> PackedStringArray:
 		lines.append("鍋の%sを受け取れる" % k.RECIPES[k.pot.recipe].name)
 	elif k.is_empty():
 		lines.append("鍋が空いている")
+	if world.visitors.is_visit_day(world.forest.day_number() + 1):
+		lines.append("%sが来そう" % world.visitors.CAST[world.visitors.who_on(world.forest.day_number() + 1)].name)
 	return lines
 
 static func _bullets(items: PackedStringArray, empty_text: String) -> PackedStringArray:
@@ -645,10 +770,14 @@ func good_name(g: Dictionary) -> String:
 
 # 右の画面の見出し
 func shop_title() -> String:
+	if _panel == "visitor":
+		return world.visitors.CAST[world.visitors.who()].name
 	return "ストーブ(クリックか 矢印キー + Enter で選ぶ)" if _panel == "kitchen" else "市場(クリックか 矢印キー + Enter で選ぶ)"
 
 # 右の画面の 2 行目
 func shop_header() -> String:
+	if _panel == "visitor":
+		return visitor_text()
 	if _panel == "kitchen":
 		return "薪: %d回分   丸太: %d本(丸太1本で%d回分)" % [world.kitchen.firewood, int(world.cabin.materials.log), world.kitchen.LOG_FIRES]
 	return "所持金: %s₽" % $HUD._money_text(world.market.money)
@@ -657,6 +786,8 @@ func shop_header() -> String:
 func shop_rows() -> Array:
 	if _panel == "kitchen":
 		return kitchen_rows()
+	if _panel == "visitor":
+		return visitor_rows()
 	var m := world.market
 	var rows := []
 	for g in m.GOODS:
@@ -683,8 +814,12 @@ func _toggle_shop() -> void:
 	$HUD.open_shop()
 
 func _close_shop() -> void:
+	var was_chat: bool = _panel == "visitor" and not world.visitors.has_request()
 	$HUD.close_shop()
 	$Player.set_physics_process(true)
+	if was_chat:
+		world.visitors.finish_chat()  # 話し終えると帰っていく
+	_panel = "market"
 
 func _on_shop_action(id: String) -> void:
 	var m := world.market
@@ -693,6 +828,9 @@ func _on_shop_action(id: String) -> void:
 		return
 	if _panel == "kitchen":
 		_kitchen_action(id)
+		return
+	if _panel == "visitor":
+		_visitor_action(id)
 		return
 	if id.begins_with("sell_"):
 		var item := id.trim_prefix("sell_")
@@ -865,8 +1003,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_wake()
 		return
 	if $HUD.is_shop_open():
-		# 開いているあいだは閉じるキーだけ(選ぶのは画面のボタン)。市場は B、ストーブは H でも閉じる
-		var close_key: int = KEY_H if _panel == "kitchen" else KEY_B
+		# 開いているあいだは閉じるキーだけ(選ぶのは画面のボタン)。市場は B、ストーブは H、訪問者は C でも閉じる
+		var close_key: int = {"kitchen": KEY_H, "visitor": KEY_C}.get(_panel, KEY_B)
 		if event.keycode == close_key or event.keycode == KEY_ESCAPE:
 			_close_shop()
 		return
@@ -896,6 +1034,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_remove()
 		KEY_H:
 			_cabin_action()
+		KEY_C:
+			_talk()
 		KEY_F:
 			_toggle_plot()
 		KEY_P:

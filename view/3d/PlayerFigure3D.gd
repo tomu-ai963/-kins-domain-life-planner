@@ -18,6 +18,7 @@ const ACTIONS := {
 	"pick_high": {"seconds": 0.6, "hit": 0.2, "tool": ""},
 	"plant": {"seconds": 0.6, "hit": 0.3, "tool": ""},
 	"pull": {"seconds": 0.6, "hit": 0.35, "tool": ""},
+	"wave": {"seconds": 1.1, "hit": 0.0, "tool": ""},
 }
 # 道具を持つ角度(手に対する x 回転)。腕を振り下ろしたときに道具の先が前の低いところへ来るように
 const TOOL_ANGLES := {"can": -1.25, "hoe": -1.0, "axe": -1.3, "hammer": -1.0}
@@ -49,6 +50,7 @@ const ARM_SPREAD := 0.12    # 腕を体から少し離す角度(rad)
 
 var moving := false         # Player3D が毎フレーム決める
 var holding_lantern := false
+var look := {}              # 色を変えるとき { "TUNIC": Color, ... }。add_child の前に設定する(訪問者)
 var right_hand: Node3D      # ランタンを持たせる場所
 
 var _phase := 0.0
@@ -117,6 +119,7 @@ func _apply_action(delta: float) -> void:
 	_action_t += delta / float(ACTIONS[_action].seconds)
 	if _action_t >= 1.0:
 		_action = ""
+		_arm_r.get_parent().rotation.z = ARM_SPREAD
 		_show_tool("")
 		action_finished.emit()
 		return
@@ -144,6 +147,9 @@ func _apply_action(delta: float) -> void:
 			_arm_l.rotation.x = lerpf(_arm_l.rotation.x, 2.7, e)
 			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.7, e)
 			_upper.rotation.x = lerpf(_upper.rotation.x, 0.08, e)
+		"wave":  # 右手を上げて振る
+			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.8, e)
+			_arm_r.get_parent().rotation.z = ARM_SPREAD + e * (0.5 + 0.35 * sin(t * TAU * 3.0))
 
 # 両手で振りかぶって振り下ろす(斧・くわ)。t = 0.45 までが振りかぶり、0.58 で当たる
 func _swing_both(t: float, e: float, high: float, low: float, lean: float) -> void:
@@ -202,9 +208,9 @@ func swing_amount() -> float:
 
 func _build() -> void:
 	var skin := Look.mat(SKIN)
-	var hair := Look.mat(HAIR)
-	var tunic := Look.mat(TUNIC)
-	var trousers := Look.mat(TROUSERS)
+	var hair := Look.mat(look.get("HAIR", HAIR))
+	var tunic := Look.mat(look.get("TUNIC", TUNIC))
+	var trousers := Look.mat(look.get("TROUSERS", TROUSERS))
 	var boots := Look.mat(BOOTS)
 
 	_hips = _pivot("Hips", self, Vector3.ZERO)
@@ -214,7 +220,7 @@ func _build() -> void:
 	_upper = _pivot("Upper", _hips, Vector3(0.0, HIP_Y, 0.0))
 	_part("Tunic", _upper, _cone(0.15, 0.21, 0.52), tunic, Vector3(0.0, 0.16, 0.0))
 	_part("Shoulders", _upper, _ball(), tunic, Vector3(0.0, 0.39, 0.0), Vector3(0.34, 0.13, 0.21))
-	_part("Sash", _upper, _cone(0.197, 0.202, 0.055), Look.mat(SASH), Vector3(0.0, 0.05, 0.0))
+	_part("Sash", _upper, _cone(0.197, 0.202, 0.055), Look.mat(look.get("SASH", SASH)), Vector3(0.0, 0.05, 0.0))
 	_part("Neck", _upper, _cone(0.055, 0.06, 0.14), skin, Vector3(0.0, 0.49, 0.0))
 
 	_arm_l = _build_arm("ArmL", -1.0, tunic, skin)
