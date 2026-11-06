@@ -8,6 +8,7 @@ const GameWorld = preload("res://logic/GameWorld.gd")
 const REACH := 2.0    # 足元 2m 以内
 const PICKUP_RADIUS := 1.2  # 落ちている種は、これだけ近づくと拾う
 const FELL_CONFIRM_SECONDS := 4.0  # 根付いた木は、この時間内にもう一度 Z を押すと伐れる
+const WILDLIFE_CHECK_SECONDS := 5.0  # はじめて来た生き物がいないか見る間隔
 
 const SEASON_NAMES := {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬"}
 const FORM_NAMES := {"seed": "種", "sapling": "苗木"}
@@ -24,6 +25,7 @@ var _season_timer := 0.0
 var _fell_pending := {}      # Z を 1 回押して確認中の木(Forest.trees の要素)
 var _fell_deadline := 0.0    # いつまでにもう一度押せば伐れるか(秒)
 var _panel := "market"       # 右の画面に出しているもの: market(市場) / kitchen(ストーブ)
+var _wildlife_timer := 0.0
 
 func _ready() -> void:
 	# 本物のセーブのときだけ控えを取る(テストや確認用のセーブでは取らない)
@@ -50,6 +52,7 @@ func _ready() -> void:
 	if weather != null:
 		weather.refresh(true)  # セーブを読んだあとの今日の天気で始める
 		$Ground.hide_covered()  # セーブにあった区画や小屋の上には草を生やさない
+		$Wildlife.sync_animals()  # セーブにあった木や畑に合わせて、最初からいるように
 
 # 昼夜の光と小屋の中は 3D だけ(2D のシーンには DayLight がない)
 func _setup_3d_only() -> void:
@@ -66,8 +69,13 @@ func _setup_3d_only() -> void:
 	$Player.update_shadow_distance()
 	$Cabin.set_player($Player)
 	$Cabin.set_kitchen(world.kitchen)
+	$Wildlife.setup(world.wildlife, $Player)
 
 func _process(delta: float) -> void:
+	_wildlife_timer += delta
+	if _wildlife_timer >= WILDLIFE_CHECK_SECONDS:
+		_wildlife_timer = 0.0
+		check_wildlife()
 	# 季節と日付は現実の日付から。1 分に 1 回チェックすれば十分(開いたまま日付をまたいでも拾う)
 	_season_timer += delta
 	if _season_timer >= 60.0:
@@ -98,6 +106,25 @@ func _check_new_day() -> void:
 	for c in pond.last_arrivals:
 		lines.append("池に%sが来た" % pond.CREATURES[c].name)
 	$HUD.show_message("\n".join(PackedStringArray(lines)), 10.0)
+
+# はじめて来た生き物を知らせる(3D だけ。2D には姿がない)。ほかの知らせを消さないよう、出ていないときに見る
+func check_wildlife() -> void:
+	if not has_node("Wildlife") or $HUD.is_message_visible():
+		return
+	var names := PackedStringArray()
+	for id in world.wildlife.check_arrivals():
+		names.append(world.wildlife.SPECIES[id].name)
+	if not names.is_empty():
+		$HUD.show_message("土地に%sが来るようになった" % "と".join(names), 6.0)
+
+# HUD に出す、見かけた生き物(土地と池)
+func creatures_line() -> String:
+	var names := PackedStringArray()
+	for id in world.wildlife.seen:
+		names.append(world.wildlife.SPECIES[id].name)
+	for id in world.pond.seen:
+		names.append(world.pond.CREATURES[id].name)
+	return _rows(names, 6) if not names.is_empty() else "まだ見ていない"
 
 # 足元に落ちている種を拾う(歩いて近づくだけ)
 func _collect_pickups() -> void:

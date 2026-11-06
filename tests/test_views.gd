@@ -539,6 +539,7 @@ func _test_3d_cabin_collision() -> void:
 	_test_cabin_inside()
 	_test_furniture()
 	_test_work_motions()
+	_test_wildlife_view()
 
 func _test_cabin_inside() -> void:
 	print("小屋の中")
@@ -609,6 +610,143 @@ func _test_cabin_inside() -> void:
 	_check(player.view_distance() == far_dist, "外へ出るとカメラが元の距離に戻る")
 	player._process(10.0)
 	_check(player.get_node("Body").position.y == 0.0, "体が地面の高さに戻る")
+
+func _test_wildlife_view() -> void:
+	print("土地に来る生き物")
+	var w = main.world
+	var f = w.forest
+	var wl = w.wildlife
+	var view: Node3D = main.get_node("Wildlife")
+	var player: CharacterBody3D = main.get_node("Player")
+	var hud = main.get_node("HUD")
+	const NOON := {"month": 10, "day": 15, "hour": 12, "minute": 0, "second": 0}
+	const MIDNIGHT := {"month": 10, "day": 15, "hour": 23, "minute": 30, "second": 0}
+	# まっさらにして始める
+	var saved_trees: Array = f.trees.duplicate()
+	var saved_crops: Array = w.garden.crops.duplicate()
+	var saved_plots: Array = w.land.plots.duplicate()
+	f.trees.clear()
+	w.garden.crops.clear()
+	w.land.plots.clear()
+	f.set_season("autumn")
+	f.last_day = f.today()
+	f.today_event = "birch_seed"
+	w.clock.fixed_now = NOON
+	player.global_position = Vector3(-30, 0, 30)
+	view.sync_animals()
+	_check(view._animals.is_empty(), "何もない土地には何もいない")
+
+	# 木と畑を足すと現れる
+	for i in range(12):
+		f.trees.append({"pos": Vector2(i * 4 - 20, -30), "species": "birch", "form": "sapling", "planted_at": f._now(), "start_age": 8.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	for i in range(8):
+		w.land.plots.append(Vector2(i * 3 + 1.5, -40.5))
+	w.garden.crops.append({"pos": Vector2(1.5, -40.5), "kind": "radish", "sown_day": w.garden.day_number(), "water_days": 0, "last_watered": "", "head": 0.0})
+	view.sync_animals()
+	var want: Dictionary = wl.counts()
+	for id in want:
+		_check(view.count(id) == want[id], "%s が %d 匹いる" % [wl.SPECIES[id].name, want[id]])
+	_check(want.has("sparrow") and want.has("squirrel") and want.has("butterfly") and want.has("bee"), "前提: 昼の 4 種類")
+	view.sync_animals()
+	_check(view.count("sparrow") == want.sparrow, "見直しても増えすぎない")
+	for a in view._animals:
+		var ok: bool = a.node.get_child_count() > 0 and wl.is_free(a.pos) and a.node.is_inside_tree()
+		if not ok:
+			_check(false, "%s の置き場所" % a.id)
+	_check(view._animals.all(func(a): return a.pos.distance_to(a.home) <= 3.5), "住みかの近くにいる")
+
+	# 歩く: 止まっている時間がすぎると動く
+	var bird: Dictionary = view._animals.filter(func(a): return a.id == "sparrow")[0]
+	bird.wait = 0.0
+	var from: Vector2 = bird.pos
+	view._walk(bird, 0.01, Vector2(500, 500))
+	_check(bird.mode == "walk", "時間がたつと歩きだす")
+	for _i in range(20):
+		view._walk(bird, 0.05, Vector2(500, 500))
+	_check(bird.pos != from or bird.mode == "idle", "歩いて動く")
+	_check(bird.pos.distance_to(bird.home) <= view.MOVES.sparrow.roam + 0.01, "住みかの範囲にいる")
+
+	# プレイヤーが近づくと逃げる
+	bird.mode = "idle"
+	bird.wait = 5.0
+	var near: Vector2 = bird.pos + Vector2(1.0, 0)
+	view._walk(bird, 0.02, near)
+	_check(bird.mode == "flee", "近づくと小鳥が逃げる")
+	_check(bird.target.distance_to(near) > bird.pos.distance_to(near), "プレイヤーから離れる向きに逃げる")
+	var flap_max := 0.0
+	for _i in range(10):
+		view._walk(bird, 0.05, near)
+		flap_max = maxf(flap_max, absf(bird.wings[0].rotation.z))
+	_check(bird.node.position.y > 0.1, "小鳥は飛んで逃げる(高さ %.2f)" % bird.node.position.y)
+	_check(flap_max > 0.3 and is_equal_approx(bird.wings[0].rotation.z, -bird.wings[1].rotation.z), "飛ぶときは左右の羽で羽ばたく(%.2f rad)" % flap_max)
+	_check(bird.wings[0].rotation.y == 0.0, "飛ぶときは羽を広げる")
+	for _i in range(100):
+		view._walk(bird, 0.05, Vector2(500, 500))
+	_check(bird.mode != "flee" and bird.node.position.y < 0.2, "逃げ終わると地面に降りる")
+	# 羽の先が尾のほう(+z)を向いていれば、たためている
+	var wing_tip: Vector3 = bird.wings[1].basis * Vector3.RIGHT
+	var wing_tip_l: Vector3 = bird.wings[0].basis * Vector3.LEFT
+	_check(wing_tip.z > 0.9 and wing_tip_l.z > 0.9, "降りると羽を背中へたたむ")
+
+	# 虫はひらひら飛ぶ。住みかから離れすぎない
+	var butterfly: Dictionary = view._animals.filter(func(a): return a.id == "butterfly")[0]
+	var y_seen := []
+	var far_seen := 0.0
+	for _i in range(60):
+		view._flutter(butterfly, 0.1)
+		y_seen.append(butterfly.node.position.y)
+		far_seen = maxf(far_seen, Vector2(butterfly.node.position.x, butterfly.node.position.z).distance_to(butterfly.home))
+	_check(y_seen.min() > 0.3 and y_seen.max() < 1.5, "チョウは野菜の上を飛ぶ")
+	_check(far_seen < view.FLUTTER_RADIUS * 1.3, "チョウは畑から離れすぎない(%.1fm)" % far_seen)
+
+	# 夜になると入れかわる
+	w.clock.fixed_now = MIDNIGHT
+	view.sync_animals()
+	_check(view.count("sparrow") == 0 and view.count("butterfly") == 0, "夜は小鳥もチョウもいなくなる")
+	_check(view.count("hare") == wl.counts().hare and view.count("hedgehog") == wl.counts().hedgehog, "夜はノウサギとハリネズミが出る")
+	var hedgehog: Dictionary = view._animals.filter(func(a): return a.id == "hedgehog")[0]
+	hedgehog.mode = "walk"
+	var stay: Vector2 = hedgehog.pos
+	view._walk(hedgehog, 0.1, stay + Vector2(0.5, 0))
+	_check(hedgehog.mode == "idle" and hedgehog.pos == stay, "ハリネズミは逃げず、じっとする")
+	var hare: Dictionary = view._animals.filter(func(a): return a.id == "hare")[0]
+	hare.mode = "idle"
+	view._walk(hare, 0.05, hare.pos + Vector2(1, 0))
+	view._walk(hare, 0.1, hare.pos + Vector2(1, 0))
+	_check(hare.mode == "flee" and hare.node.position.y > 0.0, "ノウサギは跳ねて逃げる")
+	w.clock.fixed_now = NOON
+
+	# 渡り鳥の日は群れで、足元の近くに降りる
+	f.today_event = "birds"
+	player.global_position = Vector3(-30, 0, 30)
+	view.sync_animals()
+	var flock: Array = view._animals.filter(func(a): return a.id == "migrant")
+	_check(flock.size() == wl.MIGRANT_FLOCK, "渡り鳥の発見の日は群れが見える(%d 羽)" % flock.size())
+	_check(flock.all(func(a): return a.home == flock[0].home), "群れは同じ場所に降りる")
+	_check(flock[0].home.distance_to(main.player_pos()) < 12.0, "足元の近くに降りる")
+	f.today_event = "birch_seed"
+	view.sync_animals()
+	_check(view.count("migrant") == 0, "次の日にはいない")
+
+	# はじめて来たら知らせる。ほかの知らせは消さない
+	wl.seen.clear()
+	hud.show_message("先の知らせ", 5.0)
+	main.check_wildlife()
+	_check(hud._message == "先の知らせ" and wl.seen.is_empty(), "ほかの知らせが出ているあいだは待つ")
+	hud._process(10.0)
+	main.check_wildlife()
+	_check(hud._message.contains("来るようになった") and hud._message.contains("小鳥"), "はじめて来ると知らせる: %s" % hud._message)
+	_check(main.creatures_line().contains("小鳥"), "持ち物に見かけた生き物が出る")
+	hud._process(10.0)
+	main.check_wildlife()
+	_check(not hud.is_message_visible(), "二度は知らせない")
+
+	# 元に戻す
+	f.trees.assign(saved_trees)
+	w.garden.crops.assign(saved_crops)
+	w.land.plots.assign(saved_plots)
+	w.clock.fixed_now = {}
+	view.sync_animals()
 
 func _test_work_motions() -> void:
 	print("作業の動き")
@@ -1161,6 +1299,8 @@ func _test_2d_still_works() -> void:
 	_check(main.player_pos() == Vector2(10, -5), "2D の px を m にしてロジックに渡す(400px → 10m)")
 	main._act("dig", Vector2(10, -5))  # 2D のプレイヤーには作業の動きがない
 	_check(not main.get_node("Player").has_method("act"), "2D では作業の動きを呼ばない")
+	main.check_wildlife()
+	_check(main.world.wildlife.seen.is_empty(), "2D には生き物の姿がないので、来たと数えない")
 	main.world.forest.seeds["birch"] = 1
 	main._on_plant_tree(main.player_pos())
 	_check(main.world.forest.trees.size() == 1 and main.world.forest.trees[0].pos == Vector2(10, -5), "2D でも植えられる")
