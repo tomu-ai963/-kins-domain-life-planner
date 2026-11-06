@@ -2,7 +2,8 @@ extends Node
 
 # ── 音を鳴らす(3D だけ) ──────────────────────────────────────
 # 音そのものは audio/(tools/make_sounds.gd で作る)。ここは場所・天気・作業に合わせて鳴らすだけで、ルールには関わらない。
-# 流し続ける音: 風・葉(まわりの葉のある木の数で変わる)・遠くの川(土地に川はない)・雨・ストーブの火(小屋の中で仕込み中だけ)。
+# 流し続ける音: 風・葉(まわりの葉のある木の数で変わる)・雨・ストーブの火(小屋の中で仕込み中だけ)。
+# 遠くの川(土地に川はない)はずっとは鳴らさず、ときどき聞こえてくる。
 # 小屋の中では外の音を小さくする。足音は歩く場所(草・畑の土・小屋の床)で変わる。
 # 音楽と、鳥・虫・生き物の声はまだない(2026-11-06 とむ: あとから)
 const AUDIO_DIR := "res://audio/"
@@ -13,6 +14,10 @@ const STEP_SECONDS := 0.33   # 足音の間隔(歩きの振りに合わせた)
 const LEAF_NEAR := 15.0      # この距離の木の葉の音が聞こえる(m)
 const LEAF_FULL_TREES := 4.0 # この本数で葉の音がいちばん大きくなる
 const INDOOR_OUTSIDE := 0.3  # 小屋の中で聞こえる外の音の割合
+const BROOK_LEVEL := 0.08       # 遠くの川の大きさ
+const BROOK_FADE_PER_SECOND := 0.02  # 川がゆっくり出入りする速さ(4 秒ほど)
+const BROOK_ON_SECONDS := [15.0, 30.0]    # 川が聞こえている時間(最短と最長)
+const BROOK_OFF_SECONDS := [60.0, 120.0]  # 川が聞こえない時間(最短と最長)
 
 const LOOPS := ["wind", "leaves", "brook", "rain", "fire"]
 # 短い音の音量(1 = そのまま)
@@ -31,6 +36,8 @@ var _voices := []        # 短い音の AudioStreamPlayer
 var _streams := {}       # 読み込んだ音
 var _ambient_timer := 0.0
 var _step_timer := 0.0
+var brook_on := false    # 今、川が聞こえる番か
+var _brook_timer := 0.0  # 川の番が変わるまでの時間
 var last_played := ""    # 直前に鳴らした短い音(テスト用)
 var last_surface := ""   # 直前の足音の場所(テスト用)
 
@@ -54,6 +61,7 @@ func setup(w, player: Node3D) -> void:
 		v.name = "Voice_%d" % i
 		add_child(v)
 		_voices.append(v)
+	_brook_timer = randf_range(10.0, 30.0)  # はじめは静かで、少しすると聞こえてくる
 	update_ambient()
 
 func _stream(sound: String) -> AudioStream:
@@ -95,11 +103,23 @@ func _process(delta: float) -> void:
 	if _ambient_timer >= AMBIENT_SECONDS:
 		_ambient_timer = 0.0
 		update_ambient()
+	_update_brook(delta)
 	for sound in _loops:
 		var l: Dictionary = _loops[sound]
-		l.level = move_toward(float(l.level), float(l.goal), FADE_PER_SECOND * delta)
+		var fade: float = BROOK_FADE_PER_SECOND if sound == "brook" else FADE_PER_SECOND
+		l.level = move_toward(float(l.level), float(l.goal), fade * delta)
 		l.player.volume_db = linear_to_db(maxf(float(l.level), 0.001))
 	_update_steps(delta)
+
+# 川は、聞こえる番と聞こえない番を交代する
+func _update_brook(delta: float) -> void:
+	_brook_timer -= delta
+	if _brook_timer > 0.0:
+		return
+	brook_on = not brook_on
+	var range_seconds: Array = BROOK_ON_SECONDS if brook_on else BROOK_OFF_SECONDS
+	_brook_timer = randf_range(range_seconds[0], range_seconds[1])
+	update_ambient()
 
 # 歩いているあいだ、足音を鳴らす
 func _update_steps(delta: float) -> void:
@@ -141,10 +161,10 @@ func update_ambient() -> void:
 	var outside: float = INDOOR_OUTSIDE if inside else 1.0
 	var night: float = world.wildlife.darkness()
 	var raining: bool = f.is_raining() and f.season != "winter"  # 雪は音がしない
-	# 音量は小さめに(2026-11-06 とむの感想で約半分にした)
-	_loops.wind.goal = (0.32 if f.season == "winter" else 0.2) * lerpf(1.0, 0.75, night) * outside
-	_loops.leaves.goal = 0.3 * minf(1.0, leafy_trees_near(pos) / LEAF_FULL_TREES) * outside * (0.6 if raining else 1.0)
-	_loops.brook.goal = 0.16 * outside
+	# 音量は小さめに(2026-11-06 とむの感想で下げた)
+	_loops.wind.goal = (0.26 if f.season == "winter" else 0.16) * lerpf(1.0, 0.75, night) * outside
+	_loops.leaves.goal = 0.24 * minf(1.0, leafy_trees_near(pos) / LEAF_FULL_TREES) * outside * (0.6 if raining else 1.0)
+	_loops.brook.goal = BROOK_LEVEL * outside if brook_on else 0.0
 	_loops.rain.goal = (0.3 if raining else 0.0) * outside
 	var cooking: bool = world.kitchen.days_left() > 0
 	_loops.fire.goal = 0.25 if inside and cooking else 0.0

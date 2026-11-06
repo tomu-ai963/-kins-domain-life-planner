@@ -121,6 +121,7 @@ func _test_character() -> void:
 	var leaves := _samples("leaves")
 	var rain := _samples("rain")
 	_check(_swell(brook) < 0.12, "川の音量は波打たない(ばらつき %.1f%%)" % (_swell(brook) * 100.0))
+	_check(_zero_rate(brook) > 0.1, "川は低い「とぷん」より高い音が主(%.3f)" % _zero_rate(brook))
 	_check(_swell(wind) < 0.2, "風の音量は大きく波打たない(ばらつき %.1f%%)" % (_swell(wind) * 100.0))
 	_check(_zero_rate(brook) > _zero_rate(wind) * 2.0, "川は風より高い音(%.3f / %.3f)" % [_zero_rate(brook), _zero_rate(wind)])
 	# 雑音が多いと符号の変わり方が 0.5 に近づく。高音を削っていれば小さくなる

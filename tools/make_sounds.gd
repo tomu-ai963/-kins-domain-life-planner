@@ -171,30 +171,30 @@ func _leaves(seconds: float) -> PackedFloat32Array:
 		s[i] = (lp1 - lp2) * flutter * gust
 	return s
 
-# 川のせせらぎ: 音程の上がる小さな泡の音をたくさん重ねる。ちょろちょろした音が主役で、下の雑音はごく薄く
-# (雑音が多いと海の音に聞こえる。2026-11-06 とむの感想)
+# 川のせせらぎ: 薄い水の流れに、高めの短い水の粒をまばらに重ねる。
+# 雑音が多いと海に、音程の上がる泡の音を重ねると水の中に聞こえる(どちらも 2026-11-06 とむの感想)
 func _brook(seconds: float) -> PackedFloat32Array:
 	rng.seed = 13
 	var s := _empty(seconds)
-	_add_noise(s, 0.0, seconds, 700.0, 2200.0, func(_t): return 1.0, 0.025)
-	# 細かい水音
-	_add_bubbles(s, seconds, int(seconds * 130.0), 650.0, 1900.0, 0.012, 0.04, 0.2)
-	# ときどき、少し低いとぷんという音
-	_add_bubbles(s, seconds, int(seconds * 14.0), 320.0, 620.0, 0.04, 0.09, 0.3)
+	_add_noise(s, 0.0, seconds, 1400.0, 3200.0, func(_t): return 1.0, 0.05)
+	_add_droplets(s, seconds, int(seconds * 25.0), 1300.0, 2800.0, 0.008, 0.025, 0.3)
 	return s
 
-func _add_bubbles(s: PackedFloat32Array, seconds: float, count: int, f_low: float, f_high: float, len_low: float, len_high: float, loud: float) -> void:
-	for _i in range(count):
-		var start := rng.randf_range(0.0, seconds - 0.1)
+# 水の粒: 音程がほとんど変わらない、ごく短い音
+func _add_droplets(s: PackedFloat32Array, seconds: float, count: int, f_low: float, f_high: float, len_low: float, len_high: float, loud: float) -> void:
+	var slot := (seconds - 0.1) / count
+	for i in range(count):
+		# だいたい同じ間隔で、少しずつずらす(完全な乱数だと、固まって鳴るところができる)
+		var start := (i + rng.randf_range(0.0, 0.8)) * slot
 		var f := rng.randf_range(f_low, f_high)
 		var length := rng.randf_range(len_low, len_high)
-		var amp := loud * rng.randf_range(0.25, 1.0) * pow(rng.randf(), 1.5)
+		var amp := loud * rng.randf_range(0.3, 1.0)
 		var from := int(start * RATE)
 		var n := int(length * RATE)
 		var phase := 0.0
 		for j in range(n):
 			var t := float(j) / n
-			phase += TAU * f * (1.0 + 0.45 * t) / RATE
+			phase += TAU * f * (1.0 + 0.06 * t) / RATE
 			s[from + j] += sin(phase) * _hump(t) * amp
 
 # 雨: 高めの雑音と、ぽつぽつ当たる音

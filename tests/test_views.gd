@@ -730,10 +730,36 @@ func _test_sound_view() -> void:
 	for sound in audio.LOOPS:
 		var l: Dictionary = audio._loops[sound]
 		_check(l.player.playing and l.player.stream.loop_mode == AudioStreamWAV.LOOP_FORWARD, "%s がくり返し鳴る" % sound)
+	audio.brook_on = true
 	audio.update_ambient()
 	var loops: Dictionary = audio._loops
-	_check(loops.wind.goal > 0.0 and loops.brook.goal > 0.0, "風と遠くの川はいつも聞こえる")
-	_check(loops.brook.goal < loops.wind.goal, "川は遠くの音なので、風より小さい")
+	_check(loops.wind.goal > 0.0, "風はいつも聞こえる")
+	_check(loops.brook.goal > 0.0 and loops.brook.goal < loops.wind.goal, "川は遠くの音なので、風より小さい")
+	audio.brook_on = false
+	audio.update_ambient()
+	_check(loops.brook.goal == 0.0, "川はずっとは聞こえない")
+	# 聞こえる番と聞こえない番が交代する。聞こえない時間のほうが長い
+	var on_time := 0.0
+	var off_time := 0.0
+	audio.brook_on = false
+	audio._brook_timer = 0.0
+	for _i in range(200):
+		audio._update_brook(0.0)
+		if audio.brook_on:
+			on_time += audio._brook_timer
+		else:
+			off_time += audio._brook_timer
+		audio._brook_timer = 0.0
+	_check(on_time > 0.0 and off_time > on_time * 2.0, "川は聞こえない時間のほうが長い(%.0f 秒 / %.0f 秒)" % [on_time, off_time])
+	audio.brook_on = true
+	audio.update_ambient()
+	audio._ambient_timer = 0.0
+	audio._brook_timer = 100.0
+	loops.brook.level = 0.0
+	audio._process(1.0)
+	_check(loops.brook.level > 0.0 and loops.brook.level < loops.brook.goal, "川はゆっくり聞こえてくる(%.3f)" % loops.brook.level)
+	audio.brook_on = false
+	audio.update_ambient()
 	_check(loops.leaves.goal == 0.0, "まわりに木がないと葉の音はしない")
 	_check(loops.rain.goal == 0.0 and loops.fire.goal == 0.0, "晴れていれば雨の音はなく、火の音もない")
 
@@ -784,7 +810,7 @@ func _test_sound_view() -> void:
 	# 小屋の中
 	var c = w.cabin
 	player.global_position = Vector3(c.site.x, 0, c.site.y)
-	var outdoor_wind: float = 0.2
+	var outdoor_wind: float = 0.16
 	audio.update_ambient()
 	_check(c.is_inside(main.player_pos()) and loops.wind.goal < outdoor_wind * 0.5, "小屋の中では外の音が小さい")
 	_check(loops.fire.goal == 0.0, "鍋が空なら火の音はしない")
