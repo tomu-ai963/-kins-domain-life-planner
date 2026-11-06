@@ -285,6 +285,14 @@ static func apple_yield(age: float) -> int:
 
 var last_harvest_count := 0  # 直前の収穫で採れた個数(文言用)
 
+# 実をつける年になったリンゴの本数(季節は見ない。日記用)
+func fruiting_apples() -> int:
+	var n := 0
+	for tree in trees:
+		if tree.species == "apple" and is_established(tree) and real_age_years(tree) >= APPLE_FRUIT_AGE:
+			n += 1
+	return n
+
 # 足元のリンゴを収穫する。結果を表すコードを返す(文言は Main が決める)
 #   harvested / none / preview / not_season / young / done
 func harvest_nearest(pos: Vector2, max_dist: float) -> String:

@@ -532,7 +532,12 @@ func _test_3d_cabin_collision() -> void:
 	_check(not player.test_move(indoors, Vector3(0, 0, 3)), "中からドアを通って外へ出られる")
 	_check(player.test_move(indoors, Vector3(3, 0, 0)) and player.test_move(indoors, Vector3(-3, 0, 0)), "中からは東西の壁にぶつかる")
 	_check(player.test_move(indoors, Vector3(0, 0, -3)), "中からは北の壁にぶつかる")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(19.1, 0, 20)), Vector3(0, 0, -1)), "ベッドにぶつかる(上に乗れない)")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(21.45, 0, 20)), Vector3(0, 0, -1)), "ストーブにぶつかる")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(18.8, 0, 19.9)), Vector3(0, 0, 1)), "テーブルにぶつかる")
+	_check(not player.test_move(Transform3D(Basis.IDENTITY, Vector3(21.45, 0, 19.75)), Vector3(0, 0, 0.5)), "ストーブの南は空いている")
 	_test_cabin_inside()
+	_test_furniture()
 
 func _test_cabin_inside() -> void:
 	print("小屋の中")
@@ -603,6 +608,123 @@ func _test_cabin_inside() -> void:
 	_check(player.view_distance() == far_dist, "外へ出るとカメラが元の距離に戻る")
 	player._process(10.0)
 	_check(player.get_node("Body").position.y == 0.0, "体が地面の高さに戻る")
+
+# 名前が name で始まる、部屋の中の形
+func _room_pieces(view: Node3D, prefix: String) -> Array:
+	var room: Node3D = view.get_child(0).get_node("Interior")
+	return room.get_children().filter(func(n): return str(n.name).contains(prefix))
+
+func _test_furniture() -> void:
+	print("ストーブとベッド")
+	var w = main.world
+	var k = w.kitchen
+	var view: Node3D = main.get_node("Cabin")
+	var player: CharacterBody3D = main.get_node("Player")
+	var hud = main.get_node("HUD")
+	var c = w.cabin
+	var site: Vector2 = c.site
+	var key := func(code: int) -> void:
+		var e := InputEventKey.new()
+		e.keycode = code
+		e.pressed = true
+		main._unhandled_input(e)
+
+	# ストーブの前: H で台所が開く(苗づくりにはならない)
+	player.global_position = Vector3(site.x + c.STOVE_OFFSET.x - 0.65, 0, site.y + c.STOVE_OFFSET.y)
+	_check(main.furniture_line().contains("ストーブ"), "ストーブの前で案内が出る")
+	_check(main.kitchen_line() == "" and _room_pieces(view, "CookPot").is_empty(), "はじめは鍋がない")
+	var fire: MeshInstance3D = _room_pieces(view, "StoveFire")[0]
+	_check(not fire.material_override.emission_enabled, "はじめは火が消えている")
+	var logs_before: int = int(c.materials.log)
+	c.materials.log = 2
+	w.garden.produce.tomato = 10
+	key.call(KEY_H)
+	_check(hud.is_shop_open() and main._panel == "kitchen" and not player.is_physics_processing(), "H で台所が開き、歩かなくなる")
+	_check(main.shop_title().contains("ストーブ") and main.shop_header().contains("薪"), "見出しが台所になる")
+	_check(main.kitchen_rows().any(func(r): return r.id == "cook_sauce" and r.text.contains("トマト 10kg") and r.text.contains("5瓶")), "料理の一覧に材料とできる数が出る")
+
+	# 仕込む: 鍋と火と薪が見える
+	main._on_shop_action("cook_sauce")
+	_check(not k.is_empty() and k.pot.recipe == "sauce" and w.garden.produce.tomato == 0, "画面から仕込める")
+	_check(hud._message.contains("トマトソース") and hud._message.contains("割って"), "仕込んだ文言が出る")
+	_check(_room_pieces(view, "CookPot").size() == 1, "鍋がのる")
+	var fire2: MeshInstance3D = _room_pieces(view, "StoveFire")[0]
+	_check(fire2.material_override.emission_enabled, "火が見える")
+	_check(_room_pieces(view, "Firewood").size() == view.WOOD_PILES_MAX, "割った薪が積まれる")
+	_check(main.kitchen_line().contains("あと1日"), "HUD に鍋の残り日数が出る")
+	_check(main.kitchen_rows().any(func(r): return r.id == "pot_wait" and r.text.contains("あと1日")), "台所にも残り日数が出る")
+	main._on_shop_action("cook_sauce")
+	_check(hud._message.contains("鍋は使っている"), "鍋がふさがっていると仕込めない")
+	key.call(KEY_H)
+	_check(not hud.is_shop_open() and player.is_physics_processing(), "もう一度 H で閉じる")
+
+	# 次の日: 受け取るとテーブルに並び、市場で売れる
+	k.pot.start_day -= 1
+	k.changed.emit()
+	_check(main.kitchen_line().contains("できた"), "できると HUD で知らせる")
+	main._open_kitchen()
+	_check(main.kitchen_rows().any(func(r): return r.id == "pot_collect" and r.text.contains("5瓶")), "受け取りの行が出る")
+	main._on_shop_action("pot_collect")
+	_check(k.stock.sauce == 5 and k.is_empty() and _room_pieces(view, "CookPot").is_empty(), "受け取ると鍋が空く")
+	_check(_room_pieces(view, "Food").size() == 5, "できた瓶がテーブルに並ぶ")
+	_check(not _room_pieces(view, "StoveFire")[0].material_override.emission_enabled, "火が消える")
+	main._on_shop_action("close")
+	_check(main.food_line().contains("トマトソース 5瓶") and not main.produce_line().contains("トマトソース"), "持ち物の保存食の行に出る")
+	main._open_kitchen()
+	_check(not hud.status_text().contains("─ 持ち物 ─"), "ストーブの画面には持ち物を重ねない")
+	main._close_shop()
+	main._panel = "market"
+	hud.open_shop()
+	_check(hud.status_text().contains("保存食: トマトソース 5瓶"), "市場の画面では持ち物に保存食が出る")
+	main._close_shop()
+	main._panel = "market"
+	_check(main.shop_rows().any(func(r): return r.id == "sell_sauce" and r.text.contains("トマトソース 5瓶 × 150₽")), "市場に売る行が出る")
+	var money: int = w.market.money
+	main._on_shop_action("sell_sauce")
+	_check(w.market.money == money + 750 and _room_pieces(view, "Food").is_empty(), "売るとお金が増え、テーブルから消える")
+	k.stock.pickles = 100
+	k.changed.emit()
+	_check(_room_pieces(view, "Food").size() == view.JARS_SHOWN, "たくさんあっても机に収まる数だけ並べる")
+	k.stock.pickles = 0
+	k.firewood = 0
+	c.materials.log = logs_before
+	k.changed.emit()
+
+	# ベッド: 暗くなって日記が出る。時間は進まない
+	player.global_position = Vector3(site.x + c.BED_OFFSET.x, 0, site.y + c.BED_OFFSET.y + 0.73)
+	_check(main.furniture_line().contains("ベッド"), "ベッドのそばで案内が出る")
+	var day_before: String = w.forest.today()
+	key.call(KEY_H)
+	_check(hud.is_diary_open() and not player.is_physics_processing(), "H で休むと日記が出て、歩かなくなる")
+	var text: String = hud._diary_label.text
+	_check(text.contains("の日記") and text.contains("今日") and text.contains("明日"), "日記に今日と明日がある")
+	_check(w.forest.today() == day_before, "寝ても日付は変わらない")
+	main._on_plant_tree(main.player_pos())
+	key.call(KEY_Q)
+	_check(hud.is_diary_open(), "日記を開いているあいだ、ほかのキーは効かない")
+	key.call(KEY_H)
+	_check(not hud.is_diary_open() and player.is_physics_processing(), "H で起きる")
+	key.call(KEY_H)
+	key.call(KEY_ESCAPE)
+	_check(not hud.is_diary_open(), "Esc でも起きる")
+
+	# 日記の中身は今の状態に合わせて変わる
+	var g = w.garden
+	g.crops.clear()
+	g.crops.append({"pos": Vector2(40, 40), "kind": "radish", "sown_day": g.day_number() - 5, "water_days": 0, "last_watered": "", "head": 0.0})
+	var d: String = main.diary_text()
+	_check(d.contains("収穫できる区画: 1") and d.contains("まだ水をやっていない区画が 1"), "明日収穫できる区画とやり残しが出る")
+	_check(d.contains("鍋が空いている"), "鍋が空いていると出る")
+	g.crops.clear()
+	k.pot = {"recipe": "jam", "start_day": k.forest.day_number()}
+	_check(main.diary_text().contains("鍋のリンゴジャムを受け取れる"), "明日できる鍋が出る")
+	k.pot = {"recipe": "pickles", "start_day": k.forest.day_number()}
+	var d2: String = main.diary_text()
+	_check(not d2.contains("鍋の") and not d2.contains("鍋が"), "まだできない鍋は出さない")
+	k.pot = {}
+	k.changed.emit()
+	player.global_position = Vector3(20, 0, 23)
+	view._process(0.1)
 
 func _test_3d_pond() -> void:
 	print("池")

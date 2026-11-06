@@ -5,9 +5,11 @@ extends Node3D
 # 場所を決めた → 杭と縄 / 基礎 → 土台の角材と床 / 壁 → 作業のたびに高くなる / 屋根 → 垂木 → 屋根とドア。
 # 壁が建ったら歩いて通り抜けられないように当たり判定を付ける。南(カメラの側)がドアで、完成すると開いて入れる。
 # 中にいるあいだは屋根と南の壁を見せず(影だけ落とす)、部屋の明かりをつける。
-# 苗づくりの鉢(logic/Seedlings.gd)は、東の窓辺の棚に並べる
+# 苗づくりの鉢(logic/Seedlings.gd)は、東の窓辺の棚に並べる。
+# 料理(logic/Kitchen.gd)は、仕込むとストーブに鍋と火が見え、できた保存食はテーブルに並び、割った薪はストーブの脇に積まれる
 const Cabin = preload("res://logic/Cabin.gd")
 const Seedlings = preload("res://logic/Seedlings.gd")
+const Kitchen = preload("res://logic/Kitchen.gd")
 const Look = preload("res://view/3d/Look.gd")
 
 const WALL_H := 2.2       # 壁の高さ(m)
@@ -23,8 +25,19 @@ const ROOM_LIGHT_ENERGY := 1.1
 const DOOR_OPEN_NEAR := 2.2       # ドアからこの距離まで来ると開く(m)
 const DOOR_OPEN_ANGLE := -1.8     # 開いたときの角度(南へ外開き)
 const DOOR_SPEED := 4.0           # 開け閉めの速さ
+const TABLE_POS := Vector2(-1.2, 0.75)
+const TABLE_SIZE := Vector2(0.95, 0.7)
+const STOVE_H := 0.85             # ストーブの高さ(m)
+const FIRE_GLOW := 2.5            # 仕込んでいるあいだの火の明るさ
+const JARS_SHOWN := 8             # テーブルに並べる保存食の数(多くても机に収まるように)
+const WOOD_PILES_MAX := 4         # 薪の山の段の数
+const FOOD_COLORS := {
+	"jam": Color(0.70, 0.30, 0.20), "sauce": Color(0.78, 0.16, 0.12), "pickles": Color(0.42, 0.56, 0.26),
+	"garlic_pickle": Color(0.90, 0.86, 0.68), "pirozhki": Color(0.76, 0.54, 0.26),
+}
 
 var cabin: Cabin
+var kitchen: Kitchen
 var _night := 0.0
 var _lamp_light: OmniLight3D  # 完成するまでは null
 var _player: Node3D           # 3D のときだけ Main が渡す
@@ -35,6 +48,10 @@ var _inside_pieces := []      # 中にいるあいだだけ見せる形(南の�
 var _bed := Look.mat(Color(0.92, 0.88, 0.78))
 var _blanket := Look.mat(Color(0.72, 0.30, 0.24))
 var _stove := Look.mat(Color(0.22, 0.22, 0.24))
+var _fire := Look.mat(Color(0.30, 0.12, 0.08))
+var _cook_pot := Look.mat(Color(0.46, 0.46, 0.50))
+var _firewood := Look.mat(Color(0.66, 0.48, 0.30))
+var _food_mats := {}
 var _rug := Look.mat(Color(0.60, 0.38, 0.30))
 var _lamp := Look.mat(Color(1.0, 0.78, 0.45))
 var seedlings: Seedlings
@@ -68,6 +85,12 @@ func _piece(parent: Node3D, m: Material, pos: Vector3, scl: Vector3) -> MeshInst
 
 func set_player(p: Node3D) -> void:
 	_player = p
+
+# 料理の様子を見せる(3D のときだけ Main が渡す)。日付が変わると鍋ができるのは forest.changed で描き直す
+func set_kitchen(k: Kitchen) -> void:
+	kitchen = k
+	kitchen.changed.connect(_rebuild)
+	_rebuild()
 
 func _process(delta: float) -> void:
 	if _player == null or cabin == null or cabin.site == null:
@@ -163,19 +186,19 @@ func _interior(spot: Node3D) -> void:
 	room.position = Vector3(0, FLOOR_Y, 0)
 	spot.add_child(room)
 	# ベッド: 枠・敷布団・掛け布団・枕
-	_piece(room, _sill, Vector3(-0.9, 0.15, -0.95), Vector3(1.9, 0.3, 0.85))
-	_piece(room, _bed, Vector3(-0.9, 0.34, -0.95), Vector3(1.8, 0.1, 0.75))
-	_piece(room, _blanket, Vector3(-0.6, 0.41, -0.95), Vector3(1.2, 0.06, 0.78))
-	_piece(room, _bed, Vector3(-1.55, 0.43, -0.95), Vector3(0.35, 0.1, 0.5))
-	# ストーブと煙突
-	_piece(room, _stove, Vector3(1.45, 0.42, -1.0), Vector3(0.7, 0.85, 0.7))
-	_piece(room, _stove, Vector3(1.45, 1.5, -1.0), Vector3(0.14, 1.4, 0.14))
+	var bed: Vector2 = Cabin.BED_OFFSET
+	_piece(room, _sill, Vector3(bed.x, 0.15, bed.y), Vector3(Cabin.BED_SIZE.x, 0.3, Cabin.BED_SIZE.y))
+	_piece(room, _bed, Vector3(bed.x, 0.34, bed.y), Vector3(1.8, 0.1, 0.75))
+	_piece(room, _blanket, Vector3(bed.x + 0.3, 0.41, bed.y), Vector3(1.2, 0.06, 0.78))
+	_piece(room, _bed, Vector3(bed.x - 0.65, 0.43, bed.y), Vector3(0.35, 0.1, 0.5))
+	_stove_pieces(room)
 	# テーブル(天板と脚 4 本)と腰掛け
-	_piece(room, _rafter, Vector3(-1.2, 0.72, 0.75), Vector3(0.95, 0.05, 0.7))
+	_piece(room, _rafter, Vector3(TABLE_POS.x, 0.72, TABLE_POS.y), Vector3(TABLE_SIZE.x, 0.05, TABLE_SIZE.y))
 	for x in [-1.6, -0.8]:
 		for z in [0.47, 1.03]:
 			_piece(room, _sill, Vector3(x, 0.35, z), Vector3(0.06, 0.7, 0.06))
 	_piece(room, _sill, Vector3(-0.45, 0.22, 0.75), Vector3(0.3, 0.45, 0.3))
+	_food_on_table(room)
 	# 敷物(ドアを入ったところ)
 	room.add_child(Look.strip(Vector2(-0.2, 0.2), Vector2(0.2, 0.2), 1.0, 0.01, _rug))
 	# 部屋の明かり(中にいるあいだだけ)
@@ -193,6 +216,50 @@ func _interior(spot: Node3D) -> void:
 	var side: float = (w + WALL_T - DOOR_W) * 0.5
 	for sign_x in [-1.0, 1.0]:
 		_inside_pieces.append(_piece(room, _wall, Vector3(sign_x * (DOOR_W + side) * 0.5, 0.2, d * 0.5), Vector3(side, 0.4, WALL_T)))
+
+# ストーブと煙突・火の口。仕込んでいるあいだは火が見えて鍋がのる。割った薪は西の脇に積む
+func _stove_pieces(room: Node3D) -> void:
+	var s: Vector2 = Cabin.STOVE_OFFSET
+	var size: Vector2 = Cabin.STOVE_SIZE
+	_piece(room, _stove, Vector3(s.x, STOVE_H * 0.5, s.y), Vector3(size.x, STOVE_H, size.y))
+	_piece(room, _stove, Vector3(s.x, 1.5, s.y), Vector3(0.14, 1.4, 0.14))
+	var cooking: bool = kitchen != null and not kitchen.is_empty()
+	_fire.emission_enabled = cooking
+	_fire.emission = Color(1.0, 0.45, 0.12)
+	_fire.emission_energy_multiplier = FIRE_GLOW
+	_piece(room, _fire, Vector3(s.x, 0.25, s.y + size.y * 0.5 + 0.005), Vector3(0.34, 0.2, 0.02)).name = "StoveFire"
+	if cooking:
+		_piece(room, _cook_pot, Vector3(s.x, STOVE_H + 0.1, s.y), Vector3(0.32, 0.2, 0.32)).name = "CookPot"
+		_piece(room, _stove, Vector3(s.x, STOVE_H + 0.21, s.y), Vector3(0.34, 0.03, 0.34))
+	if kitchen == null or kitchen.firewood <= 0:
+		return
+	var layers: int = mini(ceili(kitchen.firewood * WOOD_PILES_MAX / float(Kitchen.LOG_FIRES)), WOOD_PILES_MAX)
+	for i in range(layers):
+		_piece(room, _firewood, Vector3(s.x - 0.55, 0.05 + i * 0.09, s.y - 0.25), Vector3(0.28, 0.08, 0.18)).name = "Firewood"
+
+# できた保存食をテーブルに並べる(瓶は蓋つき、ピロシキは平たく)。JARS_SHOWN まで
+func _food_on_table(room: Node3D) -> void:
+	if kitchen == null:
+		return
+	var top: float = 0.745
+	var shown := 0
+	for id in Kitchen.RECIPES:
+		var flat: bool = Kitchen.RECIPES[id].unit == "個"
+		for _i in range(int(kitchen.stock[id])):
+			if shown >= JARS_SHOWN:
+				return
+			var x: float = TABLE_POS.x - 0.33 + (shown % 4) * 0.22
+			var z: float = TABLE_POS.y - 0.14 + int(shown / 4.0) * 0.26
+			var h: float = 0.05 if flat else 0.15
+			_piece(room, _food_mat(id), Vector3(x, top + h * 0.5, z), Vector3(0.13, h, 0.13 if not flat else 0.09)).name = "Food"
+			if not flat:
+				_piece(room, _rope, Vector3(x, top + h + 0.012, z), Vector3(0.11, 0.025, 0.11))
+			shown += 1
+
+func _food_mat(id: String) -> Material:
+	if not _food_mats.has(id):
+		_food_mats[id] = Look.mat(FOOD_COLORS[id])
+	return _food_mats[id]
 
 # 場所を決めただけ: 四隅の杭と縄
 func _marks(spot: Node3D) -> void:
@@ -293,6 +360,10 @@ func _collider(spot: Node3D) -> void:
 		var side: float = (w + WALL_T - DOOR_W) * 0.5
 		for sign_x in [-1.0, 1.0]:
 			_collider_box(body, Vector3(sign_x * (DOOR_W + side) * 0.5, 0, d * 0.5), Vector2(side, WALL_T))
+		# 家具にも乗れないように(腰掛けはドアの通り道に近いので付けない)
+		_collider_box(body, Vector3(Cabin.BED_OFFSET.x, 0, Cabin.BED_OFFSET.y), Cabin.BED_SIZE)
+		_collider_box(body, Vector3(Cabin.STOVE_OFFSET.x, 0, Cabin.STOVE_OFFSET.y), Cabin.STOVE_SIZE)
+		_collider_box(body, Vector3(TABLE_POS.x, 0, TABLE_POS.y), TABLE_SIZE)
 	spot.add_child(body)
 
 # 床から壁の上までの箱の判定。size は 東西 × 南北(m)

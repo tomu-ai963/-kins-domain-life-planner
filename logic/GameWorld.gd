@@ -10,6 +10,7 @@ const Garden = preload("res://logic/Garden.gd")
 const Cabin = preload("res://logic/Cabin.gd")
 const Pond = preload("res://logic/Pond.gd")
 const Seedlings = preload("res://logic/Seedlings.gd")
+const Kitchen = preload("res://logic/Kitchen.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 const DayClock = preload("res://logic/DayClock.gd")
@@ -27,6 +28,7 @@ var garden := Garden.new()
 var cabin := Cabin.new()
 var pond := Pond.new()
 var seedlings := Seedlings.new()
+var kitchen := Kitchen.new()
 var quests := Quests.new()
 var market := Market.new()
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
@@ -48,14 +50,19 @@ func _init() -> void:
 	market.garden = garden
 	market.cabin = cabin
 	market.seedlings = seedlings
+	market.kitchen = kitchen
 	seedlings.forest = forest
 	seedlings.garden = garden
 	seedlings.cabin = cabin
+	kitchen.forest = forest
+	kitchen.garden = garden
+	kitchen.cabin = cabin
 	forest.dirty.connect(save_game)
 	garden.dirty.connect(save_game)
 	cabin.dirty.connect(save_game)
 	pond.dirty.connect(save_game)
 	seedlings.dirty.connect(save_game)
+	kitchen.dirty.connect(save_game)
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
 # 結果: Garden.toggle_plot の結果か cabin
@@ -85,6 +92,14 @@ func check_new_day() -> String:
 	pond.catch_up()
 	return id
 
+# 明日の日付(YYYY-MM-DD)
+func tomorrow_date() -> String:
+	return Forest.date_of_day(forest.day_number() + 1)
+
+# 明日は雨(冬は雪)か。発見は日付から決まるので、前の日に分かる
+func tomorrow_rain() -> bool:
+	return forest.roll_daily_event(tomorrow_date()) == "rain"
+
 # 季節は現実の日付から(3-5月=春 / 6-8月=夏 / 9-11月=秋 / 12-2月=冬)
 static func season_for_month(m: int) -> String:
 	if m >= 3 and m <= 5:
@@ -107,6 +122,7 @@ func save_game() -> void:
 	data["cabin"] = cabin.to_save()
 	data["pond"] = pond.to_save()
 	data["seedlings"] = seedlings.to_save()
+	data["kitchen"] = kitchen.to_save()
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
@@ -152,6 +168,10 @@ func load_game() -> void:
 	var sd = data.get("seedlings", {})
 	if typeof(sd) != TYPE_DICTIONARY:
 		sd = {}
+	# 台所の記録がないセーブ(2026-11-06 より前)は、鍋は空・薪 0 から
+	var kd = data.get("kitchen", {})
+	if typeof(kd) != TYPE_DICTIONARY:
+		kd = {}
 	# Godot 3 版(2026-11 より前)のセーブは座標が px。読むときに m に直す
 	if data.get("unit", "px") != SAVE_UNIT:
 		_px_to_m(data, ld)
@@ -160,6 +180,7 @@ func load_game() -> void:
 	garden.from_save(gd)
 	cabin.from_save(cd)
 	seedlings.from_save(sd)
+	kitchen.from_save(kd)
 	quests.from_save(qd)
 	market.from_save(md)
 	forest.from_save(data)

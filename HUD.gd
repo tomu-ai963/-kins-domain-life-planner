@@ -3,10 +3,12 @@ extends CanvasLayer
 # ── 画面の文字表示(2D と 3D で共通) ─────────────────────────────
 # 左上: いつも見たいこと(日付・所持金・発見・クエスト・小屋・池・選択・足元)。
 # Tab で持ち物(市場を開いているあいだは自動で出す)、F1 で操作説明を足す。
-# 下の中央: 数秒だけのメッセージ。右: 市場の近くで B を押すと市場の画面が開く。
+# 下の中央: 数秒だけのメッセージ。右: 市場の画面(ストーブでも同じ画面を使う)。
+# 全体を覆う日記: ベッドで休むと、暗くなって出る。
 # 文言の中身は Main が決める(shop_rows・quest_line など)。ここは並べて出すだけ
 const Forest = preload("res://logic/Forest.gd")
 const MESSAGE_SECONDS := 3.0
+const DIARY_FADE_SECONDS := 0.6
 
 signal shop_action(id)  # 市場の画面のボタン(品の id / "sell_<収穫物>" / "close")
 
@@ -26,6 +28,10 @@ var help_open := false       # F1
 var _shop: PanelContainer
 var _shop_columns := []  # 買う列と売る列(VBoxContainer)
 var _shop_money: Label
+var _shop_title: Label
+var _diary: ColorRect
+var _diary_label: Label
+var _diary_fade: Tween
 
 func setup(player: Node, trees: Forest, main: Node) -> void:
 	_player = player
@@ -33,6 +39,7 @@ func setup(player: Node, trees: Forest, main: Node) -> void:
 	_main = main
 	_build_message()
 	_build_shop()
+	_build_diary()
 
 # 植えられない・収穫した などを数秒だけ出す
 func show_message(text: String, seconds: float = MESSAGE_SECONDS) -> void:
@@ -71,9 +78,8 @@ func _build_shop() -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 	_shop.add_child(box)
-	var title := Label.new()
-	title.text = "市場(クリックか 矢印キー + Enter で選ぶ)"
-	box.add_child(title)
+	_shop_title = Label.new()
+	box.add_child(_shop_title)
 	_shop_money = Label.new()
 	box.add_child(_shop_money)
 	var columns := HBoxContainer.new()
@@ -109,7 +115,8 @@ func refresh_shop() -> void:
 		for b in col.get_children():
 			col.remove_child(b)
 			b.queue_free()
-	_shop_money.text = "所持金: %s₽" % _money_text(_main.world.market.money)
+	_shop_title.text = _main.shop_title()
+	_shop_money.text = _main.shop_header()
 	for row in _main.shop_rows():
 		var b := Button.new()
 		b.text = row.text
@@ -119,6 +126,38 @@ func refresh_shop() -> void:
 	if is_shop_open():
 		var col: VBoxContainer = _shop_columns[focused_col]
 		col.get_child(mini(focused_row, col.get_child_count() - 1)).grab_focus()
+
+# ── 日記(ベッドで休む) ─────────────────────────────────────
+func _build_diary() -> void:
+	_diary = ColorRect.new()
+	_diary.color = Color(0.03, 0.03, 0.07, 0.93)
+	_diary.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_diary.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_diary.visible = false
+	_diary_label = Label.new()
+	_diary_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_diary_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_diary_label.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_diary_label.add_theme_font_size_override("font_size", 20)
+	_diary.add_child(_diary_label)
+	add_child(_diary)
+
+func is_diary_open() -> bool:
+	return _diary != null and _diary.visible
+
+func open_diary(text: String) -> void:
+	_diary_label.text = text
+	_diary.visible = true
+	_diary.modulate.a = 0.0
+	if _diary_fade != null:
+		_diary_fade.kill()
+	_diary_fade = create_tween()
+	_diary_fade.tween_property(_diary, "modulate:a", 1.0, DIARY_FADE_SECONDS)
+
+func close_diary() -> void:
+	if _diary_fade != null:
+		_diary_fade.kill()
+	_diary.visible = false
 
 static func _money_text(n: int) -> String:
 	# 3 桁ごとにカンマ(例: 2,000)
@@ -144,7 +183,9 @@ func _process(delta: float) -> void:
 # 左上に出す文字
 func status_text() -> String:
 	var lines := _status_lines()
-	if inventory_open or is_shop_open():
+	# 市場を開いているあいだは持ち物を自動で出す。ストーブの画面は行の中に持っている数が出るので、重ならないよう出さない
+	var in_kitchen: bool = is_shop_open() and _main._panel == "kitchen"
+	if (inventory_open or is_shop_open()) and not in_kitchen:
 		lines.append_array(_inventory_lines())
 	if help_open:
 		lines.append_array(_help_lines())
@@ -171,11 +212,17 @@ func _status_lines() -> PackedStringArray:
 		lines.append("今日の発見: " + _main.daily_message(_trees.today_event))
 	lines.append(_main.quest_line())
 	lines.append(_main.cabin_line())
+	var pot: String = _main.kitchen_line()
+	if pot != "":
+		lines.append(pot)
 	lines.append(_main.pond_line())
 	lines.append(_main.selection_line())
 	# その場所でだけ意味があること
 	if _main.world.market.is_near(_main.player_pos()) and not is_shop_open():
 		lines.append("市場の前(B で開く)")
+	var furniture: String = _main.furniture_line()
+	if furniture != "":
+		lines.append(furniture)
 	var plot: String = _main.plot_line()
 	if plot != "":
 		lines.append(plot)
@@ -197,6 +244,7 @@ func _inventory_lines() -> PackedStringArray:
 		"野菜の種: " + _main.crop_seeds_line(),
 		"苗: " + _main.seedlings_line(),
 		"収穫物: " + _main.produce_line(),
+		"保存食: " + _main.food_line(),
 		"植えた木: %d本   いる場所: X %.0fm  Y %.0fm" % [_trees.trees.size(), pos.x, pos.y],
 	])
 
@@ -208,6 +256,6 @@ func _help_lines() -> PackedStringArray:
 		"[1]白樺 [2]リンゴ [3]シベリア杉 [V]種/苗木",
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク [9]トマト",
 		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る",
-		"F:菜園  P:池  H:小屋(完成したら苗づくり)",
+		"F:菜園  P:池  H:小屋(完成したら 苗づくり / ストーブの前で料理 / ベッドのそばで日記)",
 		"T:+1年  G:+10年  N:+1時間  R:今に戻す(未来をプレビュー)",
 	])

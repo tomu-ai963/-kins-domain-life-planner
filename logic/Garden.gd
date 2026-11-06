@@ -217,6 +217,33 @@ func is_spoiled(c: Dictionary) -> bool:
 func days_until_spoiled(c: Dictionary) -> int:
 	return maxi(0, ceili(float(CROPS[c.kind].keep_days) - days_since_ripe(c)))
 
+# 明日の時点の育った日数(今日までの水やりはすべて数える)
+func _growth_tomorrow(c: Dictionary) -> float:
+	var elapsed: int = day_number() + 1 - int(c.sown_day)
+	return elapsed * DRY_GROWTH + int(c.water_days) * (1.0 - DRY_GROWTH) + float(c.get("head", 0.0))
+
+# 明日の畑の見込み(日記用)。ripe: 収穫できる区画(今できているものも含む) / spoiling: 明日傷みはじめる区画
+# 明日の霜で枯れる分はここでは引かない(霜は frost_is_near で別に知らせる)
+func tomorrow_counts() -> Dictionary:
+	var counts := {"ripe": 0, "spoiling": 0}
+	for c in crops:
+		var over: float = _growth_tomorrow(c) - float(CROPS[c.kind].grow_days)
+		if over >= 0.0:
+			counts.ripe += 1
+			if over / DRY_GROWTH > float(CROPS[c.kind].keep_days) and not is_spoiled(c):
+				counts.spoiling += 1
+	return counts
+
+# 今日の畑の様子(日記用)。ripe: 収穫できる区画 / dry: まだ水をやっていない区画
+func today_counts() -> Dictionary:
+	var counts := {"ripe": 0, "dry": 0}
+	for c in crops:
+		if is_ripe(c):
+			counts.ripe += 1
+		elif not watered_today(c):
+			counts.dry += 1
+	return counts
+
 # 毎日水をやったとして、収穫まであと何日か
 func days_left(c: Dictionary) -> int:
 	return maxi(0, ceili(float(CROPS[c.kind].grow_days) - growth_days(c)))

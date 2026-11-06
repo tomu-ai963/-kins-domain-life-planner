@@ -18,6 +18,14 @@ const EDGE_MARGIN := 3.0  # 境界からこの幅は生垣クエストのため�
 const CENTER_CLEAR := 5.0 # 中心からこの範囲は家族の杉のために空ける(Quests.FAMILY_CEDAR_RADIUS と同じ)
 const TREE_CLEARANCE := 0.3  # 小屋の周りでこの距離に木があると建てられない
 
+# 部屋の家具(小屋の中心からの位置 m)。使える範囲はロジック、形は view/ が同じ値を読む
+const STOVE_OFFSET := Vector2(1.45, -1.0)
+const STOVE_SIZE := Vector2(0.7, 0.7)
+const STOVE_REACH := 1.1  # ストーブの中心からこの距離までなら使える(東の窓辺は苗づくりに残す)
+const BED_OFFSET := Vector2(-0.9, -0.95)
+const BED_SIZE := Vector2(1.9, 0.85)
+const BED_REACH := 0.5    # ベッドの縁からこの距離までなら使える(部屋の真ん中は苗づくりに残す)
+
 # days: 作業する日数 / logs_per_day: 1 回の作業で使う丸太(1 本 = 長さ 3m・径 20cm ほど = 約 0.1m³)
 const STAGES := [
 	{"id": "foundation", "days": 2, "logs_per_day": 3},
@@ -132,6 +140,14 @@ func is_near(pos: Vector2) -> bool:
 # 完成した小屋の中にいるか(南のドアから歩いて入る)
 func is_inside(pos: Vector2) -> bool:
 	return is_complete() and covers(pos)
+
+# 中でストーブの前にいるか
+func is_at_stove(pos: Vector2) -> bool:
+	return is_inside(pos) and pos.distance_to(site + STOVE_OFFSET) <= STOVE_REACH
+
+# 中でベッドのそばにいるか
+func is_at_bed(pos: Vector2) -> bool:
+	return is_inside(pos) and Rect2(site + BED_OFFSET - BED_SIZE * 0.5, BED_SIZE).grow(BED_REACH).has_point(pos)
 
 # ドアの位置(南の壁の真ん中)
 func door_pos() -> Vector2:

@@ -7,6 +7,7 @@ const Forest = preload("res://logic/Forest.gd")
 const Garden = preload("res://logic/Garden.gd")
 const Cabin = preload("res://logic/Cabin.gd")
 const Seedlings = preload("res://logic/Seedlings.gd")
+const Kitchen = preload("res://logic/Kitchen.gd")
 
 signal changed
 
@@ -31,10 +32,12 @@ const GOODS := [
 	{"id": "logs", "species": "log", "form": "material", "amount": 5, "price": 1500},
 ]
 # 買い取り値(リンゴは 1 個あたり、野菜は 1kg あたりの ₽)。店頭の値段の半分くらい
-# seedling_ は小屋で育てた苗(1 鉢 = 1 区画ぶん)の買い取り値
+# seedling_ は小屋で育てた苗(1 鉢 = 1 区画ぶん)の買い取り値。
+# 保存食(Kitchen.RECIPES の id)は 1 瓶 / 1 個あたり。材料を生で売るよりおよそ 2 倍になるように置いた仮の数字
 const SELL_PRICES := {
 	"apple": 15, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
 	"seedling_tomato": 150, "seedling_cucumber": 120,
+	"jam": 75, "sauce": 150, "pickles": 35, "garlic_pickle": 120, "pirozhki": 12,
 }
 
 var money := INITIAL_MONEY
@@ -42,6 +45,7 @@ var forest: Forest  # GameWorld が設定する(木の種・苗木・リンゴ�
 var garden: Garden  # GameWorld が設定する(野菜の種・収穫物の持ち物は Garden にある)
 var cabin: Cabin    # GameWorld が設定する(丸太の持ち物は Cabin にある)
 var seedlings: Seedlings  # GameWorld が設定する(苗の持ち物は Seedlings にある)
+var kitchen: Kitchen  # GameWorld が設定する(保存食の持ち物は Kitchen にある)
 
 func is_near(pos: Vector2) -> bool:
 	return pos.distance_to(POS) <= REACH
@@ -79,6 +83,8 @@ func sell_all(item: String) -> int:
 	if item.begins_with("seedling_"):
 		pile = seedlings.ready
 		key = item.trim_prefix("seedling_")
+	elif Kitchen.RECIPES.has(item):
+		pile = kitchen.stock
 	var n := int(pile.get(key, 0))
 	if n <= 0 or not SELL_PRICES.has(item):
 		return 0

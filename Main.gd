@@ -23,6 +23,7 @@ const CROP_KEYS := {KEY_4: "radish", KEY_5: "carrot", KEY_6: "cucumber", KEY_7: 
 var _season_timer := 0.0
 var _fell_pending := {}      # Z を 1 回押して確認中の木(Forest.trees の要素)
 var _fell_deadline := 0.0    # いつまでにもう一度押せば伐れるか(秒)
+var _panel := "market"       # 右の画面に出しているもの: market(市場) / kitchen(ストーブ)
 
 func _ready() -> void:
 	# 本物のセーブのときだけ控えを取る(テストや確認用のセーブでは取らない)
@@ -64,6 +65,7 @@ func _setup_3d_only() -> void:
 	$Player.shadow_light = $Sun
 	$Player.update_shadow_distance()
 	$Cabin.set_player($Player)
+	$Cabin.set_kitchen(world.kitchen)
 
 func _process(delta: float) -> void:
 	# 季節と日付は現実の日付から。1 分に 1 回チェックすれば十分(開いたまま日付をまたいでも拾う)
@@ -187,7 +189,7 @@ func player_pos() -> Vector2:
 	return $Player.ground_pos()
 
 func _on_plant_tree(pos: Vector2) -> void:
-	if $HUD.is_shop_open():
+	if $HUD.is_shop_open() or $HUD.is_diary_open():
 		return
 	# 菜園の区画の上では、木ではなく野菜をまく
 	if world.land.plot_at(pos) != null:
@@ -211,7 +213,8 @@ func selected_name() -> String:
 	return world.forest.SPECIES[selected_species].name + "の" + FORM_NAMES[selected_form]
 
 # ── 小屋 ──────────────────────────────────────────────────
-# H: まだ場所がなければ足元に決める。決まっていれば今日の作業をする。完成していれば苗づくり
+# H: まだ場所がなければ足元に決める。決まっていれば今日の作業をする。
+# 完成していれば、ストーブの前なら台所、ベッドのそばなら日記、ほかは苗づくり
 func _cabin_action() -> void:
 	var c := world.cabin
 	var pos := player_pos()
@@ -219,7 +222,12 @@ func _cabin_action() -> void:
 		$HUD.show_message(CABIN_PLACE_MESSAGES[c.place(pos)], 5.0)
 		return
 	if c.is_complete():
-		_seedling_action(pos)
+		if c.is_at_stove(pos):
+			_open_kitchen()
+		elif c.is_at_bed(pos):
+			_sleep()
+		else:
+			_seedling_action(pos)
 		return
 	var s: Dictionary = c.current_stage()
 	match c.work(pos):
@@ -228,7 +236,7 @@ func _cabin_action() -> void:
 		"stage_done":
 			$HUD.show_message("%sができた(丸太 -%d本)。明日から%s" % [CABIN_STAGE_NAMES[s.id], s.logs_per_day, CABIN_STAGE_NAMES[c.current_stage().id]], 5.0)
 		"finished":
-			$HUD.show_message("小屋が建った。南のドアから入れる。窓辺で苗を育てられる(トマト [9] か きゅうり [6] を選んで H)", 8.0)
+			$HUD.show_message("小屋が建った。南のドアから入れる。窓辺で苗づくり(トマト [9] か きゅうり [6] を選んで H)、ストーブで料理、ベッドで日記", 8.0)
 		"far":
 			$HUD.show_message("小屋の場所まで行って作業する(%.0fm以内)" % c.REACH)
 		"inside":
@@ -257,6 +265,150 @@ func _seedling_action(pos: Vector2) -> void:
 			$HUD.show_message("窓辺はいっぱい(%d鉢)。今日の世話は済んだ" % sl.POTS)
 		"no_seed":
 			$HUD.show_message("%sがない(市場で買える)" % crop.seed_name)
+
+# ── ストーブ ───────────────────────────────────────────────
+func _open_kitchen() -> void:
+	_panel = "kitchen"
+	$Player.set_physics_process(false)  # 料理中は歩かない
+	$HUD.open_shop()
+
+# 「トマト 10kg」のような材料の文言
+func _amount_text(item: String, n: int) -> String:
+	return "%s %d%s" % [produce_name(item), n, produce_unit(item)]
+
+func kitchen_rows() -> Array:
+	var k := world.kitchen
+	var rows := []
+	for id in k.RECIPES:
+		var r: Dictionary = k.RECIPES[id]
+		rows.append({"id": "cook_" + id, "text": "仕込む: %s(%s → %d%s・%d日)持っている %d%s" % [
+			r.name, _amount_text(r.input, r.amount), r.output, r.unit, r.days, k.input_count(id), produce_unit(r.input),
+		], "column": 0})
+	if k.is_empty():
+		rows.append({"id": "pot_wait", "text": "鍋は空いている", "column": 1})
+	elif k.is_ready():
+		var r: Dictionary = k.RECIPES[k.pot.recipe]
+		rows.append({"id": "pot_collect", "text": "受け取る: %s %d%s" % [r.name, r.output, r.unit], "column": 1})
+	else:
+		rows.append({"id": "pot_wait", "text": "鍋: %s あと%d日" % [k.RECIPES[k.pot.recipe].name, k.days_left()], "column": 1})
+	rows.append({"id": "close", "text": "閉じる(H / Esc)", "column": 1})
+	return rows
+
+func _kitchen_action(id: String) -> void:
+	var k := world.kitchen
+	if id == "pot_collect":
+		if k.collect() == "collected":
+			var made: Dictionary = k.last_collected
+			var r: Dictionary = k.RECIPES[made.recipe]
+			$HUD.show_message("%sが%d%sできた(市場で1%s %d₽で売れる)" % [r.name, made.count, r.unit, r.unit, world.market.SELL_PRICES[made.recipe]], 5.0)
+	elif id.begins_with("cook_"):
+		var recipe := id.trim_prefix("cook_")
+		var r: Dictionary = k.RECIPES[recipe]
+		match k.start(recipe):
+			"started":
+				var split := "丸太を割って薪にした。" if k.last_split else ""
+				$HUD.show_message("%s%sを仕込んだ(%d日でできる)" % [split, r.name, r.days], 5.0)
+			"busy":
+				$HUD.show_message("鍋は使っている(受け取ってから次を仕込む)")
+			"no_input":
+				$HUD.show_message("%sが足りない(%d%s 必要)" % [produce_name(r.input), r.amount, produce_unit(r.input)])
+			"no_wood":
+				$HUD.show_message("薪がない(丸太1本で%d回分。市場で買うか、育った木を Z で伐る)" % k.LOG_FIRES, 5.0)
+	$HUD.refresh_shop()
+
+# HUD に出す、鍋の 1 行。鍋が空なら ""
+func kitchen_line() -> String:
+	var k := world.kitchen
+	if k.is_empty():
+		return ""
+	var recipe: String = k.RECIPES[k.pot.recipe].name
+	if k.is_ready():
+		return "鍋: %s できた(ストーブの前で H)" % recipe
+	return "鍋: %s あと%d日" % [recipe, k.days_left()]
+
+# HUD に出す、家具のそばでの案内。そばにいなければ ""
+func furniture_line() -> String:
+	var c := world.cabin
+	var pos := player_pos()
+	if c.is_at_stove(pos):
+		return "ストーブの前(H で料理)"
+	if c.is_at_bed(pos):
+		return "ベッドのそば(H で休んで日記を見る)"
+	return ""
+
+# ── ベッド ─────────────────────────────────────────────────
+# 現実の時間で進むゲームなので、寝ても時間は進まない。暗くなって、今日と明日のことを日記で見る
+func _sleep() -> void:
+	world.save_game()
+	$Player.set_physics_process(false)
+	$HUD.open_diary(diary_text())
+
+func _wake() -> void:
+	$HUD.close_diary()
+	$Player.set_physics_process(true)
+
+func diary_text() -> String:
+	var f := world.forest
+	var g := world.garden
+	var today: String = f.today()
+	var lines := PackedStringArray(["%d月%d日の日記" % [int(today.substr(5, 2)), int(today.substr(8, 2))], ""])
+	var todo := PackedStringArray()
+	if f.last_day == today and f.today_event != "":
+		todo.append(daily_message(f.today_event))
+	var now: Dictionary = g.today_counts()
+	if now.ripe > 0:
+		todo.append("収穫できる区画が %d ある" % now.ripe)
+	if now.dry > 0:
+		todo.append("まだ水をやっていない区画が %d ある" % now.dry)
+	if world.seedlings.needs_care():
+		todo.append("苗の世話がまだ")
+	lines.append("今日")
+	lines.append_array(_bullets(todo, "やり残したことはない"))
+	lines.append("")
+	lines.append("明日")
+	lines.append_array(_bullets(_tomorrow_lines(), "ゆっくりできそう"))
+	lines.append("")
+	lines.append("H / Esc / Enter で起きる")
+	return "\n".join(lines)
+
+func _tomorrow_lines() -> PackedStringArray:
+	var g := world.garden
+	var date: String = world.tomorrow_date()
+	var season: String = world.season_for_month(int(date.substr(5, 2)))
+	var plan: Dictionary = g.tomorrow_counts()
+	var lines := PackedStringArray()
+	var rain: bool = world.tomorrow_rain()
+	if rain:
+		lines.append("%sになりそう(水やりはいらない)" % ("雪" if season == "winter" else "雨"))
+	if g.frost_is_near(world.forest.today()):
+		lines.append("12月の霜が近い(ニンニク以外は早めに収穫を)")
+	if plan.ripe > 0:
+		lines.append("収穫できる区画: %d" % plan.ripe)
+	if plan.spoiling > 0:
+		lines.append("傷みはじめる区画: %d" % plan.spoiling)
+	var to_water: int = g.crops.size() - plan.ripe
+	if to_water > 0 and not rain:
+		lines.append("水やりがいる区画: %d" % to_water)
+	var apples: int = world.forest.fruiting_apples()
+	if apples > 0 and season == "autumn":
+		lines.append("リンゴを収穫できる木: %d本" % apples)
+	var pots: int = world.seedlings.grown_tomorrow()
+	if pots > 0:
+		lines.append("苗を受け取れる: %d鉢" % pots)
+	var k := world.kitchen
+	if k.ready_tomorrow():
+		lines.append("鍋の%sを受け取れる" % k.RECIPES[k.pot.recipe].name)
+	elif k.is_empty():
+		lines.append("鍋が空いている")
+	return lines
+
+static func _bullets(items: PackedStringArray, empty_text: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	for item in items:
+		out.append("・" + item)
+	if out.is_empty():
+		out.append("・" + empty_text)
+	return out
 
 # HUD に出す、小屋の 1 行
 func cabin_line() -> String:
@@ -378,14 +530,23 @@ func crop_seeds_line() -> String:
 		parts.append("%s %d" % [world.garden.CROPS[kind].name, world.garden.seeds[kind]])
 	return _rows(parts, 3)
 
-# HUD に出す、持っている収穫物(持っているものだけ。苗は seedlings_line)
+# HUD に出す、持っている収穫物(持っているものだけ。苗は seedlings_line、保存食は food_line)
 func produce_line() -> String:
 	var parts := PackedStringArray()
 	for item in world.market.SELL_PRICES:
 		var n := produce_count(item)
-		if n > 0 and not item.begins_with("seedling_"):
-			parts.append("%s %d%s" % [produce_name(item), n, produce_unit(item)])
+		if n > 0 and not item.begins_with("seedling_") and not world.kitchen.RECIPES.has(item):
+			parts.append(_amount_text(item, n))
 	return _rows(parts, 4) if not parts.is_empty() else "なし"
+
+# HUD に出す、持っている保存食(名前が長いので 2 つごとに折り返す)
+func food_line() -> String:
+	var parts := PackedStringArray()
+	for id in world.kitchen.RECIPES:
+		var n := produce_count(id)
+		if n > 0:
+			parts.append(_amount_text(id, n))
+	return _rows(parts, 2) if not parts.is_empty() else "なし"
 
 # HUD に出す、育った苗の 1 行
 func seedlings_line() -> String:
@@ -397,11 +558,15 @@ func produce_name(item: String) -> String:
 		return "リンゴ"
 	if item.begins_with("seedling_"):
 		return world.garden.CROPS[item.trim_prefix("seedling_")].name + "の苗"
+	if world.kitchen.RECIPES.has(item):
+		return world.kitchen.RECIPES[item].name
 	return world.garden.CROPS[item].name
 
 func produce_unit(item: String) -> String:
 	if item == "apple":
 		return "個"
+	if world.kitchen.RECIPES.has(item):
+		return world.kitchen.RECIPES[item].unit
 	return "鉢" if item.begins_with("seedling_") else "kg"
 
 func produce_count(item: String) -> int:
@@ -409,6 +574,8 @@ func produce_count(item: String) -> int:
 		return int(world.forest.produce.apple)
 	if item.begins_with("seedling_"):
 		return int(world.seedlings.ready[item.trim_prefix("seedling_")])
+	if world.kitchen.RECIPES.has(item):
+		return int(world.kitchen.stock[item])
 	return int(world.garden.produce[item])
 
 # ── 市場 ──────────────────────────────────────────────────
@@ -425,8 +592,20 @@ func good_name(g: Dictionary) -> String:
 		return "%sの苗木(樹齢%d年)" % [sp.name, int(sp.sapling_age)]
 	return "%sの種(%d粒・発芽率%d%%)" % [sp.name, g.amount, roundi(sp.germination * 100.0)]
 
-# 市場の画面に並べる行 [{id, text, column}]。column 0 = 買う列、1 = 売る列
+# 右の画面の見出し
+func shop_title() -> String:
+	return "ストーブ(クリックか 矢印キー + Enter で選ぶ)" if _panel == "kitchen" else "市場(クリックか 矢印キー + Enter で選ぶ)"
+
+# 右の画面の 2 行目
+func shop_header() -> String:
+	if _panel == "kitchen":
+		return "薪: %d回分   丸太: %d本(丸太1本で%d回分)" % [world.kitchen.firewood, int(world.cabin.materials.log), world.kitchen.LOG_FIRES]
+	return "所持金: %s₽" % $HUD._money_text(world.market.money)
+
+# 右の画面に並べる行 [{id, text, column}]。市場は column 0 = 買う列、1 = 売る列
 func shop_rows() -> Array:
+	if _panel == "kitchen":
+		return kitchen_rows()
 	var m := world.market
 	var rows := []
 	for g in m.GOODS:
@@ -448,6 +627,7 @@ func _toggle_shop() -> void:
 		var d := player_pos().distance_to(m.POS) - m.REACH
 		$HUD.show_message("市場は南の境界の外にある(あと%dm)" % ceili(d))
 		return
+	_panel = "market"
 	$Player.set_physics_process(false)  # 買い物中は歩かない
 	$HUD.open_shop()
 
@@ -459,6 +639,9 @@ func _on_shop_action(id: String) -> void:
 	var m := world.market
 	if id == "close":
 		_close_shop()
+		return
+	if _panel == "kitchen":
+		_kitchen_action(id)
 		return
 	if id.begins_with("sell_"):
 		var item := id.trim_prefix("sell_")
@@ -612,9 +795,14 @@ func _needs_fell_confirm(pos: Vector2) -> bool:
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
+	if $HUD.is_diary_open():
+		if event.keycode == KEY_H or event.keycode == KEY_ESCAPE or event.keycode == KEY_ENTER:
+			_wake()
+		return
 	if $HUD.is_shop_open():
-		# 買い物中は B / Esc で閉じるだけ(選ぶのは画面のボタン)
-		if event.keycode == KEY_B or event.keycode == KEY_ESCAPE:
+		# 開いているあいだは閉じるキーだけ(選ぶのは画面のボタン)。市場は B、ストーブは H でも閉じる
+		var close_key: int = KEY_H if _panel == "kitchen" else KEY_B
+		if event.keycode == close_key or event.keycode == KEY_ESCAPE:
 			_close_shop()
 		return
 	if CROP_KEYS.has(event.keycode):

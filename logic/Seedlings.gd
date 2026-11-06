@@ -60,6 +60,15 @@ func days_left() -> int:
 		best = mini(best, ceili(GROW_DAYS - growth_days(p)))
 	return 0 if pots.is_empty() else maxi(0, best)
 
+# 明日には受け取れる鉢の数(今育っているものも含む。日記用)
+func grown_tomorrow() -> int:
+	var n := 0
+	for p in pots:
+		var elapsed: int = forest.day_number() + 1 - int(p.sown_day)
+		if elapsed * DRY_GROWTH + int(p.water_days) * (1.0 - DRY_GROWTH) >= GROW_DAYS:
+			n += 1
+	return n
+
 # まだ今日世話をしていない鉢があるか
 func needs_care() -> bool:
 	for p in pots:
