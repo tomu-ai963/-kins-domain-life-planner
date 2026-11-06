@@ -2,7 +2,8 @@ extends Node3D
 
 # ── 訪ねてくる人の 3D 表示 ─────────────────────────────────────
 # 誰がいつ来るかは logic/Visitors.gd。ここは南の境界から歩いて来て、足元の近くで待ち、用が済むと帰る動きだけ。
-# 体は PlayerFigure3D を色違いで使い、帽子などを足す。小屋と池は回り込む。
+# 体は PlayerFigure3D を色違いで使い、帽子などを足す。小屋・池・木・プレイヤーは回り込む
+# (道は歩きだすときに決める。歩いている途中にプレイヤーが道に入ると、その場でよける)。
 # 待っているあいだは頭の上に印を出す(頼みごとは橙、話すだけなら白)。当たり判定はない
 const Visitors = preload("res://logic/Visitors.gd")
 const Look = preload("res://view/3d/Look.gd")
@@ -16,6 +17,10 @@ const SYNC_SECONDS := 1.0
 const GOAL_RADII := [2.5, 4.0, 6.0, 9.0]  # 足元からこの距離で、立てる場所を探す
 const GOAL_ANGLES := [0.0, 0.7, -0.7, 1.4, -1.4, 2.1, -2.1, PI]  # 北から順に試す(プレイヤーの北に立つと、顔がカメラのほうを向く)
 const OBSTACLE_MARGIN := 0.8     # 小屋と池をこれだけ離れて回り込む
+const TREE_MARGIN := 0.6         # 木の幹からこれだけ離れて回り込む
+const PLAYER_MARGIN := 1.0       # プレイヤーからこれだけ離れて回り込む(道を決めるとき)
+const AVOID_RADIUS := 0.9        # 歩いている途中、プレイヤーがこの距離に入るとよける
+const ROUTE_TURNS := 12          # 道を曲がる回数の上限(木が多いときのため)
 const MARK_Y := 2.2              # 印の高さ(頭に重ならないところ)
 const MARK_BOB := 0.08
 
@@ -114,9 +119,14 @@ func _is_free(p: Vector2) -> bool:
 			return false
 	return true
 
-# 回り込むもの(小屋と池)の範囲
+# 回り込むもの(小屋・池・木・プレイヤー)の範囲
 func _obstacles() -> Array:
 	var list := []
+	var player_pos: Vector2 = _player.ground_pos()
+	list.append(Rect2(player_pos - Vector2.ONE * PLAYER_MARGIN, Vector2.ONE * PLAYER_MARGIN * 2.0))
+	for t in visitors.forest.trees:
+		if visitors.forest.is_established(t):
+			list.append(Rect2(t.pos - Vector2.ONE * TREE_MARGIN, Vector2.ONE * TREE_MARGIN * 2.0))
 	var cabin = visitors.market.cabin
 	if cabin.site != null:
 		list.append(cabin.rect().grow(OBSTACLE_MARGIN))
@@ -126,11 +136,11 @@ func _obstacles() -> Array:
 		list.append(Rect2(pond - Vector2(r, r), Vector2(r, r) * 2.0))
 	return list
 
-# from から to まで、小屋と池を避ける道(通る点の並び。最後が to)
+# from から to まで、小屋・池・木・プレイヤーを避ける道(通る点の並び。最後が to)
 func route(from: Vector2, to: Vector2) -> Array:
 	var points := []
 	var at := from
-	for _i in range(4):
+	for _i in range(ROUTE_TURNS):
 		var corner = _detour(at, to)
 		if corner == null:
 			break
@@ -141,8 +151,12 @@ func route(from: Vector2, to: Vector2) -> Array:
 
 # a → b がふさがっていれば、回り込む角を返す。ふさがっていなければ null
 func _detour(a: Vector2, b: Vector2):
-	for r in _obstacles():
-		if not _crosses(a, b, r.grow(-0.05)):
+	# 近いものから順に見る(遠くの木を先に避けると、手前を通り抜けてしまう)
+	var list: Array = _obstacles()
+	list.sort_custom(func(p, q): return p.get_center().distance_to(a) < q.get_center().distance_to(a))
+	for r in list:
+		# 始まりや行き先が範囲の中なら、その範囲は避けようがない(そばに立っている木など)
+		if r.has_point(a) or r.has_point(b) or not _crosses(a, b, r.grow(-0.05)):
 			continue
 		var best = null
 		var best_len := INF
@@ -196,16 +210,39 @@ func _walk(delta: float) -> void:
 	_figure.moving = true
 	var left: float = WALK_SPEED * delta
 	while left > 0.0 and not _route_points.is_empty():
-		var to: Vector2 = _route_points[0] - _pos
+		# 行き先のすぐそばにプレイヤーが立っていると、よけ続けて着けない。
+		# 途中の角なら飛ばし、最後の行き先なら、近くまで来たところで着いたことにする
+		var point: Vector2 = _route_points[0]
+		if point.distance_to(_player.ground_pos()) < AVOID_RADIUS:
+			if _route_points.size() > 1:
+				_route_points.pop_front()
+				continue
+			if _pos.distance_to(point) <= AVOID_RADIUS * 2.0:
+				_route_points.clear()
+				break
+		var to: Vector2 = point - _pos
 		if to.length() <= left:
 			left -= to.length()
 			_pos = _route_points.pop_front()
 		else:
-			_pos += to.normalized() * left
-			_face(to, delta)
+			var dir: Vector2 = _avoid_player(to.normalized())
+			_pos += dir * left
+			_face(dir, delta)
 			left = 0.0
 	if _route_points.is_empty():
 		_reached()
+
+# プレイヤーが近くて、進む先にいるなら、横へよける向きを返す
+func _avoid_player(dir: Vector2) -> Vector2:
+	var to_player: Vector2 = _player.ground_pos() - _pos
+	if to_player.length() >= AVOID_RADIUS or to_player.length() < 0.001 or dir.dot(to_player) <= 0.0:
+		return dir
+	# 進む向きのうち、プレイヤーへ向かう分を消す。まっすぐ向かっていたら右へ
+	var toward: Vector2 = to_player.normalized()
+	var side: Vector2 = dir - toward * dir.dot(toward)
+	if side.length() < 0.1:
+		side = Vector2(-toward.y, toward.x)
+	return side.normalized()
 
 func _reached() -> void:
 	_figure.moving = false

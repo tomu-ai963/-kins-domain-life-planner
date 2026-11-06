@@ -777,6 +777,96 @@ func _test_visitor_view() -> void:
 	var edge_goal: Vector2 = view.goal_near(Vector2(0, 56))
 	_check(absf(edge_goal.y) <= 49.5, "プレイヤーが土地の外にいても、土地の中で待つ")
 
+	# プレイヤーをすり抜けない: 北で待っていて、南の入口へ帰るとき
+	var f = w.forest
+	var saved_trees: Array = f.trees.duplicate()
+	f.trees.clear()  # 前のテストの木で立つ場所が変わらないように
+	vs.visit = {"day": today, "who": "nina", "kind": "chat", "done": false, "line": 0}
+	player.global_position = Vector3(0, 0, 8)  # 入口の真北。まっすぐ帰ると体を通る
+	view.sync_visit()
+	walk.call("wait")
+	_check(view.ground_pos().y < main.player_pos().y and absf(view.ground_pos().x - main.player_pos().x) < 0.01, "前提: プレイヤーの真北で待っている")
+	vs.finish_chat()
+	view.sync_visit()
+	var closest := 99.0
+	for _i in range(400):
+		if view.state() == "away":
+			break
+		view.step(0.05)
+		closest = minf(closest, view.ground_pos().distance_to(main.player_pos()))
+	_check(view.state() == "away" and closest >= view.AVOID_RADIUS - 0.05, "帰るときプレイヤーをすり抜けない(いちばん近くて %.2fm)" % closest)
+
+	# 来るときも、プレイヤーをすり抜けない(プレイヤーの北へ回り込む)
+	vs.visit = {"day": today, "who": "nina", "kind": "chat", "done": false, "line": 0}
+	player.global_position = Vector3(0, 0, 30)  # 入口の真北
+	view.sync_visit()
+	closest = 99.0
+	for _i in range(400):
+		if view.state() == "wait":
+			break
+		view.step(0.05)
+		closest = minf(closest, view.ground_pos().distance_to(main.player_pos()))
+	_check(view.state() == "wait" and closest >= view.AVOID_RADIUS - 0.05, "来るときプレイヤーをすり抜けない(いちばん近くて %.2fm)" % closest)
+
+	# 歩いている途中にプレイヤーが道へ入っても、よけて進む
+	vs.finish_chat()
+	view.sync_visit()
+	view.step(0.2)
+	var ahead: Vector2 = view.ground_pos() + (view._route_points[0] - view.ground_pos()).normalized() * 1.5
+	player.global_position = Vector3(ahead.x, 0, ahead.y)
+	closest = 99.0
+	for _i in range(400):
+		if view.state() == "away":
+			break
+		view.step(0.05)
+		closest = minf(closest, view.ground_pos().distance_to(main.player_pos()))
+	_check(view.state() == "away", "道をふさがれても、よけて帰り着く")
+	_check(closest >= view.AVOID_RADIUS - 0.2, "途中で入ってきたプレイヤーをよける(いちばん近くて %.2fm)" % closest)
+
+	# 行き先にプレイヤーが立っていても、止まらない(周りを回り続けない)
+	vs.visit = {"day": today, "who": "nina", "kind": "chat", "done": false, "line": 0}
+	player.global_position = Vector3(0, 0, 20)
+	view.sync_visit()
+	var goal_spot: Vector2 = view._route_points[-1]
+	player.global_position = Vector3(goal_spot.x, 0, goal_spot.y)  # 待つはずの場所へ先回りする
+	for _i in range(400):
+		if view.state() == "wait":
+			break
+		view.step(0.05)
+	_check(view.state() == "wait" and view.can_talk(main.player_pos()), "待つ場所にプレイヤーが立っていても、そばで止まって話せる")
+	vs.finish_chat()
+	view.sync_visit()
+	player.global_position = Vector3(view.GATE.x, 0, view.GATE.y)  # 入口に立ちふさがる
+	for _i in range(400):
+		if view.state() == "away":
+			break
+		view.step(0.05)
+	_check(view.state() == "away", "入口にプレイヤーが立っていても帰れる")
+
+	# 木をすり抜けない
+	for z in [40.0, 30.0, 20.0]:
+		f.trees.append({"pos": Vector2(0, z), "species": "birch", "form": "sapling", "planted_at": f._now(), "start_age": 20.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	# 芽が出ていない種は避けない
+	f.trees.append({"pos": Vector2(0, 45), "species": "birch", "form": "seed", "planted_at": f._now(), "start_age": 0.0, "sprouts": false, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	player.global_position = Vector3(30, 0, 0)
+	var tree_pts: Array = view.route(view.GATE, Vector2(0, 10))
+	var hit_tree := false
+	at = view.GATE
+	for p in tree_pts:
+		var d: float = at.distance_to(p)
+		for i in range(int(d * 10.0) + 1):
+			var q: Vector2 = at.lerp(p, i / maxf(d * 10.0, 1.0))
+			for z in [40.0, 30.0, 20.0]:
+				if q.distance_to(Vector2(0, z)) < 0.5:
+					hit_tree = true
+		at = p
+	_check(not hit_tree and tree_pts.size() > 1, "幹の並びを回り込む(%d 点)" % tree_pts.size())
+	_check(view.route(view.GATE, Vector2(0, 47)) == [Vector2(0, 47)], "芽が出ていない種は避けない")
+	_check(not view._is_free(Vector2(0, 30.3)), "木のすぐそばには立たない")
+	f.trees.assign(saved_trees)
+	vs.visit = {"day": today}
+	view.sync_visit()
+
 	# 日記に明日来る人が出る
 	var tomorrow: int = today + 1
 	if vs.is_visit_day(tomorrow):
