@@ -632,7 +632,9 @@ func _test_furniture() -> void:
 	# ストーブの前: H で台所が開く(苗づくりにはならない)
 	player.global_position = Vector3(site.x + c.STOVE_OFFSET.x - 0.65, 0, site.y + c.STOVE_OFFSET.y)
 	_check(main.furniture_line().contains("ストーブ"), "ストーブの前で案内が出る")
-	_check(main.kitchen_line() == "" and _room_pieces(view, "CookPot").is_empty(), "はじめは鍋がない")
+	_check(main.kitchen_line() == "", "はじめは鍋の行が出ない")
+	_check(_room_pieces(view, "CookPot").size() == 1 and _room_pieces(view, "PotInside").size() == 1 and _room_pieces(view, "PotLid").is_empty(), "空でも鍋はストーブの上に見える(蓋なし)")
+	_check(view._steam_puffs.is_empty(), "空の鍋から湯気は出ない")
 	var fire: MeshInstance3D = _room_pieces(view, "StoveFire")[0]
 	_check(not fire.material_override.emission_enabled, "はじめは火が消えている")
 	var logs_before: int = int(c.materials.log)
@@ -647,7 +649,15 @@ func _test_furniture() -> void:
 	main._on_shop_action("cook_sauce")
 	_check(not k.is_empty() and k.pot.recipe == "sauce" and w.garden.produce.tomato == 0, "画面から仕込める")
 	_check(hud._message.contains("トマトソース") and hud._message.contains("割って"), "仕込んだ文言が出る")
-	_check(_room_pieces(view, "CookPot").size() == 1, "鍋がのる")
+	_check(_room_pieces(view, "CookPot").size() == 1 and _room_pieces(view, "PotLid").size() == 1 and _room_pieces(view, "PotInside").is_empty(), "仕込むと鍋に蓋がのる")
+	_check(view._steam_puffs.size() == view.STEAM_PUFFS, "仕込んでいるあいだは湯気が出る")
+	var puff: MeshInstance3D = view._steam_puffs[0]
+	var puff_y: float = puff.position.y
+	view._animate_steam(view.STEAM_SECONDS * 0.2)
+	_check(puff.position.y != puff_y and puff.scale.x > 0.0, "湯気が動く")
+	var pot_piece: MeshInstance3D = _room_pieces(view, "CookPot")[0]
+	var stove_x: float = c.STOVE_OFFSET.x
+	_check(is_equal_approx(pot_piece.position.x, stove_x) and pot_piece.position.y > view.STOVE_H, "鍋はストーブの上にある")
 	var fire2: MeshInstance3D = _room_pieces(view, "StoveFire")[0]
 	_check(fire2.material_override.emission_enabled, "火が見える")
 	_check(_room_pieces(view, "Firewood").size() == view.WOOD_PILES_MAX, "割った薪が積まれる")
@@ -662,10 +672,12 @@ func _test_furniture() -> void:
 	k.pot.start_day -= 1
 	k.changed.emit()
 	_check(main.kitchen_line().contains("できた"), "できると HUD で知らせる")
+	_check(_room_pieces(view, "PotFood").size() == 1 and _room_pieces(view, "PotLid").is_empty() and view._steam_puffs.is_empty(), "できると蓋が取れて中身が見え、湯気は止まる")
+	_check(not _room_pieces(view, "StoveFire")[0].material_override.emission_enabled, "できると火は落ちている")
 	main._open_kitchen()
 	_check(main.kitchen_rows().any(func(r): return r.id == "pot_collect" and r.text.contains("5瓶")), "受け取りの行が出る")
 	main._on_shop_action("pot_collect")
-	_check(k.stock.sauce == 5 and k.is_empty() and _room_pieces(view, "CookPot").is_empty(), "受け取ると鍋が空く")
+	_check(k.stock.sauce == 5 and k.is_empty() and _room_pieces(view, "PotInside").size() == 1 and _room_pieces(view, "PotFood").is_empty(), "受け取ると鍋が空く")
 	_check(_room_pieces(view, "Food").size() == 5, "できた瓶がテーブルに並ぶ")
 	_check(not _room_pieces(view, "StoveFire")[0].material_override.emission_enabled, "火が消える")
 	main._on_shop_action("close")
@@ -692,10 +704,33 @@ func _test_furniture() -> void:
 
 	# ベッド: 暗くなって日記が出る。時間は進まない
 	player.global_position = Vector3(site.x + c.BED_OFFSET.x, 0, site.y + c.BED_OFFSET.y + 0.73)
+	view._process(0.1)  # 小屋の中にいることを view が知る
 	_check(main.furniture_line().contains("ベッド"), "ベッドのそばで案内が出る")
 	var day_before: String = w.forest.today()
 	key.call(KEY_H)
 	_check(hud.is_diary_open() and not player.is_physics_processing(), "H で休むと日記が出て、歩かなくなる")
+	var stand_pos: Vector2 = player.ground_pos()
+	var body: Node3D = player.get_node("Body")
+	_check(player.is_lying() and body.position.length() < 0.5, "横になる動きが始まる(まだ立っている近く)")
+	_check(hud._diary.modulate.a == 0.0, "横になるあいだは、まだ暗くならない")
+	player._pose.custom_step(10.0)
+	hud._diary_fade.custom_step(10.0)
+	_check(is_equal_approx(hud._diary.modulate.a, 1.0), "横になったあと暗くなる")
+	var head: Node3D = player.get_node("Body/Figure/Hips/Upper/Head")
+	var pillow_x: float = site.x + c.BED_OFFSET.x - 0.65
+	var head_p: Vector3 = head.global_position
+	_check(absf(head_p.x - pillow_x) < 0.15 and absf(head_p.z - (site.y + c.BED_OFFSET.y)) < 0.1, "頭が枕の上にある(%.2f, %.2f)" % [head_p.x, head_p.z])
+	_check(head_p.y > view.FLOOR_Y + 0.39, "頭は敷布団より上(高さ %.2f)" % head_p.y)
+	var face_dir: Vector3 = -body.global_basis.z
+	_check(face_dir.dot(Vector3.UP) > 0.99, "顔が上を向いている")
+	var foot_x: float = view.lying_spot().x
+	_check(foot_x < site.x + c.BED_OFFSET.x + c.BED_SIZE.x * 0.5, "足はベッドからはみ出ない")
+	_check(player.ground_pos() == stand_pos, "足元の位置(当たり判定)は動かない")
+	view._cover_tween.custom_step(10.0)
+	var cover: MeshInstance3D = _room_pieces(view, "SleepCover")[0]
+	_check(cover.visible and cover.scale.is_equal_approx(view.COVER_SCALE), "掛け布団がかかる")
+	k.changed.emit()  # 寝ているあいだに作り直しても
+	_check(_room_pieces(view, "SleepCover")[0].visible, "作り直しても布団はかかったまま")
 	var text: String = hud._diary_label.text
 	_check(text.contains("の日記") and text.contains("今日") and text.contains("明日"), "日記に今日と明日がある")
 	_check(w.forest.today() == day_before, "寝ても日付は変わらない")
@@ -704,9 +739,25 @@ func _test_furniture() -> void:
 	_check(hud.is_diary_open(), "日記を開いているあいだ、ほかのキーは効かない")
 	key.call(KEY_H)
 	_check(not hud.is_diary_open() and player.is_physics_processing(), "H で起きる")
+	_check(not player.is_lying(), "起き上がる動きが始まる")
+	player._pose.custom_step(10.0)
+	view._cover_tween.custom_step(10.0)
+	_check(body.position.is_equal_approx(Vector3(0, view.FLOOR_Y, 0)) and absf((-body.global_basis.z).dot(Vector3.UP)) < 0.01, "立った姿勢に戻る")
+	_check(not _room_pieces(view, "SleepCover")[0].visible, "掛け布団が片づく")
 	key.call(KEY_H)
-	key.call(KEY_ESCAPE)
+	key.call(KEY_ESCAPE)  # 横になっている途中で起きても
 	_check(not hud.is_diary_open(), "Esc でも起きる")
+	player._pose.custom_step(10.0)
+	view._cover_tween.custom_step(10.0)
+	_check(body.position.is_equal_approx(Vector3(0, view.FLOOR_Y, 0)), "途中で起きても立った姿勢に戻る")
+	player.set_night(1.0)
+	key.call(KEY_H)
+	_check(not player.get_node("Body/Figure").holding_lantern, "夜に横になるとランタンを持たない")
+	key.call(KEY_H)
+	player._pose.custom_step(10.0)
+	view._cover_tween.custom_step(10.0)
+	_check(player.get_node("Body/Figure").holding_lantern, "起きるとランタンを持つ")
+	player.set_night(0.0)
 
 	# 日記の中身は今の状態に合わせて変わる
 	var g = w.garden

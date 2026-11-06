@@ -22,6 +22,10 @@ const INDOOR_CAM_DIST := 10.0
 const INDOOR_CAM_MAX := 14.0
 const STEP_SPEED := 1.5   # 床の高さまで体が上がる速さ(m/s)
 const WALK_LIMIT := 78.0  # 歩ける範囲(東西南北)。この外は丘(GroundView3D.HILL_START)で、体が地面に埋まる
+const LIE_SECONDS := 0.8     # ベッドに横になるのにかかる時間
+const GET_UP_SECONDS := 0.5  # 起き上がるのにかかる時間
+# 横になった体の向き: 頭が西、顔が上(体の +y が西、正面の -z が上)
+const LYING_BASIS := Basis(Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, -1, 0))
 
 @onready var _body: Node3D = $Body
 @onready var _figure: Node3D = $Body/Figure
@@ -34,6 +38,11 @@ var shadow_light: DirectionalLight3D  # Main が太陽を渡す
 var _indoors := false
 var _indoor_dist := INDOOR_CAM_DIST
 var _floor_y := 0.0
+var _night := 0.0
+var _lying := false       # ベッドに横になっている
+var _posing := false      # 横になる / 起き上がる動きの途中か、横になっている(体の位置と向きは _pose が動かす)
+var _pose: Tween
+var _stand_basis := Basis.IDENTITY  # 横になる前の体の向き
 
 func _ready() -> void:
 	_body.rotation.y = PI  # 始めはカメラのほうを向いて、顔が見えるように
@@ -53,7 +62,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	position.x = clampf(position.x, -WALK_LIMIT, WALK_LIMIT)
 	position.z = clampf(position.z, -WALK_LIMIT, WALK_LIMIT)
-	if dir != Vector3.ZERO:
+	if dir != Vector3.ZERO and not _posing:
 		# 進む向きに体を回す(-z が正面)
 		var target := atan2(-dir.x, -dir.z)
 		_body.rotation.y = lerp_angle(_body.rotation.y, target, minf(1.0, TURN_SPEED * delta))
@@ -61,7 +70,8 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	# 市場を開いている間(物理が止まる)や、壁に当たって進めないときは足を止める
 	_figure.moving = is_physics_processing() and get_real_velocity().length() > 0.1
-	_body.position.y = move_toward(_body.position.y, _floor_y if _indoors else 0.0, STEP_SPEED * delta)
+	if not _posing:
+		_body.position.y = move_toward(_body.position.y, _floor_y if _indoors else 0.0, STEP_SPEED * delta)
 	var goal := global_position + _cam_offset()
 	_camera.global_position = _camera.global_position.lerp(goal, 1.0 - exp(-CAM_FOLLOW * delta))
 	_camera.look_at(_camera.global_position - _cam_offset())
@@ -84,6 +94,34 @@ func set_indoors(indoors: bool, floor_y := 0.0) -> void:
 	_indoors = indoors
 	_floor_y = floor_y
 	update_shadow_distance()
+
+func is_lying() -> bool:
+	return _lying
+
+# ベッドに横になる。spot は足の裏の位置(世界の座標)。動くのは見た目の体だけで、足元の位置(当たり判定)は変わらない
+func lie_down(spot: Vector3) -> void:
+	_lying = true
+	_posing = true
+	_stand_basis = _body.basis
+	_apply_lantern()
+	_move_pose(spot - global_position, LYING_BASIS, LIE_SECONDS)
+
+# 起き上がる。動きの途中でも歩きはじめられる(体があとから追いつく)
+func get_up() -> void:
+	_lying = false
+	_move_pose(Vector3(0.0, _floor_y if _indoors else 0.0, 0.0), _stand_basis, GET_UP_SECONDS)
+	_pose.finished.connect(_on_got_up)
+
+func _on_got_up() -> void:
+	_posing = false
+	_apply_lantern()
+
+func _move_pose(offset: Vector3, basis_to: Basis, seconds: float) -> void:
+	if _pose != null:
+		_pose.kill()
+	_pose = create_tween().set_parallel().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_pose.tween_property(_body, "position", offset, seconds)
+	_pose.tween_property(_body, "quaternion", basis_to.get_rotation_quaternion(), seconds)
 
 func _zoom(factor: float) -> void:
 	if _indoors:
@@ -110,10 +148,16 @@ func update_shadow_distance() -> void:
 
 # 暗くなるとランタンをともす(0 = 昼、1 = 夜)
 func set_night(amount: float) -> void:
-	_lantern.visible = amount > 0.0
-	_figure.holding_lantern = amount > 0.0
+	_night = amount
+	_apply_lantern()
 	_lantern_light.visible = amount > 0.0
 	_lantern_light.light_energy = LANTERN_ENERGY * amount
+
+# 横になっているあいだはランタンを手に持たない
+func _apply_lantern() -> void:
+	var holding := _night > 0.0 and not _posing
+	_lantern.visible = holding
+	_figure.holding_lantern = holding
 
 # 足元の位置(m)。ロジックの座標 Vector2(x, y) は 3D の (x, z)
 func ground_pos() -> Vector2:

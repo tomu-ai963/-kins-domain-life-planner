@@ -31,6 +31,15 @@ const STOVE_H := 0.85             # ストーブの高さ(m)
 const FIRE_GLOW := 2.5            # 仕込んでいるあいだの火の明るさ
 const JARS_SHOWN := 8             # テーブルに並べる保存食の数(多くても机に収まるように)
 const WOOD_PILES_MAX := 4         # 薪の山の段の数
+const STEAM_PUFFS := 3            # 仕込んでいるあいだの湯気の玉の数
+const STEAM_SECONDS := 1.6        # 湯気の玉が 1 つ昇って消えるまでの時間
+const STEAM_RISE := 0.55          # 湯気の玉が昇る高さ(m)
+const STEAM_SIZE := 0.10          # 湯気の玉の大きさ(m)
+# 横になったときの足の裏の位置(小屋の中心から。頭が枕にのる)。高さは床の上
+const LYING_OFFSET := Vector3(-0.14, 0.49, -0.95)
+const COVER_POS := Vector3(-0.60, 0.52, -0.95)   # 掛け布団のふくらみ(床の上)
+const COVER_SCALE := Vector3(1.25, 0.4, 0.84)
+const COVER_SECONDS := 0.3
 const FOOD_COLORS := {
 	"jam": Color(0.70, 0.30, 0.20), "sauce": Color(0.78, 0.16, 0.12), "pickles": Color(0.42, 0.56, 0.26),
 	"garlic_pickle": Color(0.90, 0.86, 0.68), "pirozhki": Color(0.76, 0.54, 0.26),
@@ -49,9 +58,18 @@ var _bed := Look.mat(Color(0.92, 0.88, 0.78))
 var _blanket := Look.mat(Color(0.72, 0.30, 0.24))
 var _stove := Look.mat(Color(0.22, 0.22, 0.24))
 var _fire := Look.mat(Color(0.30, 0.12, 0.08))
-var _cook_pot := Look.mat(Color(0.46, 0.46, 0.50))
+var _cook_pot := Look.mat(Color(0.82, 0.46, 0.24))  # 銅の鍋。黒いストーブの上で目立つように
+var _pot_inside := Look.mat(Color(0.20, 0.13, 0.10))
+var _steam := Look.mat(Color(0.96, 0.96, 0.92), true)
 var _firewood := Look.mat(Color(0.66, 0.48, 0.30))
 var _food_mats := {}
+var _cylinder: CylinderMesh
+var _steam_puffs := []        # 湯気の玉(仕込んでいるあいだだけ)
+var _steam_base := Vector3.ZERO
+var _steam_time := 0.0
+var _sleeping := false        # ベッドで横になっている
+var _sleep_cover: MeshInstance3D
+var _cover_tween: Tween
 var _rug := Look.mat(Color(0.60, 0.38, 0.30))
 var _lamp := Look.mat(Color(1.0, 0.78, 0.45))
 var seedlings: Seedlings
@@ -92,7 +110,39 @@ func set_kitchen(k: Kitchen) -> void:
 	kitchen.changed.connect(_rebuild)
 	_rebuild()
 
+# 横になるときの足の裏の位置(世界の座標)
+func lying_spot() -> Vector3:
+	return Look.at(cabin.site) + LYING_OFFSET + Vector3(0, FLOOR_Y, 0)
+
+# 横になると掛け布団がかかり、起きるとたたまれる
+func set_sleeping(on: bool, delay := 0.0) -> void:
+	_sleeping = on
+	if _sleep_cover == null:
+		return
+	if _cover_tween != null:
+		_cover_tween.kill()
+	_sleep_cover.visible = true
+	_cover_tween = create_tween()
+	var flat := Vector3(COVER_SCALE.x, 0.01, COVER_SCALE.z)
+	if on:
+		_sleep_cover.scale = flat
+		_cover_tween.tween_property(_sleep_cover, "scale", COVER_SCALE, COVER_SECONDS).set_delay(delay)
+	else:
+		_cover_tween.tween_property(_sleep_cover, "scale", flat, COVER_SECONDS * 0.5)
+		_cover_tween.tween_callback(_sleep_cover.hide)
+
+func _animate_steam(delta: float) -> void:
+	if _steam_puffs.is_empty():
+		return
+	_steam_time = fposmod(_steam_time + delta, STEAM_SECONDS)
+	for i in range(_steam_puffs.size()):
+		var t: float = fposmod(_steam_time / STEAM_SECONDS + float(i) / _steam_puffs.size(), 1.0)
+		var puff: MeshInstance3D = _steam_puffs[i]
+		puff.position = _steam_base + Vector3(sin(t * TAU + i) * 0.03, t * STEAM_RISE, 0.0)
+		puff.scale = Vector3.ONE * STEAM_SIZE * sin(t * PI)
+
 func _process(delta: float) -> void:
+	_animate_steam(delta)
 	if _player == null or cabin == null or cabin.site == null:
 		return
 	var pos: Vector2 = _player.ground_pos()
@@ -134,8 +184,10 @@ func _rebuild() -> void:
 	Look.clear_children(self)
 	_lamp_light = null
 	_door_hinge = null
+	_sleep_cover = null
 	_cut_pieces.clear()
 	_inside_pieces.clear()
+	_steam_puffs.clear()
 	_rebuild_pieces()
 	_apply_night()
 	_apply_inside()
@@ -191,6 +243,11 @@ func _interior(spot: Node3D) -> void:
 	_piece(room, _bed, Vector3(bed.x, 0.34, bed.y), Vector3(1.8, 0.1, 0.75))
 	_piece(room, _blanket, Vector3(bed.x + 0.3, 0.41, bed.y), Vector3(1.2, 0.06, 0.78))
 	_piece(room, _bed, Vector3(bed.x - 0.65, 0.43, bed.y), Vector3(0.35, 0.1, 0.5))
+	# 横になっているあいだの掛け布団のふくらみ
+	_sleep_cover = Look.mesh_node(_ball, _blanket, COVER_POS, COVER_SCALE)
+	_sleep_cover.name = "SleepCover"
+	_sleep_cover.visible = _sleeping
+	room.add_child(_sleep_cover)
 	_stove_pieces(room)
 	# テーブル(天板と脚 4 本)と腰掛け
 	_piece(room, _rafter, Vector3(TABLE_POS.x, 0.72, TABLE_POS.y), Vector3(TABLE_SIZE.x, 0.05, TABLE_SIZE.y))
@@ -217,25 +274,61 @@ func _interior(spot: Node3D) -> void:
 	for sign_x in [-1.0, 1.0]:
 		_inside_pieces.append(_piece(room, _wall, Vector3(sign_x * (DOOR_W + side) * 0.5, 0.2, d * 0.5), Vector3(side, 0.4, WALL_T)))
 
-# ストーブと煙突・火の口。仕込んでいるあいだは火が見えて鍋がのる。割った薪は西の脇に積む
+# ストーブと煙突(奥)・火の口・銅の鍋(手前)。割った薪は西の脇に積む。
+# 鍋の様子: 空 = 蓋なしで中が暗い / 仕込み中 = 蓋と湯気、火が見える / できあがり = 蓋なしで中身が見える
 func _stove_pieces(room: Node3D) -> void:
 	var s: Vector2 = Cabin.STOVE_OFFSET
 	var size: Vector2 = Cabin.STOVE_SIZE
 	_piece(room, _stove, Vector3(s.x, STOVE_H * 0.5, s.y), Vector3(size.x, STOVE_H, size.y))
-	_piece(room, _stove, Vector3(s.x, 1.5, s.y), Vector3(0.14, 1.4, 0.14))
-	var cooking: bool = kitchen != null and not kitchen.is_empty()
+	_piece(room, _stove, Vector3(s.x, 1.5, s.y - size.y * 0.5 + 0.1), Vector3(0.14, 1.4, 0.14))
+	var has_pot: bool = kitchen != null and not kitchen.is_empty()
+	var ready: bool = has_pot and kitchen.is_ready()
+	var cooking: bool = has_pot and not ready
 	_fire.emission_enabled = cooking
 	_fire.emission = Color(1.0, 0.45, 0.12)
 	_fire.emission_energy_multiplier = FIRE_GLOW
 	_piece(room, _fire, Vector3(s.x, 0.25, s.y + size.y * 0.5 + 0.005), Vector3(0.34, 0.2, 0.02)).name = "StoveFire"
-	if cooking:
-		_piece(room, _cook_pot, Vector3(s.x, STOVE_H + 0.1, s.y), Vector3(0.32, 0.2, 0.32)).name = "CookPot"
-		_piece(room, _stove, Vector3(s.x, STOVE_H + 0.21, s.y), Vector3(0.34, 0.03, 0.34))
+	_stove_pot(room, Vector3(s.x, STOVE_H, s.y + 0.1), cooking, kitchen.pot.recipe if ready else "")
 	if kitchen == null or kitchen.firewood <= 0:
 		return
 	var layers: int = mini(ceili(kitchen.firewood * WOOD_PILES_MAX / float(Kitchen.LOG_FIRES)), WOOD_PILES_MAX)
 	for i in range(layers):
 		_piece(room, _firewood, Vector3(s.x - 0.55, 0.05 + i * 0.09, s.y - 0.25), Vector3(0.28, 0.08, 0.18)).name = "Firewood"
+
+# 鍋: base は底の中心。cooking なら蓋と湯気、food(料理の id)があれば中身を見せる
+func _stove_pot(room: Node3D, base: Vector3, cooking: bool, food: String) -> void:
+	const R := 0.16   # 鍋の半径
+	const H := 0.2    # 鍋の高さ
+	var top: Vector3 = base + Vector3(0, H, 0)
+	_round(room, _cook_pot, base + Vector3(0, H * 0.5, 0), Vector3(R * 2.0, H, R * 2.0)).name = "CookPot"
+	for side in [-1.0, 1.0]:
+		_piece(room, _cook_pot, base + Vector3(side * (R + 0.03), H * 0.7, 0), Vector3(0.07, 0.03, 0.05))
+	if cooking:
+		_round(room, _stove, top + Vector3(0, 0.012, 0), Vector3(R * 2.1, 0.025, R * 2.1)).name = "PotLid"
+		room.add_child(Look.mesh_node(_ball, _cook_pot, top + Vector3(0, 0.045, 0), Vector3.ONE * 0.05))
+		_steam_base = top + Vector3(0, 0.05, 0)
+		for _i in range(STEAM_PUFFS):
+			var puff := Look.mesh_node(_ball, _steam, _steam_base, Vector3.ONE * 0.001)
+			puff.name = "PotSteam"
+			puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			room.add_child(puff)
+			_steam_puffs.append(puff)
+		_animate_steam(0.0)
+		return
+	var inside: Material = _food_mat(food) if food != "" else _pot_inside
+	_round(room, inside, top + Vector3(0, 0.003, 0), Vector3(R * 1.7, 0.006, R * 1.7)).name = "PotFood" if food != "" else "PotInside"
+
+func _round(parent: Node3D, m: Material, pos: Vector3, scl: Vector3) -> MeshInstance3D:
+	if _cylinder == null:
+		_cylinder = CylinderMesh.new()
+		_cylinder.top_radius = 0.5
+		_cylinder.bottom_radius = 0.5
+		_cylinder.height = 1.0
+		_cylinder.radial_segments = 20
+		_cylinder.rings = 1
+	var mi := Look.mesh_node(_cylinder, m, pos, scl)
+	parent.add_child(mi)
+	return mi
 
 # できた保存食をテーブルに並べる(瓶は蓋つき、ピロシキは平たく)。JARS_SHOWN まで
 func _food_on_table(room: Node3D) -> void:

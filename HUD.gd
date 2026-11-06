@@ -130,7 +130,7 @@ func refresh_shop() -> void:
 # ── 日記(ベッドで休む) ─────────────────────────────────────
 func _build_diary() -> void:
 	_diary = ColorRect.new()
-	_diary.color = Color(0.03, 0.03, 0.07, 0.93)
+	_diary.color = Color(0.03, 0.03, 0.07, 0.8)  # 眠っている姿がうっすら見える暗さ
 	_diary.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_diary.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_diary.visible = false
@@ -145,14 +145,15 @@ func _build_diary() -> void:
 func is_diary_open() -> bool:
 	return _diary != null and _diary.visible
 
-func open_diary(text: String) -> void:
+# delay 秒たってから暗くなる(横になる動きを見せるため)
+func open_diary(text: String, delay := 0.0) -> void:
 	_diary_label.text = text
 	_diary.visible = true
 	_diary.modulate.a = 0.0
 	if _diary_fade != null:
 		_diary_fade.kill()
 	_diary_fade = create_tween()
-	_diary_fade.tween_property(_diary, "modulate:a", 1.0, DIARY_FADE_SECONDS)
+	_diary_fade.tween_property(_diary, "modulate:a", 1.0, DIARY_FADE_SECONDS).set_delay(delay)
 
 func close_diary() -> void:
 	if _diary_fade != null:

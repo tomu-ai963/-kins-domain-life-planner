@@ -337,15 +337,23 @@ func furniture_line() -> String:
 	return ""
 
 # ── ベッド ─────────────────────────────────────────────────
-# 現実の時間で進むゲームなので、寝ても時間は進まない。暗くなって、今日と明日のことを日記で見る
+# 現実の時間で進むゲームなので、寝ても時間は進まない。横になってから暗くなり、今日と明日のことを日記で見る
 func _sleep() -> void:
 	world.save_game()
 	$Player.set_physics_process(false)
-	$HUD.open_diary(diary_text())
+	var delay := 0.0
+	if $Player.has_method("lie_down"):  # 3D だけ
+		delay = $Player.LIE_SECONDS
+		$Player.lie_down($Cabin.lying_spot())
+		$Cabin.set_sleeping(true, delay * 0.7)
+	$HUD.open_diary(diary_text(), delay + 0.5)
 
 func _wake() -> void:
 	$HUD.close_diary()
 	$Player.set_physics_process(true)
+	if $Player.has_method("get_up"):
+		$Player.get_up()
+		$Cabin.set_sleeping(false)
 
 func diary_text() -> String:
 	var f := world.forest
