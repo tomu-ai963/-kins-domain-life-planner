@@ -17,6 +17,8 @@ var _passed := 0
 func _initialize() -> void:
 	_test_schedule()
 	_test_nothing_to_give()
+	_test_stuck_detection()
+	_test_help()
 	_test_request_contents()
 	_test_likes()
 	_test_rewards_by_season()
@@ -91,14 +93,129 @@ func _next_quiet(days: Array) -> int:
 func _test_nothing_to_give() -> void:
 	print("渡せるものがない日")
 	var w := _world()
-	w.market.money = 20
+	w.market.money = 2000  # 種は買えるので、手詰まりではない
 	for d in range(20000, 20060):
 		if Visitors.is_visit_day(d):
 			var v: Dictionary = w.visitors._generate(d)
 			if v.kind != "chat":
-				_check(false, "%d 日: 何も持っていないのに頼まれた" % d)
+				_check(false, "%d 日: 何も持っていないのに %s になった" % [d, v.kind])
 				return
-	_check(true, "何も持っていなければ、いつも話すだけ")
+	_check(true, "何も持っていなくても、お金があれば話すだけ(種は買える)")
+
+# 手詰まりの世界: お金が種より少なく、種も畑も売れるものもない
+func _stuck_world(season := "autumn") -> GameWorld:
+	var w := _world(season)
+	w.market.money = 20
+	return w
+
+func _test_stuck_detection() -> void:
+	print("手詰まりの判定")
+	var w := _stuck_world()
+	var vs := w.visitors
+	_check(vs.is_stuck(), "お金 20₽・種なし・畑が空・売るものなしは手詰まり")
+
+	# 手段が 1 つでもあれば手詰まりではない
+	w.market.money = 40
+	_check(not vs.is_stuck(), "一番安い種(40₽)を買えるなら手詰まりではない")
+	w.market.money = 39
+	_check(vs.is_stuck(), "39₽ なら手詰まり")
+	w.garden.seeds.radish = 1
+	_check(not vs.is_stuck(), "野菜の種があれば手詰まりではない")
+	w.garden.seeds.radish = 0
+	w.garden.crops.append({"pos": Vector2(1.5, 1.5), "kind": "radish", "sown_day": w.garden.day_number(), "water_days": 0, "last_watered": "", "head": 0.0})
+	_check(not vs.is_stuck(), "畑に野菜があれば手詰まりではない")
+	w.garden.crops.clear()
+	for item in ["radish", "apple", "sauce"]:
+		w.market.pile_of(item)[item] = 1
+		_check(not vs.is_stuck(), "%s を持っていれば売れるので手詰まりではない" % item)
+		w.market.pile_of(item)[item] = 0
+	w.seedlings.ready.tomato = 1
+	_check(not vs.is_stuck(), "育った苗があれば売れるので手詰まりではない")
+	w.seedlings.ready.tomato = 0
+	w.seedlings.pots.append({"kind": "tomato", "sown_day": w.forest.day_number(), "water_days": 1, "last_watered": w.forest.today()})
+	_check(not vs.is_stuck(), "鉢に苗があれば手詰まりではない")
+	w.seedlings.pots.clear()
+	w.kitchen.pot = {"recipe": "jam", "start_day": w.forest.day_number()}
+	_check(not vs.is_stuck(), "鍋に中身があれば手詰まりではない")
+	w.kitchen.pot = {}
+
+	# リンゴは実る季節だけ当てになる
+	w.forest.trees.append({"pos": Vector2(1, 1), "species": "apple", "form": "sapling", "planted_at": w.forest._now(), "start_age": 8.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	w.forest.season = "autumn"
+	_check(not vs.is_stuck(), "秋に実るリンゴがあれば手詰まりではない")
+	w.forest.season = "spring"
+	_check(vs.is_stuck(), "春はリンゴを当てにできないので手詰まり")
+	# 丸太や木の種は売れないので、数えない
+	w.cabin.materials.log = 50
+	w.forest.seeds.birch = 50
+	_check(vs.is_stuck(), "丸太や木の種があっても、売れないので手詰まり")
+
+func _test_help() -> void:
+	print("手詰まりのときは分けてくれる")
+	var w := _stuck_world("autumn")
+	var vs := w.visitors
+	var d := _visit_day(w)
+	var v: Dictionary = vs._generate(d)
+	_check(v.kind == "help", "手詰まりなら、来た人が分けてくれる")
+	_check(v.reward.type == "crop_seed" and v.reward.kind == "radish" and v.reward.count == Visitors.HELP_SEEDS, "秋は一番安いラディッシュの種を 3 つ")
+	var quiet: Dictionary = vs._generate(_quiet_day(w))
+	_check(not quiet.has("who"), "来ない日は助けに来ない(次の訪問を待つ)")
+
+	# 季節ごとに、今まけるもの
+	for season in ["spring", "summer", "autumn"]:
+		var ws := _stuck_world(season)
+		var r: Dictionary = ws.visitors._help_reward()
+		var crop: Dictionary = Garden.CROPS[r.kind]
+		_check(r.type == "crop_seed" and season in crop.seasons and not crop.get("seedling_only", false), "%s は今まける種(%s)" % [season, r.kind])
+	var winter: Dictionary = _stuck_world("winter").visitors._help_reward()
+	_check(winter.type == "money" and winter.amount == Visitors.HELP_MONEY, "冬はまける種がないのでお金")
+	_check(Visitors.HELP_MONEY >= w.market.good("radish_seed").price * Visitors.HELP_SEEDS, "冬のお金で、春に同じだけの種を買える")
+
+	# 受け取ると、手詰まりでなくなる
+	vs.visit = v.duplicate(true)
+	vs.visit.day = w.forest.day_number()
+	_check(vs.has_help() and not vs.has_request() and vs.give() == "none", "分けてくれる日は、頼みごとではない")
+	_check(vs.receive_help() == "received" and w.garden.seeds.radish == Visitors.HELP_SEEDS, "受け取ると種が増える")
+	_check(not vs.is_here() and vs.receive_help() == "none", "受け取ると帰る。二度はもらえない")
+	_check(not vs.is_stuck(), "受け取ると手詰まりでなくなる")
+	var next_kind: String = vs._generate(d).kind
+	_check(next_kind != "help", "手詰まりでなければ、もう分けてくれない")
+
+	# 今日のうちに手詰まりになったとき
+	var w2 := _world()
+	w2.market.money = 2000
+	var vs2 := w2.visitors
+	vs2.visit = {"day": w2.forest.day_number(), "who": "nina", "kind": "chat", "done": false, "line": 0}
+	vs2.check_today()
+	_check(vs2.visit.kind == "chat", "手詰まりでなければ、話すだけのまま")
+	w2.market.money = 10
+	vs2.check_today()
+	_check(vs2.has_help(), "今日のうちに手詰まりになれば、分けてくれる")
+	var w3 := _stuck_world()
+	w3.visitors.visit = {"day": w3.forest.day_number(), "who": "nina", "kind": "chat", "done": true, "line": 0}
+	w3.visitors.check_today()
+	_check(w3.visitors.visit.kind == "chat" and not w3.visitors.is_here(), "もう帰った人は戻ってこない")
+
+	# セーブしても受け取れる(JSON で数が小数になっても)
+	var w4 := _stuck_world()
+	w4.visitors.visit = {"day": w4.forest.day_number(), "who": "fyodor", "kind": "help", "reward": {"type": "crop_seed", "kind": "radish", "count": 3}, "done": false, "line": 0}
+	w4.save_game()
+	var w5 := GameWorld.new()
+	w5.save_path = TEST_SAVE
+	w5.load_game()
+	_check(w5.visitors.has_help() and w5.visitors.receive_help() == "received" and w5.garden.seeds.radish == 3, "読み直しても受け取れる")
+
+func _visit_day(w: GameWorld) -> int:
+	var d: int = w.forest.day_number()
+	while not Visitors.is_visit_day(d):
+		d += 1
+	return d
+
+func _quiet_day(w: GameWorld) -> int:
+	var d: int = w.forest.day_number()
+	while Visitors.is_visit_day(d):
+		d += 1
+	return d
 
 func _test_request_contents() -> void:
 	print("頼みごとの中身")

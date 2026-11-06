@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_not_relevant_any_more()
 	_test_one_at_a_time()
 	_test_current_save_shape()
+	_test_stuck()
 	_test_cabin_hints()
 	_test_season_and_pond()
 	_test_people()
@@ -208,6 +209,39 @@ func _test_current_save_shape() -> void:
 	_check(not ("walk" in shown or "plant" in shown or "plot" in shown or "sow" in shown), "済んでいることのヒントは出ない: %s" % str(shown))
 	_check(shown.size() >= 2 and shown[0] == "broke", "最初はお金と種が足りないときのヒント: %s" % str(shown))
 	_check("cabin_logs" in shown, "丸太の集め方も出る: %s" % str(shown))
+
+func _test_stuck() -> void:
+	print("手詰まりのとき")
+	var w := _world()
+	var g := w.guide
+	g.has_people = true
+	g.seen = ["walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell"]
+	_add_tree(w)
+	w.land.plots.append(Vector2(1.5, 1.5))
+	w.market.money = 20
+	_check(w.visitors.is_stuck(), "前提: 手詰まり")
+	_check(_tick(w) == "stuck", "手詰まりなら、訪問者に話すことを案内する")
+	_check(not g._wants("broke"), "手詰まりなら「収穫して売ろう」は出さない")
+	w.garden.seeds.radish = 3
+	_tick(w)
+	_check("stuck" in g.seen, "種が手に入ると消える")
+	# 畑に野菜があるときは「収穫して売ろう」
+	var w2 := _world()
+	var g2 := w2.guide
+	g2.has_people = true
+	g2.seen = ["walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell"]
+	_add_tree(w2)
+	w2.land.plots.append(Vector2(1.5, 1.5))
+	_add_crop(w2, 0, 1)
+	w2.market.money = 20
+	_check(_tick(w2) == "broke" and not w2.visitors.is_stuck(), "畑に野菜があれば、収穫して売ることを案内する")
+	# 2D には訪問者がいないので案内しない
+	var w3 := _world()
+	w3.guide.seen = ["walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell"]
+	_add_tree(w3)
+	w3.land.plots.append(Vector2(1.5, 1.5))
+	w3.market.money = 20
+	_check(_tick(w3) != "stuck", "2D では訪問者の案内を出さない")
 
 func _test_cabin_hints() -> void:
 	print("小屋")

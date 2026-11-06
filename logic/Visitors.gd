@@ -4,6 +4,7 @@ extends RefCounted
 # 2〜3 日に 1 人、近所の人が来る。来る日と人は日付で決まる(開き直しても変わらない)。
 # 渡せるものがあれば頼みごとをして、渡すと市場より少し高いお金か、種や苗をくれる(物々交換)。
 # 渡せるものがなければ話すだけの日になる。頼みごとは断ってもよく、その日が終わると帰る(罰はない)。
+# 収入の手段が尽きているとき(is_stuck)だけは、種を少し分けてくれる(冬はまける種がないのでお金)。
 # 今日の中身は最初に決めた時点で保存する(収穫や売買で中身が変わらないように)。
 # 文言は Main、見た目は view/ が決める
 const Forest = preload("res://logic/Forest.gd")
@@ -20,6 +21,8 @@ const CHAT_CHANCE := 0.3          # 渡せるものがあっても、話すだ�
 const BONUS := 1.3                # 市場の買い取り値に対するお礼の倍率
 const MONEY_ROUND := 10           # お金のお礼はこの単位に切り上げる
 const SEEDLING_SEASONS := ["spring", "summer"]  # 苗をお礼にくれる季節(植えられる季節)
+const HELP_SEEDS := 3             # 手詰まりのときに分けてくれる種(区画の数)
+const HELP_MONEY := 200           # まける種がない冬に分けてくれるお金。春に種を買える額
 
 # likes: 頼みたいもの(先頭ほど頼みやすい)。なければ、渡せるものの中から頼む
 const CAST := {
@@ -40,8 +43,9 @@ var forest: Forest      # GameWorld が設定する
 var garden: Garden
 var seedlings: Seedlings
 var market: Market
+var kitchen = null      # GameWorld が設定する(鍋の中身を見る)
 
-var visit := {}         # 今日の訪問 {day, who, kind: request/chat, item, amount, reward: {...}, done: bool, line: int}。来ない日は who がない
+var visit := {}         # 今日の訪問 {day, who, kind: request/chat/help, item, amount, reward: {...}, done: bool, line: int}。来ない日は who がない
 var last_reward := {}   # 直前にもらったお礼(文言用)
 
 static func is_visit_day(day: int) -> bool:
@@ -56,11 +60,76 @@ static func who_on(day: int) -> String:
 func check_today() -> bool:
 	var day: int = forest.day_number()
 	if int(visit.get("day", -1)) == day:
+		# 話すだけの予定だった人も、手詰まりなら助けてくれる(その日のうちに手詰まりになったとき)
+		if is_here() and visit.kind == "chat" and is_stuck():
+			_make_help(visit)
+			dirty.emit()
+			changed.emit()
 		return false
 	visit = _generate(day)
 	dirty.emit()
 	changed.emit()
 	return true
+
+# 収入の手段が尽きているか。種も買えず、畑が空で、売れるものもなく、待てば手に入るものもない
+func is_stuck() -> bool:
+	if market.money >= _cheapest_seed():
+		return false
+	for k in garden.seeds:
+		if int(garden.seeds[k]) > 0:
+			return false
+	if not garden.crops.is_empty():
+		return false
+	for item in market.SELL_PRICES:
+		if market.count_of(item) > 0:
+			return false
+	if not seedlings.pots.is_empty():
+		return false
+	if kitchen != null and not kitchen.is_empty():
+		return false
+	return not (forest.season == "autumn" and forest.fruiting_apples() > 0)
+
+func _cheapest_seed() -> int:
+	var best := 999999
+	for g in market.GOODS:
+		if g.form == "crop_seed":
+			best = mini(best, int(g.price))
+	return best
+
+func _make_help(v: Dictionary) -> void:
+	v.kind = "help"
+	v.reward = _help_reward()
+
+# 今まける一番安い種を少し。冬はまける種がないので、お金
+func _help_reward() -> Dictionary:
+	var best := ""
+	var best_price := 999999
+	for kind in Garden.CROPS:
+		var crop: Dictionary = Garden.CROPS[kind]
+		if forest.season in crop.seasons and not crop.get("seedling_only", false):
+			var price: int = int(market.good(kind + "_seed").price)
+			if price < best_price:
+				best_price = price
+				best = kind
+	if best == "":
+		return {"type": "money", "amount": HELP_MONEY}
+	return {"type": "crop_seed", "kind": best, "count": HELP_SEEDS}
+
+func has_help() -> bool:
+	return is_here() and visit.kind == "help"
+
+# 分けてくれるものを受け取る。結果: received / none
+func receive_help() -> String:
+	if not has_help():
+		return "none"
+	_receive(visit.reward)
+	last_reward = visit.reward
+	visit.done = true
+	market.changed.emit()
+	forest.changed.emit()
+	dirty.emit()
+	changed.emit()
+	return "received"
 
 func _generate(day: int) -> Dictionary:
 	if not is_visit_day(day):
@@ -69,6 +138,9 @@ func _generate(day: int) -> Dictionary:
 	rng.seed = ("visit:%d" % day).hash()
 	var who: String = who_on(day)
 	var v := {"day": day, "who": who, "kind": "chat", "done": false, "line": rng.randi_range(0, 99)}
+	if is_stuck():
+		_make_help(v)
+		return v
 	var item: String = _choose_item(who)
 	if item == "" or rng.randf() < CHAT_CHANCE:
 		return v

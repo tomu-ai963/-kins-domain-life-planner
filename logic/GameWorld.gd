@@ -72,6 +72,7 @@ func _init() -> void:
 	visitors.garden = garden
 	visitors.seedlings = seedlings
 	visitors.market = market
+	visitors.kitchen = kitchen
 	guide.forest = forest
 	guide.land = land
 	guide.garden = garden

@@ -23,7 +23,7 @@ const MIN_PLOTS_FOR_CABIN := 4  # 畑に慣れてから小屋を案内する
 
 # 上にあるものを先に出す
 const HINTS := [
-	"walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell", "broke",
+	"walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell", "stuck", "broke",
 	"apple", "visitor", "pond_rain", "pond_water", "cabin_site", "cabin_logs",
 	"cabin_inside", "stove", "bed", "winter", "creatures",
 ]
@@ -144,8 +144,10 @@ func _wants(id: String) -> bool:
 			return _any_ripe()
 		"sell":
 			return _has_produce()
-		"broke":
-			return market.money < _cheapest_seed() and _crop_seeds() == 0
+		"stuck":
+			return has_people and visitors.is_stuck()
+		"broke":  # 手詰まりなら「収穫して売ろう」は当てはまらない
+			return market.money < _cheapest_seed() and _crop_seeds() == 0 and not visitors.is_stuck()
 		"apple":
 			return forest.season == "autumn" and forest.fruiting_apples() > 0
 		"visitor":
@@ -189,6 +191,8 @@ func _is_done(id: String) -> bool:
 			return not _any_ripe()
 		"sell":
 			return not _has_produce()
+		"stuck":
+			return not visitors.is_stuck()
 		"broke":
 			return market.money >= _cheapest_seed() or _crop_seeds() > 0
 		"cabin_site":

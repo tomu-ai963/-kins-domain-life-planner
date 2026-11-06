@@ -4,7 +4,7 @@ extends Node3D
 # 誰がいつ来るかは logic/Visitors.gd。ここは南の境界から歩いて来て、足元の近くで待ち、用が済むと帰る動きだけ。
 # 体は PlayerFigure3D を色違いで使い、帽子などを足す。小屋・池・木・プレイヤーは回り込む
 # (道は歩きだすときに決める。歩いている途中にプレイヤーが道に入ると、その場でよける)。
-# 待っているあいだは頭の上に印を出す(頼みごとは橙、話すだけなら白)。当たり判定はない
+# 待っているあいだは頭の上に印を出す(頼みごとや分けてくれるものがあれば橙、話すだけなら白)。当たり判定はない
 const Visitors = preload("res://logic/Visitors.gd")
 const Look = preload("res://view/3d/Look.gd")
 const PlayerFigure = preload("res://view/3d/PlayerFigure3D.gd")
@@ -263,7 +263,7 @@ func _show_mark() -> void:
 	if _mark == null:
 		return
 	_mark.visible = _state == "wait" or _state == "arrive"
-	var m: Material = _request_mat if visitors.has_request() else _chat_mat
+	var m: Material = _request_mat if visitors.has_request() or visitors.has_help() else _chat_mat
 	for c in _mark.get_children():
 		c.material_override = m
 

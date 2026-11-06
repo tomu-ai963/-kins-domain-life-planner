@@ -22,6 +22,7 @@ const GUIDE_TEXTS := {
 	"harvest": "育った野菜は E で収穫する。\n放っておくと傷んで、収穫が半分になる。",
 	"sell": "収穫物は市場で売れる。\n市場は南の境界の外(前に立って B で開く)。",
 	"broke": "お金と種が足りないときは、畑の野菜を収穫して市場で売ろう。\n訪ねてくる人の頼みごとでも、お金や種がもらえる。",
+	"stuck": "お金も種も、売るものもなくなったら、訪ねてくる人に話そう。\n2〜3日に1人来て、種を少し分けてくれる。",
 	"apple": "秋はリンゴが実る(樹齢6年から)。\n木のそばで E を押すと収穫できる。",
 	"visitor": "訪ねてくる人がいる。そばで C を押すと話せる。\n頼みごとは断ってもいい。",
 	"pond_rain": "池の水は雨でたまる。\n半分を超えると、生き物が来るようになる。",
@@ -176,6 +177,13 @@ const VISITOR_REQUESTS := {
 	"tanya": "%sを%sちょうだい!\nかわりに%sをあげるね。",
 	"pavel": "%sを%s分けていただけませんか。\nお礼に%sをお渡しします。",
 }
+# 手詰まりのときに分けてくれる言葉(種のとき / 冬のお金のとき)
+const VISITOR_HELP := {
+	"nina": ["畑が空っぽじゃない。困ってるんでしょう。\n%sを持っていって。まけばまた始められるよ。", "冬は苦しいよね。\n%sあげるから、春になったら種を買いなさい。"],
+	"fyodor": ["手元が寂しそうだな。\n%sを分けよう。また育てればいい。", "冬は誰でも苦しいものさ。\n%sを持っていくといい。春に種を買うんだ。"],
+	"tanya": ["畑、なんにもないね。\nお母さんが%sを持っていけって!", "雪だと畑はお休みだよね。\nお母さんが%sを持っていけって!"],
+	"pavel": ["差し出がましいですが、お困りのようで。\n%sをどうぞ。村のみんなからです。", "冬の間は大変でしょう。\n%sをどうぞ。村のみんなからです。"],
+}
 const VISITOR_THANKS := {
 	"nina": "ありがとう、助かったよ。",
 	"fyodor": "ありがたい。また来るよ。",
@@ -196,6 +204,9 @@ func reward_text(r: Dictionary) -> String:
 func visitor_text() -> String:
 	var v := world.visitors
 	var who: String = v.who()
+	if v.has_help():
+		var winter: bool = v.visit.reward.type == "money"
+		return VISITOR_HELP[who][1 if winter else 0] % reward_text(v.visit.reward)
 	if v.has_request():
 		var item: String = v.visit.item
 		return VISITOR_REQUESTS[who] % [produce_name(item), "%d%s" % [v.visit.amount, produce_unit(item)], reward_text(v.visit.reward)]
@@ -213,6 +224,7 @@ func _talk() -> void:
 	if not $Visitor.can_talk(player_pos()):
 		$HUD.show_message(visitor_line())
 		return
+	world.visitors.check_today()  # 今日のうちに手詰まりになっていたら、助けてくれる
 	$Visitor.greet()
 	_panel = "visitor"
 	$Player.set_physics_process(false)
@@ -221,7 +233,10 @@ func _talk() -> void:
 func visitor_rows() -> Array:
 	var v := world.visitors
 	var rows := []
-	if v.has_request():
+	if v.has_help():
+		rows.append({"id": "receive", "text": "ありがとう(%sをもらう)" % reward_text(v.visit.reward), "column": 0})
+		rows.append({"id": "close", "text": "今はいい(C / Esc)", "column": 0})
+	elif v.has_request():
 		var item: String = v.visit.item
 		var have: int = world.market.count_of(item)
 		rows.append({"id": "give", "text": "渡す(%s 持っている)" % _amount_text(item, have), "column": 0})
@@ -235,6 +250,13 @@ func _visitor_action(id: String) -> void:
 	var who: String = v.who()
 	if id == "chat_end":
 		_close_shop()
+		return
+	if id == "receive":
+		var person: String = v.CAST[who].name
+		if v.receive_help() == "received":
+			$HUD.show_message("%sから%sをもらった" % [person, reward_text(v.last_reward)], 6.0)
+			_close_shop()
+			_act("pick", $Visitor.ground_pos(), "radish")
 		return
 	var item: String = v.visit.item
 	if v.give() == "given":
@@ -252,7 +274,11 @@ func visitor_line() -> String:
 		return ""
 	var v := world.visitors
 	var person: String = v.CAST[v.who()].name
-	var errand := "頼みごとがあるらしい" if v.has_request() else "話がしたいらしい"
+	var errand := "話がしたいらしい"
+	if v.has_request():
+		errand = "頼みごとがあるらしい"
+	elif v.has_help():
+		errand = "渡したいものがあるらしい"
 	if $Visitor.can_talk(player_pos()):
 		return "%s(C で話す)" % person
 	var to: Vector2 = $Visitor.ground_pos() - player_pos()

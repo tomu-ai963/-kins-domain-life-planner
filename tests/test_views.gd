@@ -902,6 +902,81 @@ func _test_visitor_view() -> void:
 	vs.visit = {"day": today}
 	view.sync_visit()
 
+	# 手詰まりのとき: 分けてくれる
+	var keep_money: int = w.market.money
+	var keep_seeds: Dictionary = w.garden.seeds.duplicate()
+	var keep_produce: Dictionary = w.garden.produce.duplicate()
+	var keep_stock: Dictionary = w.kitchen.stock.duplicate()
+	var keep_apple: int = int(f.produce.apple)
+	var keep_crops: Array = w.garden.crops.duplicate()
+	var keep_pots: Array = w.seedlings.pots.duplicate()
+	var keep_ready: Dictionary = w.seedlings.ready.duplicate()
+	var keep_trees: Array = f.trees.duplicate()
+	var keep_pot: Dictionary = w.kitchen.pot.duplicate()
+	f.trees.clear()  # 秋に実るリンゴがあると手詰まりにならない
+	w.kitchen.pot = {}
+	w.market.money = 20
+	for k in w.garden.seeds:
+		w.garden.seeds[k] = 0
+	for k in w.garden.produce:
+		w.garden.produce[k] = 0
+	for k in w.kitchen.stock:
+		w.kitchen.stock[k] = 0
+	for k in w.seedlings.ready:
+		w.seedlings.ready[k] = 0
+	f.produce.apple = 0
+	w.garden.crops.clear()
+	w.seedlings.pots.clear()
+	f.set_season("autumn")
+	_check(vs.is_stuck(), "前提: 手詰まり")
+	vs.visit = {"day": today, "who": "tanya", "kind": "chat", "done": false, "line": 0}
+	player.global_position = Vector3(-20, 0, 8)
+	view.sync_visit()
+	walk.call("wait")
+	press.call(KEY_C)
+	_check(vs.has_help() and hud.is_shop_open(), "話しかけると、手詰まりなら分けてくれる")
+	var help_text: String = main.shop_header()
+	_check(help_text.contains("ラディッシュの種 3つ"), "何をくれるかが分かる: %s" % help_text)
+	_check(main.visitor_rows().any(func(r): return r.id == "receive"), "受け取る行が出る")
+	press.call(KEY_C)
+	_check(vs.has_help() and vs.is_here(), "閉じても、まだ待っている")
+	view.sync_visit()
+	_check(view._mark.get_child(0).material_override == view._request_mat, "分けてくれるものがあると橙の印")
+	player.global_position = Vector3(-20, 0, 40)
+	_check(main.visitor_line().contains("渡したいものがある"), "離れていても分かる: %s" % main.visitor_line())
+	player.global_position = Vector3(view.ground_pos().x, 0, view.ground_pos().y + 2)
+	press.call(KEY_C)
+	main._on_shop_action("receive")
+	_check(w.garden.seeds.radish == 3 and not vs.is_here() and not hud.is_shop_open(), "受け取ると種が増えて、帰っていく")
+	_check(hud._message.contains("ターニャさん") and hud._message.contains("3つ"), "もらった文言: %s" % hud._message)
+	view.sync_visit()
+	_check(view.state() == "leave", "受け取ると帰っていく")
+	walk.call("away")
+	# 冬はお金
+	w.garden.seeds.radish = 0
+	f.set_season("winter")
+	vs.visit = {"day": today, "who": "pavel", "kind": "chat", "done": false, "line": 0}
+	player.global_position = Vector3(-20, 0, 8)
+	view.sync_visit()
+	walk.call("wait")
+	press.call(KEY_C)
+	_check(main.shop_header().contains("200₽") and main.shop_header().contains("冬"), "冬はお金をくれる: %s" % main.shop_header())
+	main._on_shop_action("receive")
+	_check(w.market.money == 220, "受け取ると所持金が増える")
+	view.sync_visit()
+	walk.call("away")
+	f.set_season("autumn")
+	w.market.money = keep_money
+	w.garden.seeds.assign(keep_seeds)
+	w.garden.produce.assign(keep_produce)
+	w.kitchen.stock.assign(keep_stock)
+	w.seedlings.ready.assign(keep_ready)
+	f.produce.apple = keep_apple
+	w.garden.crops.assign(keep_crops)
+	w.seedlings.pots.assign(keep_pots)
+	f.trees.assign(keep_trees)
+	w.kitchen.pot = keep_pot
+
 	# 日記に明日来る人が出る
 	var tomorrow: int = today + 1
 	if vs.is_visit_day(tomorrow):
