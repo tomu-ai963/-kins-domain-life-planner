@@ -2,7 +2,8 @@ extends Node3D
 
 # ── 木の 3D 表示(先細りの幹 + 葉のかたまりの樹冠。冬の落葉樹は枝だけ) ─────
 # 状態とルールは logic/Forest.gd、形は TreeShapes3D.gd。ここは読んで形を置くだけ。
-# 木が増えた・減った・季節が変わった(changed)ら作り直し、成長は 1 秒ごとに大きさだけ直す
+# 木が増えた・減った・季節が変わった(changed)ら作り直し、成長は 1 秒ごとに大きさだけ直す。
+# 幹のある木には、幹の太さの当たり判定を付ける(葉の下は歩ける。種や幹のない苗木は通り抜けられる)
 const Forest = preload("res://logic/Forest.gd")
 const Look = preload("res://view/3d/Look.gd")
 const TreeShapes = preload("res://view/3d/TreeShapes3D.gd")
@@ -59,9 +60,13 @@ const SPROUT_SCALE := 0.45
 const FALL_WAIT := 0.35     # 斧が当たるまで立っている時間
 const FALL_SECONDS := 0.9   # 倒れるのにかかる時間
 const FALL_FADE := 0.4      # 倒れたあと小さくなって消えるまでの時間
+const TRUNK_BODY_MIN := 0.1   # 幹の当たり判定の半径の下限(m)
+const TRUNK_BODY_EXTRA := 0.05  # 見た目の幹より少し太くする(めり込んで見えないように)
+const TRUNK_BODY_HEIGHT := 3.0
 
 var forest: Forest
 var last_fall: Tween  # 直前に倒れた木の動き(テスト用)
+var _bodies: StaticBody3D  # 幹の当たり判定をまとめる
 var _timer := 0.0
 var _items := []  # 木ごとの {tree, trunk, crown, fruits: []} (forest.trees と同じ順)
 
@@ -98,6 +103,9 @@ static func _sphere(r: float, seg: int) -> SphereMesh:
 
 func setup(f: Forest) -> void:
 	forest = f
+	_bodies = StaticBody3D.new()
+	_bodies.name = "TrunkBodies"
+	get_parent().add_child(_bodies)  # 木の形と分けて置く(倒れる木と同じく、親の下)
 	forest.changed.connect(_rebuild)
 	_rebuild()
 
@@ -170,6 +178,7 @@ func _leaf_color(species: String) -> Color:
 # 木ごとの違いは位置から決める(毎回同じ見た目)
 func _rebuild() -> void:
 	Look.clear_children(self)
+	Look.clear_children(_bodies)
 	_items.clear()
 	for tree in forest.trees:
 		var k: Dictionary = KINDS[tree.species]
@@ -204,8 +213,21 @@ func _rebuild() -> void:
 		if forest.watered_today(tree):
 			item.ring = Look.ring(tree.pos, 0.6, 0.12, _water_mat)
 			add_child(item.ring)
+		item.trunk_body = _trunk_shape(tree.pos)
 		_items.append(item)
 	_layout()
+
+# 幹の当たり判定を 1 本ぶん作る。太さは _layout が決める
+func _trunk_shape(pos: Vector2) -> CollisionShape3D:
+	var shape := CollisionShape3D.new()
+	var cyl := CylinderShape3D.new()
+	cyl.height = TRUNK_BODY_HEIGHT
+	cyl.radius = TRUNK_BODY_MIN
+	shape.shape = cyl
+	shape.position = Look.at(pos, TRUNK_BODY_HEIGHT * 0.5)
+	shape.disabled = true
+	_bodies.add_child(shape)
+	return shape
 
 # 樹齢に合わせて大きさと位置を決める
 func _layout() -> void:
@@ -214,6 +236,7 @@ func _layout() -> void:
 		var k: Dictionary = KINDS[tree.species]
 		var r: float = forest.radius_of(tree)
 		var base := Look.at(tree.pos)
+		item.trunk_body.disabled = true  # 幹のある木だけ、下で付ける
 		if forest.is_seed(tree):
 			# 芽が出る前の種: 小さな土の盛り上がり
 			item.trunk.visible = false
@@ -235,6 +258,8 @@ func _layout() -> void:
 		item.crown.material_override = item.leaf_mat
 		var trunk_h: float = k.trunk_h * r
 		var trunk_w: float = k.trunk_w * r + 0.04
+		item.trunk_body.disabled = false
+		item.trunk_body.shape.radius = maxf(trunk_w * 0.5 + TRUNK_BODY_EXTRA, TRUNK_BODY_MIN)
 		var crown_h: float = k.crown_h * r
 		# 幹は樹冠の中まで伸ばして、継ぎ目が見えないようにする
 		var trunk_len: float = trunk_h + crown_h * 0.5

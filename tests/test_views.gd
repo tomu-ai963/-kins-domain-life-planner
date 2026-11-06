@@ -46,9 +46,11 @@ func _process(_delta: float) -> bool:
 		11:
 			_test_visitor_collision()
 			_test_hive_collision()
+			_test_tree_collision()
 			_wait_until = Time.get_ticks_msec() + 200
 		12:
 			_test_visitor_collision_off()
+			_test_tree_collision_gone()
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
@@ -641,6 +643,49 @@ func _prepare_visitor_collision() -> void:
 			break
 		view.step(0.1)
 	_check(view.state() == "wait" and not view._solid_shape.disabled, "待っているあいだは当たり判定がある")
+	_prepare_tree_collision()
+
+# 離れた場所に、育った木・幹のない苗木・種を置く(当たり判定が物理サーバーに入るのを、次の段階まで待つ)
+func _prepare_tree_collision() -> void:
+	var f = main.world.forest
+	var view: Node3D = main.get_node("Trees")
+	var add := func(at: Vector2, form: String, age: float, sprouts := true) -> void:
+		f.trees.append({"pos": at, "species": "birch", "form": form, "planted_at": f._now(), "start_age": age, "sprouts": sprouts, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	add.call(Vector2(30, -30), "sapling", 30.0)
+	add.call(Vector2(36, -30), "sapling", 0.2)
+	add.call(Vector2(42, -30), "seed", 0.0, true)
+	f.changed.emit()
+	print("木の当たり判定(準備)")
+	_check(not view._items[0].trunk_body.disabled and view._items[0].trunk.visible, "幹のある木には当たり判定がある")
+	_check(view._items[1].trunk_body.disabled and not view._items[1].trunk.visible, "幹のない苗木にはない")
+	_check(view._items[2].trunk_body.disabled, "種にはない")
+	var old_r: float = view._items[0].trunk_body.shape.radius
+	f.trees[0].start_age = 3.0
+	view._layout()
+	var young_r: float = view._items[0].trunk_body.shape.radius
+	_check(young_r < old_r and young_r >= view.TRUNK_BODY_MIN, "若い木の当たり判定は細い(%.2fm → %.2fm)" % [young_r, old_r])
+	f.trees[0].start_age = 30.0
+	view._layout()
+	_check(old_r < 0.45, "幹の判定は太すぎない(半径 %.2fm。葉の下は歩ける)" % old_r)
+
+func _test_tree_collision() -> void:
+	print("木の当たり判定")
+	var player: CharacterBody3D = main.get_node("Player")
+	var south := Transform3D(Basis.IDENTITY, Vector3(30, 0, -27))
+	_check(player.test_move(south, Vector3(0, 0, -6)), "育った木は通り抜けられない")
+	_check(not player.test_move(Transform3D(Basis.IDENTITY, Vector3(30, 0, -27)), Vector3(1.5, 0, 0)), "木の横は歩ける")
+	# 幹の 1m 横を通っても引っかからない(葉の下は歩ける)
+	_check(not player.test_move(Transform3D(Basis.IDENTITY, Vector3(31.2, 0, -27)), Vector3(0, 0, -6)), "幹の横を通り過ぎられる")
+	_check(not player.test_move(Transform3D(Basis.IDENTITY, Vector3(36, 0, -27)), Vector3(0, 0, -6)), "幹のない苗木は通り抜けられる")
+	_check(not player.test_move(Transform3D(Basis.IDENTITY, Vector3(42, 0, -27)), Vector3(0, 0, -6)), "種は通り抜けられる")
+	# 伐ると判定も消える(次の段階で確かめる)
+	var f = main.world.forest
+	f.trees.remove_at(0)
+	f.changed.emit()
+
+func _test_tree_collision_gone() -> void:
+	var player: CharacterBody3D = main.get_node("Player")
+	_check(not player.test_move(Transform3D(Basis.IDENTITY, Vector3(30, 0, -27)), Vector3(0, 0, -6)), "伐ると通れるようになる")
 
 func _test_visitor_collision() -> void:
 	print("待っている訪問者の当たり判定")
