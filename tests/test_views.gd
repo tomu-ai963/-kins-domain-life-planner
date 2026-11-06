@@ -673,6 +673,10 @@ func _test_wildlife_view() -> void:
 	view._walk(bird, 0.02, near)
 	_check(bird.mode == "flee", "近づくと小鳥が逃げる")
 	_check(bird.target.distance_to(near) > bird.pos.distance_to(near), "プレイヤーから離れる向きに逃げる")
+	_check(bird.target.distance_to(bird.from) > view.MOVES.sparrow.roam, "住みかの範囲より遠くまで逃げる(%.1fm)" % bird.target.distance_to(bird.from))
+	# 土地の端では、向きを振って土地の中へ逃げる
+	var edge_goal: Vector2 = view._flee_goal(Vector2(49, 0), Vector2.RIGHT, 12.0, bird)
+	_check(wl.is_free(edge_goal) and edge_goal.distance_to(Vector2(48, 0)) > 3.0, "土地の端でも、外へ出ずに逃げる")
 	var flap_max := 0.0
 	for _i in range(10):
 		view._walk(bird, 0.05, near)
@@ -680,9 +684,13 @@ func _test_wildlife_view() -> void:
 	_check(bird.node.position.y > 0.1, "小鳥は飛んで逃げる(高さ %.2f)" % bird.node.position.y)
 	_check(flap_max > 0.3 and is_equal_approx(bird.wings[0].rotation.z, -bird.wings[1].rotation.z), "飛ぶときは左右の羽で羽ばたく(%.2f rad)" % flap_max)
 	_check(bird.wings[0].rotation.y == 0.0, "飛ぶときは羽を広げる")
+	var landed_at: Vector2 = bird.target
 	for _i in range(100):
+		if bird.mode != "flee":
+			break
 		view._walk(bird, 0.05, Vector2(500, 500))
-	_check(bird.mode != "flee" and bird.node.position.y < 0.2, "逃げ終わると地面に降りる")
+	_check(bird.mode == "idle" and bird.node.position.y < 0.2, "逃げ終わると地面に降りる")
+	_check(bird.pos == landed_at and bird.wait >= view.FLEE_REST_MIN, "逃げたあとはしばらくそこに留まる(%.1f 秒)" % bird.wait)
 	# 羽の先が尾のほう(+z)を向いていれば、たためている
 	var wing_tip: Vector3 = bird.wings[1].basis * Vector3.RIGHT
 	var wing_tip_l: Vector3 = bird.wings[0].basis * Vector3.LEFT

@@ -18,16 +18,19 @@ const FLUTTER_RADIUS := 1.6   # 虫が飛ぶ範囲(m)
 # roam: 住みかから歩く範囲 / speed: 歩く速さ / flee: 逃げる速さ / run: 逃げる距離 /
 # hop: 動くときに跳ねる高さ / hop_rate: 跳ねる速さ / wings: 飛んで逃げる(arc は飛ぶ高さ)
 const MOVES := {
-	"sparrow": {"roam": 3.0, "speed": 1.2, "flee": 6.0, "run": 7.0, "hop": 0.1, "hop_rate": 14.0, "wings": true, "arc": 2.0},
-	"squirrel": {"roam": 5.0, "speed": 2.2, "flee": 5.5, "run": 7.0, "hop": 0.14, "hop_rate": 12.0, "wings": false, "arc": 0.0},
-	"hare": {"roam": 6.0, "speed": 2.0, "flee": 8.0, "run": 12.0, "hop": 0.32, "hop_rate": 9.0, "wings": false, "arc": 0.0},
+	"sparrow": {"roam": 3.0, "speed": 1.2, "flee": 7.0, "run": 12.0, "hop": 0.1, "hop_rate": 14.0, "wings": true, "arc": 2.5},
+	"squirrel": {"roam": 5.0, "speed": 2.2, "flee": 6.0, "run": 11.0, "hop": 0.14, "hop_rate": 12.0, "wings": false, "arc": 0.0},
+	"hare": {"roam": 6.0, "speed": 2.0, "flee": 8.0, "run": 18.0, "hop": 0.32, "hop_rate": 9.0, "wings": false, "arc": 0.0},
 	"hedgehog": {"roam": 4.0, "speed": 0.5, "flee": 0.0, "run": 0.0, "hop": 0.0, "hop_rate": 0.0, "wings": false, "arc": 0.0},
-	"migrant": {"roam": 2.5, "speed": 0.6, "flee": 7.0, "run": 16.0, "hop": 0.0, "hop_rate": 0.0, "wings": true, "arc": 4.5},
+	"migrant": {"roam": 2.5, "speed": 0.6, "flee": 8.0, "run": 24.0, "hop": 0.0, "hop_rate": 0.0, "wings": true, "arc": 5.5},
 }
+const FLEE_ANGLES := [0.0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8]  # 逃げ先がふさがっているときに試す向き(rad)
+const FLEE_REST_MIN := 5.0    # 逃げたあと、住みかへ戻りはじめるまでの時間(秒)
+const FLEE_REST_MAX := 10.0
 const BUTTERFLY_COLORS := [Color(0.96, 0.96, 0.88), Color(0.96, 0.82, 0.25), Color(0.95, 0.52, 0.16)]
 const FOLD_ANGLE := 1.4       # 鳥が羽を背中へたたむ角度(rad)
 # 見下ろしのカメラから見えるように、形に掛ける倍率(いつものカメラの距離で点にならないところ)
-const DISPLAY_SCALE := {"sparrow": 2.0, "squirrel": 1.8, "butterfly": 2.2, "bee": 2.4, "hare": 1.5, "hedgehog": 1.7, "migrant": 1.0}
+const DISPLAY_SCALE := {"sparrow": 1.5,"squirrel": 1.8, "butterfly": 2.2, "bee": 2.4, "hare": 1.5, "hedgehog": 1.7, "migrant": 1.0}
 
 var wildlife: Wildlife
 var _player: Node3D
@@ -180,18 +183,28 @@ func _start_flee(a: Dictionary, player_pos: Vector2) -> void:
 	var away: Vector2 = a.pos - player_pos
 	if away.length() < 0.01:
 		away = Vector2.RIGHT
-	var goal: Vector2 = a.pos + away.normalized() * float(m.run)
 	a.from = a.pos
-	a.target = goal if wildlife.is_free(goal) else _free_spot(a.home, float(m.roam))
+	a.target = _flee_goal(a.pos, away.normalized(), float(m.run), a)
 	a.mode = "flee"
+
+# プレイヤーから離れる向きの逃げ先。土地の端や池でふさがっていれば、向きを振って短くする。
+# どこもだめなら住みかのまわり
+func _flee_goal(from: Vector2, away: Vector2, run: float, a: Dictionary) -> Vector2:
+	for length in [run, run * 0.6, run * 0.35]:
+		for angle in FLEE_ANGLES:
+			var goal: Vector2 = from + away.rotated(angle) * length
+			if wildlife.is_free(goal):
+				return goal
+	return _free_spot(a.home, float(a.moves.roam))
 
 func _step_toward(a: Dictionary, speed: float, delta: float) -> void:
 	var to: Vector2 = a.target - a.pos
 	var step: float = speed * delta
 	if to.length() <= step:
 		a.pos = a.target
+		# 逃げたあとは、しばらくそこに留まる(すぐ住みかへ戻ると、また近づいてしまう)
+		a.wait = _rng.randf_range(FLEE_REST_MIN, FLEE_REST_MAX) if a.mode == "flee" else _rng.randf_range(1.0, 4.0)
 		a.mode = "idle"
-		a.wait = _rng.randf_range(1.0, 4.0)
 		return
 	a.pos += to.normalized() * step
 	a.node.rotation.y = lerp_angle(a.node.rotation.y, atan2(-to.x, -to.y), minf(1.0, 10.0 * delta))
