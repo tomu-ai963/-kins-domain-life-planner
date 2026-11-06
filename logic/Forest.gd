@@ -18,9 +18,19 @@ const SECONDS_PER_YEAR := 86400.0
 # 苗木は市場で買う。必ず根付き、樹齢 2〜4 年から始まる。
 # 育った木は実る季節に根元へ種を落とす(拾わなかった分は翌日には消える)。
 # リンゴは樹齢 6 年から秋に実り、収穫すると「リンゴ」が手に入る(市場で売れる。種は増えない)
-const INITIAL_SEEDS := {"birch": 3, "apple": 1, "cedar": 0}
-const INITIAL_SAPLINGS := {"birch": 0, "apple": 0, "cedar": 0}
+const INITIAL_SEEDS := {"birch": 3, "apple": 1, "cedar": 0, "cherry": 0, "plum": 0, "pear": 0}
+const INITIAL_SAPLINGS := {"birch": 0, "apple": 0, "cedar": 0, "cherry": 0, "plum": 0, "pear": 0}
 const APPLE_FRUIT_AGE := 6.0
+# 果樹。seasons: 実る季節 / age: 実りはじめる樹齢 / first: はじめの収穫量 / step: 1 年で増える量 / most: 上限(1 本の 1 日)
+# unit: 単位(文言用)。リンゴの 300₽/日 を超えない数字にした(仮の数字)
+const FRUITS := {
+	"apple": {"seasons": ["autumn"], "age": APPLE_FRUIT_AGE, "first": 5, "step": 5, "most": 20, "unit": "個"},
+	"cherry": {"seasons": ["summer"], "age": 4.0, "first": 1, "step": 1, "most": 3, "unit": "kg"},
+	"plum": {"seasons": ["summer"], "age": 5.0, "first": 1, "step": 1, "most": 5, "unit": "kg"},
+	"pear": {"seasons": ["autumn"], "age": 6.0, "first": 4, "step": 4, "most": 15, "unit": "個"},
+}
+const FRUIT_ORDER := ["apple", "cherry", "plum", "pear"]  # 果樹を選ぶ順番(キーの 2)
+const SAPLING_ONLY := ["cherry", "plum", "pear"]  # 接ぎ木の苗木から育てる(現実でも、種からだと親と同じ実にならない)
 const GERMINATION_YEARS := 1.0  # 種から芽が出るまで(= 1 日)
 
 # ── 毎日の理由 ──────────────────────────────────────────────
@@ -59,6 +69,24 @@ const SPECIES := {
 		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
 		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
 	},
+	"cherry": {
+		"name": "サクランボ", "max_r": 2.6, "tau": 4.0, "p": 2.0, "evergreen": false,
+		"germination": 0.0, "sapling_age": 2.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
+	},
+	"plum": {
+		"name": "スモモ", "max_r": 2.4, "tau": 4.0, "p": 2.0, "evergreen": false,
+		"germination": 0.0, "sapling_age": 3.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
+	},
+	"pear": {
+		"name": "ナシ", "max_r": 2.8, "tau": 6.0, "p": 2.0, "evergreen": false,
+		"germination": 0.0, "sapling_age": 3.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 25.0, "wood_years": 10.0, "wood_max": 3,
+	},
 	"cedar": {
 		"name": "シベリア杉", "max_r": 6.0, "tau": 40.0, "p": 2.0, "evergreen": true,
 		"germination": 0.5, "sapling_age": 4.0,
@@ -72,7 +100,7 @@ const SPECIES := {
 var trees := []
 var seeds := INITIAL_SEEDS.duplicate()        # 樹種ごとの種の所持数
 var saplings := INITIAL_SAPLINGS.duplicate()  # 樹種ごとの苗木の所持数
-var produce := {"apple": 0}                   # 収穫物(市場で売る)
+var produce := {"apple": 0, "cherry": 0, "plum": 0, "pear": 0}  # 収穫物(市場で売る)
 var pickups := []             # 今日、地面に落ちている種 [{pos, species, amount}]
 var last_failed := {}         # 今日の確認で芽が出なかった種の数 {species: 本数}(保存しない)
 var germination_rates := {}   # 発芽率(テストで 1.0 にできるように変数にする)
@@ -281,11 +309,17 @@ func _apply_event(id: String) -> void:
 # 現実の 1 年分より少ない。秋のあいだ毎日採れるので、多いと畑が要らなくなる
 const APPLE_MAX_YIELD := 20
 static func apple_yield(age: float) -> int:
-	return clampi(5 + int((age - APPLE_FRUIT_AGE) * 5.0), 5, APPLE_MAX_YIELD)
+	return fruit_yield("apple", age)
 
-var last_harvest_count := 0  # 直前の収穫で採れた個数(文言用)
+# 果樹 1 本の 1 年(= 1 日)の収穫量。実りはじめから、1 年ごとに増えて上限まで
+static func fruit_yield(species: String, age: float) -> int:
+	var f: Dictionary = FRUITS[species]
+	return clampi(int(f.first) + int((age - float(f.age)) * float(f.step)), int(f.first), int(f.most))
 
-# 実をつける年になったリンゴの本数(季節は見ない。日記用)
+var last_harvest_count := 0  # 直前の収穫で採れた量(文言用)
+var last_harvest_item := ""  # 直前に収穫した果物、または収穫できなかった果樹(文言用)
+
+# 実をつける年になったリンゴの本数(季節は見ない)
 func fruiting_apples() -> int:
 	var n := 0
 	for tree in trees:
@@ -293,25 +327,48 @@ func fruiting_apples() -> int:
 			n += 1
 	return n
 
-# 足元のリンゴを収穫する。結果を表すコードを返す(文言は Main が決める)
+# その季節に実る、実をつける年になった果樹の本数(日記・ヒント・手詰まりの判定用)
+func fruiting_in(in_season: String) -> int:
+	var n := 0
+	for tree in trees:
+		if FRUITS.has(tree.species) and in_season in FRUITS[tree.species].seasons \
+				and is_established(tree) and real_age_years(tree) >= float(FRUITS[tree.species].age):
+			n += 1
+	return n
+
+# pos から max_dist 以内で、いちばん近い果樹の番号(なければ -1)
+func nearest_fruit_index(pos: Vector2, max_dist: float) -> int:
+	var best := -1
+	var best_d := max_dist
+	for i in range(trees.size()):
+		if FRUITS.has(trees[i].species):
+			var d: float = trees[i].pos.distance_to(pos)
+			if d <= best_d:
+				best_d = d
+				best = i
+	return best
+
+# 足元の果樹を収穫する。結果を表すコードを返す(文言は Main が決める)
 #   harvested / none / preview / not_season / young / done
 func harvest_nearest(pos: Vector2, max_dist: float) -> String:
-	var best := nearest_index(pos, max_dist, "apple")
+	var best := nearest_fruit_index(pos, max_dist)
 	if best < 0:
 		return "none"
 	# 先送りで若木を実らせて収穫できないよう、判定は現実の樹齢で行い、プレビュー中は収穫させない
 	if time_offset_years > 0.0:
 		return "preview"
 	var tree: Dictionary = trees[best]
-	if season != "autumn":
+	var f: Dictionary = FRUITS[tree.species]
+	last_harvest_item = tree.species
+	if not (season in f.seasons):
 		return "not_season"
-	if not is_established(tree) or real_age_years(tree) < APPLE_FRUIT_AGE:
+	if not is_established(tree) or real_age_years(tree) < float(f.age):
 		return "young"
 	if tree.last_harvest == today():
 		return "done"
 	tree.last_harvest = today()
-	last_harvest_count = apple_yield(real_age_years(tree))
-	produce["apple"] = int(produce.get("apple", 0)) + last_harvest_count
+	last_harvest_count = fruit_yield(tree.species, real_age_years(tree))
+	produce[tree.species] = int(produce.get(tree.species, 0)) + last_harvest_count
 	_commit()
 	return "harvested"
 
@@ -376,10 +433,11 @@ func radius_of(tree: Dictionary) -> float:
 	var sp: Dictionary = SPECIES[tree.species]
 	return sp.max_r * pow(1.0 - exp(-age_years(tree) / sp.tau), sp.p)
 
-# 実が見えているか(リンゴ・秋・表示用の樹齢 6 年から・今日まだ収穫していない)
+# 実が見えているか(果樹・実る季節・表示用の樹齢が実りはじめ以上・今日まだ収穫していない)
 func shows_fruit(tree: Dictionary) -> bool:
-	return tree.species == "apple" and season == "autumn" and not is_seed(tree) \
-			and age_years(tree) >= APPLE_FRUIT_AGE and tree.last_harvest != today()
+	if not FRUITS.has(tree.species) or not (season in FRUITS[tree.species].seasons):
+		return false
+	return not is_seed(tree) and age_years(tree) >= float(FRUITS[tree.species].age) and tree.last_harvest != today()
 
 func watered_today(tree: Dictionary) -> bool:
 	return tree.last_watered == today()
@@ -417,7 +475,7 @@ func from_save(data: Dictionary) -> void:
 	# 記録がない旧形式のセーブは、初期の種・苗木 0・収穫物 0 から始める
 	seeds = _counts(data.get("seeds", {}), INITIAL_SEEDS)
 	saplings = _counts(data.get("saplings", {}), INITIAL_SAPLINGS)
-	produce = _counts(data.get("produce", {}), {"apple": 0})
+	produce = _counts(data.get("produce", {}), {"apple": 0, "cherry": 0, "plum": 0, "pear": 0})
 	# 記録がない旧形式のセーブは、次に開いたとき(= 今)その日の発見が起きる
 	last_day = str(data.get("last_day", ""))
 	today_event = str(data.get("today_event", ""))

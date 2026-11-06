@@ -554,6 +554,7 @@ func _test_3d_cabin_collision() -> void:
 	_test_visitor_view()
 	_test_hint_panel()
 	_test_hive_view()
+	_test_fruit_view()
 
 func _test_cabin_inside() -> void:
 	print("小屋の中")
@@ -661,6 +662,120 @@ func _test_visitor_collision_off() -> void:
 	var at: Vector2 = view.ground_pos()
 	var south := Transform3D(Basis.IDENTITY, Vector3(at.x, 0, at.y + 2.0))
 	_check(not player.test_move(south, Vector3(0, 0, -2.0)), "帰っているあいだは通り抜けられる(閉じ込められない)")
+
+func _test_fruit_view() -> void:
+	print("果樹")
+	var w = main.world
+	var f = w.forest
+	var hud = main.get_node("HUD")
+	var view: Node3D = main.get_node("Trees")
+	var player: CharacterBody3D = main.get_node("Player")
+	var figure: Node3D = player.get_node("Body/Figure")
+	var saved_trees: Array = f.trees.duplicate()
+	f.trees.clear()
+	figure._process(10.0)
+	var key := InputEventKey.new()
+	key.keycode = KEY_2
+	key.pressed = true
+	main.selected_species = "birch"
+	main.selected_form = "seed"
+
+	# キーで選ぶ
+	main._unhandled_input(key)
+	_check(main.selected_species == "apple" and main.selected_form == "seed", "2 でリンゴ(種のまま)")
+	main._unhandled_input(key)
+	_check(main.selected_species == "cherry" and main.selected_form == "sapling", "もう一度でサクランボ(苗木に切り替わる)")
+	_check(main.selected_name() == "サクランボの苗木", "HUD の名前: %s" % main.selected_name())
+	main._unhandled_input(key)
+	main._unhandled_input(key)
+	_check(main.selected_species == "pear", "スモモ、ナシと進む")
+	main._unhandled_input(key)
+	_check(main.selected_species == "apple", "一回りしてリンゴに戻る")
+
+	# 種からは植えられない
+	main.selected_species = "plum"
+	main.selected_form = "seed"
+	player.global_position = Vector3(-15, 0, 42)
+	main._on_plant_tree(main.player_pos())
+	_check(f.trees.is_empty() and hud._message.contains("苗木から育てる"), "種では植えられないと知らせる")
+
+	# 苗木を買って植える
+	main._panel = "market"
+	w.market.money = 5000
+	_check(main.shop_rows().any(func(r): return r.id == "cherry_sapling" and r.text.contains("サクランボの苗木") and r.text.contains("700₽")), "市場に苗木が並ぶ")
+	main._on_shop_action("cherry_sapling")
+	_check(f.saplings.cherry == 1 and hud._message.contains("サクランボの苗木"), "市場で買える")
+	main.selected_species = "cherry"
+	main.selected_form = "sapling"
+	main._on_plant_tree(main.player_pos())
+	_check(f.trees.size() == 1 and f.trees[0].species == "cherry", "植えられる")
+	figure._process(10.0)
+
+	# 見た目: 季節ごと
+	var tree: Dictionary = f.trees[0]
+	tree.start_age = 30.0
+	f.set_season("summer")
+	f.changed.emit()
+	var item: Dictionary = view._items[0]
+	_check(item.fruits.size() == 5, "夏はサクランボに実がなる")
+	_check(item.fruits[0].material_override.albedo_color == view.FRUIT_LOOKS.cherry.color, "サクランボの色の実")
+	_check(item.fruits[0].scale.x <= 0.3 * view.FRUIT_LOOKS.cherry.scale + 0.001, "サクランボの実はリンゴより小さい")
+	f.set_season("autumn")
+	_check(view._items[0].fruits.is_empty(), "秋のサクランボに実はない")
+	f.set_season("spring")
+	var spring_color: Color = view._leaf_color("cherry")
+	_check(spring_color.r > 0.8, "春は花の色になる")
+	f.set_season("winter")
+	_check(view.is_bare("cherry") and view._items[0].crown_mesh != null, "冬は枝だけ")
+	f.set_season("summer")
+	for id in ["plum", "pear", "apple"]:
+		_check(view.KINDS.has(id) and view.FRUIT_LOOKS.has(id) and view.BLOSSOMS.has(id), "%s の見た目がある" % id)
+		var shape: Dictionary = view._shape(id, 0)
+		_check(shape.crown != null and shape.trunk != null and shape.bare != null and not shape.anchors.is_empty(), "%s の形が作れる" % id)
+
+	# 収穫: 動きと文言
+	player.global_position = Vector3(tree.pos.x + 1.0, 0, tree.pos.y)
+	main._harvest()
+	_check(f.produce.cherry == 3 and hud._message.contains("サクランボを3kg") and hud._message.contains("60₽"), "E で収穫: %s" % hud._message)
+	_check(figure.current_action() == "pick_high", "手を上げて採る")
+	player._effect_tween.custom_step(10.0)
+	_check(player.get_node("WorkEffects")._mats.has(view.FRUIT_LOOKS.cherry.color), "サクランボの色の玉が飛ぶ")
+	figure._process(10.0)
+	_check(view._items[0].fruits.is_empty(), "採ると、今日は実が消える")
+	main._harvest()
+	_check(hud._message.contains("今日もう"), "1 日 1 回")
+	f.set_season("autumn")
+	main._harvest()
+	_check(hud._message == "サクランボが実るのは夏", "季節の文言: %s" % hud._message)
+	f.set_season("summer")
+	tree.start_age = 3.0
+	tree.last_harvest = ""
+	main._harvest()
+	_check(hud._message.contains("樹齢4年から"), "樹齢の文言: %s" % hud._message)
+
+	# 持ち物と料理
+	_check(main.produce_line().contains("サクランボ 3kg"), "持ち物に出る")
+	_check(main.shop_rows().any(func(r): return r.id == "sell_cherry" and r.text.contains("サクランボ 3kg × 60₽")), "市場に売る行が出る")
+	main._on_shop_action("sell_cherry")
+	_check(f.produce.cherry == 0, "売れる")
+	_check(main.kitchen_rows().any(func(r): return r.id == "cook_cherry_jam" and r.text.contains("サクランボ 3kg") and r.text.contains("4瓶")), "ストーブの料理に出る")
+	var room: Node3D = main.get_node("Cabin")
+	w.kitchen.stock.cherry_jam = 1
+	w.kitchen.changed.emit()
+	_check(room.FOOD_COLORS.has("cherry_jam") and room.FOOD_COLORS.has("plum_jam") and room.FOOD_COLORS.has("pear_compote"), "保存食の色がある")
+	w.kitchen.stock.cherry_jam = 0
+	w.kitchen.changed.emit()
+	_check(main.diary_text().contains("果物を収穫できる木") == (f.fruiting_in(w.season_for_month(int(w.tomorrow_date().substr(5, 2)))) > 0), "日記の果物の行は、明日の季節に合う")
+	_check(hud.status_text() != "", "HUD が崩れない")
+	hud.inventory_open = true
+	_check(hud.status_text().contains("サクランボ") and hud.status_text().contains("ナシ"), "持ち物に苗木の枠が出る")
+	hud.inventory_open = false
+
+	f.set_season("autumn")
+	f.trees.assign(saved_trees)
+	f.changed.emit()
+	main.selected_species = "birch"
+	main.selected_form = "seed"
 
 func _test_hive_view() -> void:
 	print("巣箱")

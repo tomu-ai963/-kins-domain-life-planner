@@ -24,7 +24,7 @@ const GUIDE_TEXTS := {
 	"sell": "収穫物は市場で売れる。\n市場は南の境界の外(前に立って B で開く)。",
 	"broke": "お金と種が足りないときは、畑の野菜を収穫して市場で売ろう。\n訪ねてくる人の頼みごとでも、お金や種がもらえる。",
 	"stuck": "お金も種も、売るものもなくなったら、訪ねてくる人に話そう。\n2〜3日に1人来て、種を少し分けてくれる。",
-	"apple": "秋はリンゴが実る(樹齢6年から)。\n木のそばで E を押すと収穫できる。",
+	"apple": "果樹に実がなっている(季節と樹齢で実る)。\n木のそばで E を押すと収穫できる。",
 	"visitor": "訪ねてくる人がいる。そばで C を押すと話せる。\n頼みごとは断ってもいい。",
 	"pond_rain": "池の水は雨でたまる。\n半分を超えると、生き物が来るようになる。",
 	"pond_water": "池のそばで Q を押すと、まわりの畑と木にまとめて水をやれる。\n池の水は少し減る。",
@@ -393,13 +393,26 @@ func _collect_pickups() -> void:
 
 # 収穫の結果コード(Forest.harvest_nearest)ごとの文言
 const HARVEST_MESSAGES := {
-	"harvested": "リンゴを%d個収穫した(市場で1個%d₽で売れる)",
-	"none": "近くにリンゴの木がない",
+	"none": "近くに実のなる木がない",
 	"preview": "未来のプレビュー中は収穫できない",
-	"not_season": "リンゴが実るのは秋",
-	"young": "まだ実らない(樹齢6年から)",
 	"done": "この木は今日もう収穫した",
 }
+
+# 果樹の収穫の文言(結果が harvested / not_season / young のとき)
+func _fruit_message(result: String) -> String:
+	var f := world.forest
+	var item: String = f.last_harvest_item
+	var fruit: Dictionary = f.FRUITS[item]
+	var fruit_name: String = f.SPECIES[item].name
+	match result:
+		"harvested":
+			return "%sを%d%s収穫した(市場で1%s %d₽で売れる)" % [fruit_name, f.last_harvest_count, fruit.unit, fruit.unit, world.market.SELL_PRICES[item]]
+		"not_season":
+			var seasons := PackedStringArray()
+			for s in fruit.seasons:
+				seasons.append(SEASON_NAMES[s])
+			return "%sが実るのは%s" % [fruit_name, "・".join(seasons)]
+	return "%sはまだ実らない(樹齢%d年から)" % [fruit_name, int(fruit.age)]
 
 # 水やりの結果コード(Forest.water_nearest)ごとの文言
 const WATER_MESSAGES := {
@@ -492,6 +505,9 @@ func _on_plant_tree(pos: Vector2) -> void:
 	if world.bees.covers(pos, world.bees.CLEARANCE):
 		$HUD.show_message("巣箱の近くには植えられない")
 		return
+	if selected_form == "seed" and selected_species in world.forest.SAPLING_ONLY:
+		$HUD.show_message("%sは苗木から育てる(V で苗木に切り替える。市場で買える)" % world.forest.SPECIES[selected_species].name, 5.0)
+		return
 	if not world.forest.can_plant(selected_species, selected_form):
 		$HUD.show_message("冬は地面が凍っていて植えられない(白樺の種だけは雪の上にまける)", 5.0)
 		return
@@ -502,6 +518,14 @@ func _on_plant_tree(pos: Vector2) -> void:
 	if selected_form == "seed":
 		$HUD.show_message("種をまいた。芽が出るかは1日たつと分かる")
 	_check_quests()
+
+# 2: 押すたびに次の果樹を選ぶ。苗木からしか育てない果樹なら、苗木に切り替える
+func _select_next_fruit() -> void:
+	var order: Array = world.forest.FRUIT_ORDER
+	var i: int = order.find(selected_species)
+	selected_species = order[(i + 1) % order.size()] if i >= 0 else order[0]
+	if selected_species in world.forest.SAPLING_ONLY:
+		selected_form = "sapling"
 
 # 選んでいる植えるもの(HUD 用)。例: 「白樺の種」
 func selected_name() -> String:
@@ -706,9 +730,9 @@ func _tomorrow_lines() -> PackedStringArray:
 	var to_water: int = g.crops.size() - plan.ripe
 	if to_water > 0 and not rain:
 		lines.append("水やりがいる区画: %d" % to_water)
-	var apples: int = world.forest.fruiting_apples()
-	if apples > 0 and season == "autumn":
-		lines.append("リンゴを収穫できる木: %d本" % apples)
+	var fruiting: int = world.forest.fruiting_in(season)
+	if fruiting > 0:
+		lines.append("果物を収穫できる木: %d本" % fruiting)
 	var pots: int = world.seedlings.grown_tomorrow()
 	if pots > 0:
 		lines.append("苗を受け取れる: %d鉢" % pots)
@@ -878,8 +902,8 @@ func seedlings_line() -> String:
 	return "トマト %d鉢  きゅうり %d鉢" % [ready.tomato, ready.cucumber]
 
 func produce_name(item: String) -> String:
-	if item == "apple":
-		return "リンゴ"
+	if world.forest.FRUITS.has(item):
+		return world.forest.SPECIES[item].name
 	if item == "honey":
 		return "はちみつ"
 	if item.begins_with("seedling_"):
@@ -889,15 +913,15 @@ func produce_name(item: String) -> String:
 	return world.garden.CROPS[item].name
 
 func produce_unit(item: String) -> String:
-	if item == "apple":
-		return "個"
+	if world.forest.FRUITS.has(item):
+		return world.forest.FRUITS[item].unit
 	if world.kitchen.RECIPES.has(item):
 		return world.kitchen.RECIPES[item].unit
 	return "鉢" if item.begins_with("seedling_") else "kg"
 
 func produce_count(item: String) -> int:
-	if item == "apple":
-		return int(world.forest.produce.apple)
+	if world.forest.FRUITS.has(item):
+		return int(world.forest.produce[item])
 	if item == "honey":
 		return int(world.bees.stock.honey)
 	if item.begins_with("seedling_"):
@@ -1057,16 +1081,14 @@ func _harvest() -> void:
 	if crop == "preview":
 		$HUD.show_message(HARVEST_MESSAGES.preview)
 		return
-	# 足元 2m 以内のリンゴを収穫する
+	# 足元 2m 以内の果樹を収穫する
 	var result: String = world.forest.harvest_nearest(pos, REACH)
 	if crop == "growing" and result != "harvested":
 		$HUD.show_message("%sはまだ育っている(あと%d日)" % [g.CROPS[c.kind].name, g.days_left(c)])
 		return
-	var msg: String = HARVEST_MESSAGES[result]
 	if result == "harvested":
-		msg = msg % [world.forest.last_harvest_count, world.market.SELL_PRICES.apple]
-		_act("pick_high", world.forest.trees[world.forest.nearest_index(pos, REACH, "apple")].pos, "apple")
-	$HUD.show_message(msg)
+		_act("pick_high", world.forest.trees[world.forest.nearest_fruit_index(pos, REACH)].pos, world.forest.last_harvest_item)
+	$HUD.show_message(HARVEST_MESSAGES[result] if HARVEST_MESSAGES.has(result) else _fruit_message(result))
 
 func _water() -> void:
 	var f := world.forest
@@ -1171,7 +1193,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_1:
 			selected_species = "birch"
 		KEY_2:
-			selected_species = "apple"
+			_select_next_fruit()
 		KEY_3:
 			selected_species = "cedar"
 		KEY_V:

@@ -21,6 +21,18 @@ const KINDS := {
 		"leaf": Color(0.24, 0.58, 0.22), "leaf_autumn": Color(0.80, 0.55, 0.18), "trunk": Color(0.35, 0.22, 0.10), "twig": Color(0.35, 0.22, 0.10),
 		"shape": "sphere", "trunk_h": 0.8, "trunk_w": 0.14, "crown_h": 1.6, "crown_y": 0.6,
 	},
+	"cherry": {
+		"leaf": Color(0.28, 0.58, 0.24), "leaf_autumn": Color(0.82, 0.42, 0.18), "trunk": Color(0.34, 0.18, 0.12), "twig": Color(0.34, 0.18, 0.12),
+		"shape": "sphere", "trunk_h": 0.9, "trunk_w": 0.13, "crown_h": 1.7, "crown_y": 0.6,
+	},
+	"plum": {
+		"leaf": Color(0.26, 0.52, 0.26), "leaf_autumn": Color(0.72, 0.46, 0.20), "trunk": Color(0.28, 0.18, 0.14), "twig": Color(0.28, 0.18, 0.14),
+		"shape": "sphere", "trunk_h": 0.8, "trunk_w": 0.12, "crown_h": 1.8, "crown_y": 0.6,
+	},
+	"pear": {
+		"leaf": Color(0.30, 0.60, 0.26), "leaf_autumn": Color(0.86, 0.62, 0.20), "trunk": Color(0.36, 0.26, 0.16), "twig": Color(0.36, 0.26, 0.16),
+		"shape": "sphere", "trunk_h": 1.0, "trunk_w": 0.13, "crown_h": 2.3, "crown_y": 0.8,
+	},
 	"cedar": {
 		"leaf": Color(0.10, 0.40, 0.20), "leaf_autumn": Color(0.10, 0.40, 0.20), "trunk": Color(0.30, 0.18, 0.08),
 		"shape": "cone", "trunk_h": 0.5, "trunk_w": 0.12, "crown_h": 3.5, "crown_y": -0.2,
@@ -28,6 +40,20 @@ const KINDS := {
 }
 const BLOSSOM := Color(1.0, 0.80, 0.74)  # 空の光で青みが足されるので、暖かい色にしておく
 const FRUIT := Color(0.85, 0.15, 0.12)
+# 実の色と大きさの倍率(サクランボは小さく、ナシは少し大きい)
+const FRUIT_LOOKS := {
+	"apple": {"color": FRUIT, "scale": 1.0},
+	"cherry": {"color": Color(0.72, 0.06, 0.14), "scale": 0.8},
+	"plum": {"color": Color(0.40, 0.14, 0.44), "scale": 0.9},
+	"pear": {"color": Color(0.82, 0.78, 0.26), "scale": 1.15},
+}
+# 春の花の色(花の咲く果樹だけ)。花をどれだけ前に出すか
+const BLOSSOMS := {
+	"apple": {"color": BLOSSOM, "amount": 0.85},
+	"cherry": {"color": Color(1.0, 0.72, 0.78), "amount": 0.95},
+	"plum": {"color": Color(1.0, 0.95, 0.90), "amount": 0.9},
+	"pear": {"color": Color(1.0, 0.97, 0.92), "amount": 0.85},
+}
 const LEAF_SHADE := 0.06  # 木ごとの葉の色の違い(明るい・そのまま・暗いの 3 通り)
 const SPROUT_SCALE := 0.45
 const FALL_WAIT := 0.35     # 斧が当たるまで立っている時間
@@ -46,7 +72,7 @@ var _fruit_mesh := _sphere(0.5, 8)
 var _sprout_mesh := TreeShapes.sprout()
 var _sapling_mat := Look.mat(Color(0.20, 0.65, 0.20))
 var _mound_mat := Look.mat(Color(0.36, 0.25, 0.15))  # 種をまいた土の盛り上がり
-var _fruit_mat := Look.mat(FRUIT)
+var _fruit_mats := {}  # 樹種ごとの実の材質
 var _water_mat := Look.mat(Color(0.25, 0.60, 0.95, 0.9), true)
 var _mats := {}  # マテリアルの使い回し
 
@@ -136,7 +162,9 @@ func _leaf_color(species: String) -> Color:
 		"winter":
 			return k.leaf.darkened(0.2)  # 常緑樹は少し沈んだ色
 		"spring":
-			return k.leaf.lerp(BLOSSOM, 0.85) if species == "apple" else k.leaf
+			if BLOSSOMS.has(species):
+				return k.leaf.lerp(BLOSSOMS[species].color, BLOSSOMS[species].amount)
+			return k.leaf
 	return k.leaf
 
 # 木ごとの違いは位置から決める(毎回同じ見た目)
@@ -166,8 +194,10 @@ func _rebuild() -> void:
 		add_child(item.trunk)
 		add_child(item.crown)
 		if forest.shows_fruit(tree):
+			if not _fruit_mats.has(tree.species):
+				_fruit_mats[tree.species] = Look.mat(FRUIT_LOOKS[tree.species].color)
 			for i in range(5):
-				var fr := Look.mesh_node(_fruit_mesh, _fruit_mat)
+				var fr := Look.mesh_node(_fruit_mesh, _fruit_mats[tree.species])
 				item.fruits.append(fr)
 				add_child(fr)
 		# 今日水をあげた木は、根元に水色の輪(どの木が済んだか分かるように)
@@ -225,4 +255,4 @@ func _place_fruits(item: Dictionary, r: float) -> void:
 	for i in range(item.fruits.size()):
 		var anchor: Vector3 = anchors[(item.hash + i) % anchors.size()]
 		item.fruits[i].position = crown.position + crown.basis * anchor
-		item.fruits[i].scale = Vector3.ONE * clampf(0.12 * r, 0.12, 0.3)
+		item.fruits[i].scale = Vector3.ONE * clampf(0.12 * r, 0.12, 0.3) * float(FRUIT_LOOKS[item.tree.species].scale)

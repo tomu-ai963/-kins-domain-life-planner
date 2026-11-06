@@ -91,8 +91,9 @@ func _crop_seeds() -> int:
 	return n
 
 func _has_produce() -> bool:
-	if int(forest.produce.get("apple", 0)) > 0:
-		return true
+	for k in forest.produce:
+		if int(forest.produce[k]) > 0:
+			return true
 	for k in garden.produce:
 		if int(garden.produce[k]) > 0:
 			return true
@@ -150,7 +151,7 @@ func _wants(id: String) -> bool:
 		"broke":  # 手詰まりなら「収穫して売ろう」は当てはまらない
 			return market.money < _cheapest_seed() and _crop_seeds() == 0 and not visitors.is_stuck()
 		"apple":
-			return forest.season == "autumn" and forest.fruiting_apples() > 0
+			return forest.fruiting_in(forest.season) > 0
 		"visitor":
 			return has_people and visitors.is_here()
 		"pond_rain":

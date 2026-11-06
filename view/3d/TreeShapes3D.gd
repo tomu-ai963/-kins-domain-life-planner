@@ -14,6 +14,9 @@ const LUMP_RINGS := 8
 const ROUND := {
 	"birch": {"count": 10, "size": [0.15, 0.21], "core": 0.30, "branches": 6, "branch_thick": 0.012},
 	"apple": {"count": 8, "size": [0.20, 0.27], "core": 0.33, "branches": 5, "branch_thick": 0.024},
+	"cherry": {"count": 9, "size": [0.17, 0.23], "core": 0.31, "branches": 5, "branch_thick": 0.022},
+	"plum": {"count": 11, "size": [0.14, 0.20], "core": 0.32, "branches": 6, "branch_thick": 0.018},
+	"pear": {"count": 9, "size": [0.17, 0.24], "core": 0.30, "branches": 4, "branch_thick": 0.024},
 }
 # 針葉樹の段: 下から上へ、段ごとに細くなる
 const CEDAR_TIERS := 5

@@ -17,6 +17,15 @@ const COLORS := {
 		"leaf_autumn": Color(0.80, 0.55, 0.18, 0.60),
 		"trunk": Color(0.35, 0.22, 0.10),
 	},
+	"cherry": {
+		"leaf": Color(0.28, 0.58, 0.24, 0.85), "leaf_autumn": Color(0.82, 0.42, 0.18, 0.85), "trunk": Color(0.34, 0.18, 0.12),
+	},
+	"plum": {
+		"leaf": Color(0.26, 0.52, 0.26, 0.85), "leaf_autumn": Color(0.72, 0.46, 0.20, 0.85), "trunk": Color(0.28, 0.18, 0.14),
+	},
+	"pear": {
+		"leaf": Color(0.30, 0.60, 0.26, 0.85), "leaf_autumn": Color(0.86, 0.62, 0.20, 0.85), "trunk": Color(0.36, 0.26, 0.16),
+	},
 	"cedar": {
 		"leaf": Color(0.08, 0.42, 0.20, 0.65),
 		"leaf_autumn": Color(0.08, 0.42, 0.20, 0.65),

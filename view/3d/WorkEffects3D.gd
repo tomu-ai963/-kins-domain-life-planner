@@ -51,6 +51,10 @@ func play(kind: String, spot: Vector3, item := "") -> void:
 func _item_color(item: String) -> Color:
 	if GardenView.LOOKS.has(item):
 		return GardenView.LOOKS[item].ripe
+	if TreesView.FRUIT_LOOKS.has(item):
+		return TreesView.FRUIT_LOOKS[item].color
+	if item == "honey":
+		return Color(0.96, 0.70, 0.14)
 	return TreesView.FRUIT
 
 # じょうろの水: 少しずつ注ぎ口から落とす

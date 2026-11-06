@@ -24,6 +24,9 @@ const GOODS := [
 	{"id": "birch_sapling", "species": "birch", "form": "sapling", "amount": 1, "price": 400},
 	{"id": "apple_sapling", "species": "apple", "form": "sapling", "amount": 1, "price": 900},
 	{"id": "cedar_sapling", "species": "cedar", "form": "sapling", "amount": 1, "price": 1500},
+	{"id": "cherry_sapling", "species": "cherry", "form": "sapling", "amount": 1, "price": 700},
+	{"id": "plum_sapling", "species": "plum", "form": "sapling", "amount": 1, "price": 700},
+	{"id": "pear_sapling", "species": "pear", "form": "sapling", "amount": 1, "price": 900},
 	{"id": "radish_seed", "species": "radish", "form": "crop_seed", "amount": 1, "price": 40},
 	{"id": "carrot_seed", "species": "carrot", "form": "crop_seed", "amount": 1, "price": 50},
 	{"id": "cucumber_seed", "species": "cucumber", "form": "crop_seed", "amount": 1, "price": 60},
@@ -36,9 +39,10 @@ const GOODS := [
 # seedling_ は小屋で育てた苗(1 鉢 = 1 区画ぶん)の買い取り値。
 # 保存食(Kitchen.RECIPES の id)は 1 瓶 / 1 個あたり。材料を生で売るよりおよそ 2 倍になるように置いた仮の数字
 const SELL_PRICES := {
-	"apple": 15, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
+	"apple": 15, "cherry": 60, "plum": 40, "pear": 18, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
 	"seedling_tomato": 150, "seedling_cucumber": 120,
 	"jam": 75, "sauce": 150, "pickles": 35, "garlic_pickle": 120, "pirozhki": 12,
+	"cherry_jam": 80, "plum_jam": 90, "pear_compote": 120,
 	"honey": 200,  # 1kg あたり。巣箱 1 つで 1 日 100〜140₽ ほどになる仮の数字
 }
 

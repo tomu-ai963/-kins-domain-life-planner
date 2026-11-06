@@ -283,7 +283,7 @@ func _inventory_lines() -> PackedStringArray:
 	return PackedStringArray([
 		"─ 持ち物 ─",
 		"種: 白樺 %d  リンゴ %d  シベリア杉 %d" % [seeds.birch, seeds.apple, seeds.cedar],
-		"苗木: 白樺 %d  リンゴ %d  シベリア杉 %d" % [sap.birch, sap.apple, sap.cedar],
+		"苗木: 白樺 %d  リンゴ %d  シベリア杉 %d\n      サクランボ %d  スモモ %d  ナシ %d" % [sap.birch, sap.apple, sap.cedar, sap.cherry, sap.plum, sap.pear],
 		"野菜の種: " + _main.crop_seeds_line(),
 		"苗: " + _main.seedlings_line(),
 		"収穫物: " + _main.produce_line(),
@@ -298,7 +298,7 @@ func _help_lines() -> PackedStringArray:
 		"─ 操作 ─",
 		"J:丸太の巣箱を作る/くり抜く/はちみつを採る",
 		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者と話す",
-		"[1]白樺 [2]リンゴ [3]シベリア杉 [V]種/苗木",
+		"[1]白樺 [2]果樹(押すたびに リンゴ/サクランボ/スモモ/ナシ) [3]シベリア杉 [V]種/苗木",
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク [9]トマト",
 		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る",
 		"F:菜園  P:池  H:小屋(完成したら 苗づくり / ストーブの前で料理 / ベッドのそばで日記)  K:ヒントを閉じる",

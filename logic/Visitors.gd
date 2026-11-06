@@ -27,16 +27,17 @@ const HELP_MONEY := 200           # まける種がない冬に分けてくれ�
 
 # likes: 頼みたいもの(先頭ほど頼みやすい)。なければ、渡せるものの中から頼む
 const CAST := {
-	"nina": {"name": "ニーナさん", "likes": ["tomato", "cucumber", "carrot", "radish", "potato"]},
-	"fyodor": {"name": "フョードルさん", "likes": ["garlic", "apple", "garlic_pickle", "potato", "carrot"]},
-	"tanya": {"name": "ターニャさん", "likes": ["honey", "apple", "pirozhki", "jam", "carrot", "radish"]},
-	"pavel": {"name": "パーヴェルさん", "likes": ["sauce", "pickles", "jam", "tomato", "cucumber"]},
+	"nina": {"name": "ニーナさん", "likes": ["tomato", "cucumber", "carrot", "radish", "potato", "plum"]},
+	"fyodor": {"name": "フョードルさん", "likes": ["garlic", "apple", "pear", "garlic_pickle", "potato", "carrot"]},
+	"tanya": {"name": "ターニャさん", "likes": ["honey", "cherry", "apple", "pirozhki", "jam", "cherry_jam", "carrot", "radish"]},
+	"pavel": {"name": "パーヴェルさん", "likes": ["sauce", "pickles", "jam", "plum_jam", "pear_compote", "tomato", "cucumber"]},
 }
 const ORDER := ["nina", "fyodor", "tanya", "pavel"]  # 来る順番
 
 # 1 回に頼む量(リンゴは個、野菜は kg、保存食は瓶 / 個)
 const ASK := {
-	"apple": 5, "radish": 3, "carrot": 5, "cucumber": 5, "potato": 5, "garlic": 1, "tomato": 5,
+	"apple": 5, "cherry": 1, "plum": 2, "pear": 4, "cherry_jam": 1, "plum_jam": 1, "pear_compote": 1,
+	"radish": 3, "carrot": 5, "cucumber": 5, "potato": 5, "garlic": 1, "tomato": 5,
 	"jam": 2, "sauce": 2, "pickles": 3, "garlic_pickle": 1, "pirozhki": 5, "honey": 1,
 }
 const BEEKEEPER := "fyodor"  # 蜂を分けてくれる人
@@ -94,7 +95,7 @@ func is_stuck() -> bool:
 		return false
 	if kitchen != null and not kitchen.is_empty():
 		return false
-	return not (forest.season == "autumn" and forest.fruiting_apples() > 0)
+	return forest.fruiting_in(forest.season) == 0
 
 func _cheapest_seed() -> int:
 	var best := 999999

@@ -21,6 +21,9 @@ const RECIPES := {
 	"pickles": {"name": "きゅうりの塩漬け", "input": "cucumber", "amount": 6, "output": 10, "unit": "瓶", "days": 3},
 	"garlic_pickle": {"name": "ニンニクの酢漬け", "input": "garlic", "amount": 2, "output": 4, "unit": "瓶", "days": 3},
 	"pirozhki": {"name": "ピロシキ", "input": "potato", "amount": 4, "output": 20, "unit": "個", "days": 1},
+	"cherry_jam": {"name": "サクランボジャム", "input": "cherry", "amount": 3, "output": 4, "unit": "瓶", "days": 1},
+	"plum_jam": {"name": "スモモジャム", "input": "plum", "amount": 5, "output": 4, "unit": "瓶", "days": 1},
+	"pear_compote": {"name": "ナシのコンポート", "input": "pear", "amount": 15, "output": 4, "unit": "瓶", "days": 1},
 }
 
 var forest: Forest  # GameWorld が設定する(リンゴの持ち物は Forest にある)
@@ -46,9 +49,9 @@ func _commit() -> void:
 	dirty.emit()
 	changed.emit()
 
-# 材料の持ち物(リンゴは Forest、野菜は Garden)
+# 材料の持ち物(果物は Forest、野菜は Garden)
 func _pile(input: String) -> Dictionary:
-	return forest.produce if input == "apple" else garden.produce
+	return forest.produce if forest.produce.has(input) else garden.produce
 
 func input_count(id: String) -> int:
 	var input: String = RECIPES[id].input
