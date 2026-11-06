@@ -726,6 +726,30 @@ func _test_sound_view() -> void:
 	w.kitchen.pot = {}
 	player.global_position = Vector3(-40, 0, -40)
 
+	# 今は作業音だけ(2026-11-06 とむ)。自然音・足音・画面の音は止めてある
+	_check(not audio.ambient_enabled and not audio.steps_enabled and not audio.ui_enabled, "はじめは作業音だけ")
+	_check(audio.LOOPS.all(func(s): return not audio._loops[s].player.playing), "風・葉・川・雨・火は鳴っていない")
+	audio.update_ambient()
+	audio._process(1.0)
+	_check(audio.LOOPS.all(func(s): return not audio._loops[s].player.playing and audio._loops[s].goal == 0.0), "時間がたっても鳴りださない")
+	audio.last_played = ""
+	audio.play("click")
+	audio.play("open")
+	audio.play("coin")
+	_check(audio.last_played == "", "画面の音は鳴らない")
+	audio.play("chop")
+	_check(audio.last_played == "chop", "作業音は鳴る")
+	audio.play("tree_fall")
+	_check(audio.last_played == "tree_fall", "木が倒れる音も鳴る")
+	audio.last_played = ""
+	audio._process(1.0)
+	_check(audio.last_played == "", "足音は鳴らない")
+
+	# ここからは、止めている音も、切り替えれば正しく鳴ることを確かめる(あとで使う)
+	audio.set_ambient_enabled(true)
+	audio.steps_enabled = true
+	audio.ui_enabled = true
+
 	# 流し続ける音
 	for sound in audio.LOOPS:
 		var l: Dictionary = audio._loops[sound]
@@ -926,6 +950,12 @@ func _test_sound_view() -> void:
 	figure._process(10.0)
 	if player._effect_tween != null:
 		player._effect_tween.kill()
+
+	# 元に戻す: 止めると音も止まる
+	audio.set_ambient_enabled(false)
+	audio.steps_enabled = false
+	audio.ui_enabled = false
+	_check(audio.LOOPS.all(func(s): return not audio._loops[s].player.playing), "止めると鳴らなくなる")
 
 	f.trees.assign(saved_trees)
 	f.changed.emit()

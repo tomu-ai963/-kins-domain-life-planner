@@ -5,7 +5,9 @@ extends Node
 # 流し続ける音: 風・葉(まわりの葉のある木の数で変わる)・雨・ストーブの火(小屋の中で仕込み中だけ)。
 # 遠くの川(土地に川はない)はずっとは鳴らさず、ときどき聞こえてくる。
 # 小屋の中では外の音を小さくする。足音は歩く場所(草・畑の土・小屋の床)で変わる。
-# 音楽と、鳥・虫・生き物の声はまだない(2026-11-06 とむ: あとから)
+# 音楽と、鳥・虫・生き物の声はまだない(2026-11-06 とむ: あとから)。
+# **今は作業音だけを鳴らす**(2026-11-06 とむ: 自然音・足音・画面の音は一度止めて、音はあとから実装する)。
+# 止めた音も作ってあるので、下の 3 つを true にすれば鳴る。直したい点は ROADMAP の「音の続き」
 const AUDIO_DIR := "res://audio/"
 const VOICES := 8            # 同時に鳴らせる短い音の数
 const AMBIENT_SECONDS := 0.5 # 流し続ける音の強さを見直す間隔
@@ -28,6 +30,11 @@ const VOLUMES := {
 }
 const ALIASES := {"pick_high": "pick"}  # 作業の動きの名前 → 音の名前
 const STEP_VARIANTS := 3
+const UI_SOUNDS := ["click", "open", "coin"]
+
+var ambient_enabled := false  # 風・葉・川・雨・火。set_ambient_enabled で切り替える
+var steps_enabled := false    # 足音
+var ui_enabled := false       # 画面の音
 
 var world        # GameWorld
 var _player: Node3D
@@ -54,7 +61,6 @@ func setup(w, player: Node3D) -> void:
 		p.stream = stream
 		p.volume_db = linear_to_db(0.001)
 		add_child(p)
-		p.play()
 		_loops[sound] = {"player": p, "level": 0.0, "goal": 0.0}
 	for i in range(VOICES):
 		var v := AudioStreamPlayer.new()
@@ -62,6 +68,21 @@ func setup(w, player: Node3D) -> void:
 		add_child(v)
 		_voices.append(v)
 	_brook_timer = randf_range(10.0, 30.0)  # はじめは静かで、少しすると聞こえてくる
+	set_ambient_enabled(ambient_enabled)
+
+# 流し続ける音を鳴らす / 止める
+func set_ambient_enabled(on: bool) -> void:
+	ambient_enabled = on
+	for sound in _loops:
+		var l: Dictionary = _loops[sound]
+		if on:
+			if not l.player.playing:
+				l.player.play()
+		else:
+			l.player.stop()
+			l.level = 0.0
+			l.goal = 0.0
+			l.player.volume_db = linear_to_db(0.001)
 	update_ambient()
 
 func _stream(sound: String) -> AudioStream:
@@ -74,7 +95,7 @@ func play(kind: String) -> void:
 	if world == null:
 		return
 	var sound: String = ALIASES.get(kind, kind)
-	if not VOLUMES.has(sound):
+	if not VOLUMES.has(sound) or (sound in UI_SOUNDS and not ui_enabled):
 		return
 	_play_file(sound, sound, randf_range(0.94, 1.06))
 
@@ -99,6 +120,10 @@ func play_after(sound: String, seconds: float) -> void:
 func _process(delta: float) -> void:
 	if world == null:
 		return
+	if steps_enabled:
+		_update_steps(delta)
+	if not ambient_enabled:
+		return
 	_ambient_timer += delta
 	if _ambient_timer >= AMBIENT_SECONDS:
 		_ambient_timer = 0.0
@@ -109,7 +134,6 @@ func _process(delta: float) -> void:
 		var fade: float = BROOK_FADE_PER_SECOND if sound == "brook" else FADE_PER_SECOND
 		l.level = move_toward(float(l.level), float(l.goal), fade * delta)
 		l.player.volume_db = linear_to_db(maxf(float(l.level), 0.001))
-	_update_steps(delta)
 
 # 川は、聞こえる番と聞こえない番を交代する
 func _update_brook(delta: float) -> void:
@@ -155,6 +179,8 @@ func leafy_trees_near(pos: Vector2) -> int:
 
 # 流し続ける音の強さを決める
 func update_ambient() -> void:
+	if not ambient_enabled:
+		return
 	var f = world.forest
 	var pos: Vector2 = _player.ground_pos()
 	var inside: bool = world.cabin.is_inside(pos)
