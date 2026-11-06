@@ -13,6 +13,7 @@ const Seedlings = preload("res://logic/Seedlings.gd")
 const Kitchen = preload("res://logic/Kitchen.gd")
 const Wildlife = preload("res://logic/Wildlife.gd")
 const Visitors = preload("res://logic/Visitors.gd")
+const Guide = preload("res://logic/Guide.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 const DayClock = preload("res://logic/DayClock.gd")
@@ -33,6 +34,7 @@ var seedlings := Seedlings.new()
 var kitchen := Kitchen.new()
 var wildlife := Wildlife.new()
 var visitors := Visitors.new()
+var guide := Guide.new()
 var quests := Quests.new()
 var market := Market.new()
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
@@ -70,6 +72,15 @@ func _init() -> void:
 	visitors.garden = garden
 	visitors.seedlings = seedlings
 	visitors.market = market
+	guide.forest = forest
+	guide.land = land
+	guide.garden = garden
+	guide.cabin = cabin
+	guide.pond = pond
+	guide.market = market
+	guide.kitchen = kitchen
+	guide.visitors = visitors
+	guide.wildlife = wildlife
 	forest.dirty.connect(save_game)
 	garden.dirty.connect(save_game)
 	cabin.dirty.connect(save_game)
@@ -78,6 +89,7 @@ func _init() -> void:
 	kitchen.dirty.connect(save_game)
 	wildlife.dirty.connect(save_game)
 	visitors.dirty.connect(save_game)
+	guide.dirty.connect(save_game)
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
 # 結果: Garden.toggle_plot の結果か cabin
@@ -142,6 +154,7 @@ func save_game() -> void:
 	data["kitchen"] = kitchen.to_save()
 	data["wildlife"] = wildlife.to_save()
 	data["visitors"] = visitors.to_save()
+	data["guide"] = guide.to_save()
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
@@ -199,6 +212,10 @@ func load_game() -> void:
 	var vd = data.get("visitors", {})
 	if typeof(vd) != TYPE_DICTIONARY:
 		vd = {}
+	# ヒントの記録がないセーブ(2026-11-06 より前)は、まだどのヒントも出ていない
+	var gud = data.get("guide", {})
+	if typeof(gud) != TYPE_DICTIONARY:
+		gud = {}
 	# Godot 3 版(2026-11 より前)のセーブは座標が px。読むときに m に直す
 	if data.get("unit", "px") != SAVE_UNIT:
 		_px_to_m(data, ld)
@@ -210,6 +227,7 @@ func load_game() -> void:
 	kitchen.from_save(kd)
 	wildlife.from_save(wd)
 	visitors.from_save(vd)
+	guide.from_save(gud)
 	quests.from_save(qd)
 	market.from_save(md)
 	forest.from_save(data)

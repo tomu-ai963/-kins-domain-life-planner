@@ -541,6 +541,7 @@ func _test_3d_cabin_collision() -> void:
 	_test_work_motions()
 	_test_wildlife_view()
 	_test_visitor_view()
+	_test_hint_panel()
 
 func _test_cabin_inside() -> void:
 	print("小屋の中")
@@ -611,6 +612,40 @@ func _test_cabin_inside() -> void:
 	_check(player.view_distance() == far_dist, "外へ出るとカメラが元の距離に戻る")
 	player._process(10.0)
 	_check(player.get_node("Body").position.y == 0.0, "体が地面の高さに戻る")
+
+func _test_hint_panel() -> void:
+	print("ヒントの表示")
+	var w = main.world
+	var g = w.guide
+	var hud = main.get_node("HUD")
+	var panel: PanelContainer = hud._hint_panel
+	var press := func(code: int) -> void:
+		var e := InputEventKey.new()
+		e.keycode = code
+		e.pressed = true
+		main._unhandled_input(e)
+	g.current = ""
+	hud._update_hint()
+	_check(not panel.visible, "ヒントがなければ何も出ない")
+	g.current = "broke"
+	hud._update_hint()
+	_check(panel.visible and hud._hint_label.text.contains("お金と種") and hud._hint_label.text.contains("K で閉じる"), "ヒントが右上に出る")
+	main._panel = "market"
+	hud.open_shop()
+	hud._update_hint()
+	_check(not panel.visible, "市場の画面を開いているあいだは隠す")
+	hud.close_shop()
+	hud.open_diary("日記")
+	hud._update_hint()
+	_check(not panel.visible, "日記を開いているあいだは隠す")
+	hud.close_diary()
+	hud._update_hint()
+	_check(panel.visible, "閉じるとまた出る")
+	press.call(KEY_K)
+	_check(g.current == "" and "broke" in g.seen, "K で閉じる")
+	hud._update_hint()
+	_check(not panel.visible, "閉じると消える")
+	g.seen.erase("broke")
 
 func _test_visitor_view() -> void:
 	print("訪ねてくる人")
@@ -1578,6 +1613,9 @@ func _test_2d_still_works() -> void:
 	main._talk()
 	_check(main.visitor_line() == "" and not main.get_node("HUD").is_shop_open(), "2D には訪問者の姿がないので、話せない")
 	main.world.visitors.visit = {}
+	main.world.guide.update(main.player_pos(), 10.0)
+	main.get_node("HUD")._update_hint()
+	_check(not main.world.guide.has_people, "2D では訪問者と生き物のヒントを出さない")
 	main.world.forest.seeds["birch"] = 1
 	main._on_plant_tree(main.player_pos())
 	_check(main.world.forest.trees.size() == 1 and main.world.forest.trees[0].pos == Vector2(10, -5), "2D でも植えられる")

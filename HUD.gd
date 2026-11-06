@@ -4,6 +4,7 @@ extends CanvasLayer
 # 左上: いつも見たいこと(日付・所持金・発見・クエスト・小屋・池・選択・足元)。
 # Tab で持ち物(市場を開いているあいだは自動で出す)、F1 で操作説明を足す。
 # 下の中央: 数秒だけのメッセージ。右: 市場の画面(ストーブでも同じ画面を使う)。
+# 右上: ヒント(logic/Guide.gd)。市場の画面や日記を開いているあいだは隠す。
 # 全体を覆う日記: ベッドで休むと、暗くなって出る。
 # 文言の中身は Main が決める(shop_rows・quest_line など)。ここは並べて出すだけ
 const Forest = preload("res://logic/Forest.gd")
@@ -32,6 +33,8 @@ var _shop_title: Label
 var _diary: ColorRect
 var _diary_label: Label
 var _diary_fade: Tween
+var _hint_panel: PanelContainer
+var _hint_label: Label
 
 func setup(player: Node, trees: Forest, main: Node) -> void:
 	_player = player
@@ -39,6 +42,7 @@ func setup(player: Node, trees: Forest, main: Node) -> void:
 	_main = main
 	_build_message()
 	_build_shop()
+	_build_hint()
 	_build_diary()
 
 # 植えられない・収穫した などを数秒だけ出す
@@ -127,6 +131,36 @@ func refresh_shop() -> void:
 		var col: VBoxContainer = _shop_columns[focused_col]
 		col.get_child(mini(focused_row, col.get_child_count() - 1)).grab_focus()
 
+# ── ヒント ────────────────────────────────────────────────
+func _build_hint() -> void:
+	_hint_panel = PanelContainer.new()
+	_hint_panel.name = "Hint"
+	_hint_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_hint_panel.offset_left = -8.0
+	_hint_panel.offset_right = -8.0
+	_hint_panel.offset_top = 8.0
+	_hint_panel.offset_bottom = 8.0
+	_hint_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_hint_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hint_panel.visible = false
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.20, 0.30, 0.18, 0.92)
+	style.border_color = Color(0.96, 0.84, 0.46)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(8)
+	_hint_panel.add_theme_stylebox_override("panel", style)
+	_hint_label = Label.new()
+	_hint_panel.add_child(_hint_label)
+	add_child(_hint_panel)
+
+func _update_hint() -> void:
+	var text: String = _main.hint_text()
+	var show: bool = text != "" and not is_shop_open() and not is_diary_open()
+	_hint_panel.visible = show
+	if show:
+		_hint_label.text = "ヒント\n%s\n(K で閉じる)" % text
+
 # ── 日記(ベッドで休む) ─────────────────────────────────────
 func _build_diary() -> void:
 	_diary = ColorRect.new()
@@ -178,6 +212,7 @@ func _process(delta: float) -> void:
 			_message = ""
 			_message_panel.visible = false
 	_label.text = status_text()
+	_update_hint()
 	# 背景は文字の量に合わせる
 	_bg.size = _label.get_combined_minimum_size() + Vector2(12, 8)
 
@@ -262,6 +297,6 @@ func _help_lines() -> PackedStringArray:
 		"[1]白樺 [2]リンゴ [3]シベリア杉 [V]種/苗木",
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク [9]トマト",
 		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る",
-		"F:菜園  P:池  H:小屋(完成したら 苗づくり / ストーブの前で料理 / ベッドのそばで日記)",
+		"F:菜園  P:池  H:小屋(完成したら 苗づくり / ストーブの前で料理 / ベッドのそばで日記)  K:ヒントを閉じる",
 		"T:+1年  G:+10年  N:+1時間  R:今に戻す(未来をプレビュー)",
 	])

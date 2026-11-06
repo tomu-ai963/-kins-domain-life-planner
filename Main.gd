@@ -9,6 +9,31 @@ const REACH := 2.0    # 足元 2m 以内
 const PICKUP_RADIUS := 1.2  # 落ちている種は、これだけ近づくと拾う
 const FELL_CONFIRM_SECONDS := 4.0  # 根付いた木は、この時間内にもう一度 Z を押すと伐れる
 const WILDLIFE_CHECK_SECONDS := 5.0  # はじめて来た生き物がいないか見る間隔
+const GUIDE_CHECK_SECONDS := 0.5     # ヒントを見直す間隔
+
+# ヒント(logic/Guide.gd の id)の文言。実際のルールに合わせて書く
+const GUIDE_TEXTS := {
+	"walk": "WASD か矢印キーで歩ける。\nホイールでカメラを寄せたり引いたりできる。",
+	"plant": "SPACE で足元に木を植える。\n[1][2][3] で木を選び、[V] で種と苗木を切り替える。",
+	"plot": "F で足元に畑の区画を作れる。お金はいらない。\n手で耕すので、新しく作れるのは1日2区画まで。",
+	"buy_seeds": "野菜の種は市場で買える。\n市場は南の境界の外にある(前に立って B で開く)。",
+	"sow": "区画の上で SPACE を押すと種をまく。\n[4]〜[9] で野菜を選ぶ。まける季節は野菜ごとに違う。",
+	"water": "野菜の上で Q を押すと水をやれる。\n水をやった日は1日ぶん、やらない日は半日ぶん育つ。",
+	"harvest": "育った野菜は E で収穫する。\n放っておくと傷んで、収穫が半分になる。",
+	"sell": "収穫物は市場で売れる。\n市場は南の境界の外(前に立って B で開く)。",
+	"broke": "お金と種が足りないときは、畑の野菜を収穫して市場で売ろう。\n訪ねてくる人の頼みごとでも、お金や種がもらえる。",
+	"apple": "秋はリンゴが実る(樹齢6年から)。\n木のそばで E を押すと収穫できる。",
+	"visitor": "訪ねてくる人がいる。そばで C を押すと話せる。\n頼みごとは断ってもいい。",
+	"pond_rain": "池の水は雨でたまる。\n半分を超えると、生き物が来るようになる。",
+	"pond_water": "池のそばで Q を押すと、まわりの畑と木にまとめて水をやれる。\n池の水は少し減る。",
+	"cabin_site": "H で足元を小屋の場所に決められる。\n丸太を集めて、1日1回ずつ建てていく。",
+	"cabin_logs": "小屋の丸太は、市場で買う(5本 1,500₽)か、\n育った木を Z で伐って集める(白樺は樹齢15年から)。",
+	"cabin_inside": "小屋が建った。南のドアから中に入れる。\n窓辺で苗づくり、ストーブで料理、ベッドで日記。",
+	"stove": "ストーブの前で H を押すと、収穫物を保存食にできる。\n生で売るより高く売れる。薪は丸太から作る。",
+	"bed": "ベッドのそばで H を押すと、横になって日記を見る。\n明日の予定が分かる。寝ても時間は進まない。",
+	"winter": "冬は地面が凍って、苗木を植えられない(白樺の種だけはまける)。\n小屋の窓辺なら、冬でも苗が育つ。",
+	"creatures": "見かけた生き物は、Tab の持ち物で見られる。\n木や畑が増えると、来る生き物も増える。",
+}
 
 const SEASON_NAMES := {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬"}
 const FORM_NAMES := {"seed": "種", "sapling": "苗木"}
@@ -26,6 +51,7 @@ var _fell_pending := {}      # Z を 1 回押して確認中の木(Forest.trees 
 var _fell_deadline := 0.0    # いつまでにもう一度押せば伐れるか(秒)
 var _panel := "market"       # 右の画面に出しているもの: market(市場) / kitchen(ストーブ)
 var _wildlife_timer := 0.0
+var _guide_timer := 0.0
 
 func _ready() -> void:
 	# 本物のセーブのときだけ控えを取る(テストや確認用のセーブでは取らない)
@@ -71,8 +97,13 @@ func _setup_3d_only() -> void:
 	$Cabin.set_kitchen(world.kitchen)
 	$Wildlife.setup(world.wildlife, $Player)
 	$Visitor.setup(world.visitors, $Player)
+	world.guide.has_people = true
 
 func _process(delta: float) -> void:
+	_guide_timer += delta
+	if _guide_timer >= GUIDE_CHECK_SECONDS:
+		world.guide.update(player_pos(), _guide_timer)
+		_guide_timer = 0.0
 	_wildlife_timer += delta
 	if _wildlife_timer >= WILDLIFE_CHECK_SECONDS:
 		_wildlife_timer = 0.0
@@ -109,6 +140,11 @@ func _check_new_day() -> void:
 	for c in pond.last_arrivals:
 		lines.append("池に%sが来た" % pond.CREATURES[c].name)
 	$HUD.show_message("\n".join(PackedStringArray(lines)), 10.0)
+
+# HUD に出す、今のヒント。なければ ""
+func hint_text() -> String:
+	var id: String = world.guide.current
+	return GUIDE_TEXTS[id] if id != "" else ""
 
 # ── 訪ねてくる人(3D だけ) ──────────────────────────────────────
 # 話すだけの日の言葉。{tomorrow} は明日の空模様に置き換える
@@ -1036,6 +1072,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cabin_action()
 		KEY_C:
 			_talk()
+		KEY_K:
+			world.guide.dismiss()
 		KEY_F:
 			_toggle_plot()
 		KEY_P:
