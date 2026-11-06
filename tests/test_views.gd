@@ -47,6 +47,7 @@ func _process(_delta: float) -> bool:
 			_test_visitor_collision()
 			_test_hive_collision()
 			_test_tree_collision()
+			_test_market_collision()
 			_wait_until = Time.get_ticks_msec() + 200
 		12:
 			_test_visitor_collision_off()
@@ -683,6 +684,20 @@ func _test_tree_collision() -> void:
 	var f = main.world.forest
 	f.trees.remove_at(0)
 	f.changed.emit()
+
+func _test_market_collision() -> void:
+	print("屋台の当たり判定")
+	var player: CharacterBody3D = main.get_node("Player")
+	var m = main.world.market
+	var at := func(x: float, z: float) -> Transform3D:
+		return Transform3D(Basis.IDENTITY, Vector3(x, 0, z))
+	_check(player.test_move(at.call(0.0, 52.0), Vector3(0, 0, 4)), "正面から売り台を通り抜けられない")
+	_check(not player.test_move(at.call(0.0, 52.0), Vector3(0, 0, 2.3)), "売り台のすぐ前までは歩ける")
+	_check(m.is_near(Vector2(0, 54.3)), "売り台の前に立つと、市場を開ける")
+	_check(player.test_move(at.call(1.8, 58.5), Vector3(0, 0, -2)), "後ろの柱は通り抜けられない")
+	_check(not player.test_move(at.call(0.0, 58.5), Vector3(0, 0, -2)), "後ろから屋根の下に入れる")
+	_check(player.test_move(at.call(0.0, 56.5), Vector3(0, 0, -2)), "屋根の下からも、売り台は通り抜けられない")
+	_check(not player.test_move(at.call(3.0, 52.0), Vector3(0, 0, 8)), "屋台の横は通れる")
 
 func _test_tree_collision_gone() -> void:
 	var player: CharacterBody3D = main.get_node("Player")
