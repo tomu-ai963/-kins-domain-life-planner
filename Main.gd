@@ -188,6 +188,11 @@ const CABIN_STAGE_NAMES := {"foundation": "基礎", "walls": "壁", "roof": "屋
 func player_pos() -> Vector2:
 	return $Player.ground_pos()
 
+# 作業の動きをする(3D だけ)。ルールには関わらない。作業が成功したときに呼ぶ
+func _act(kind: String, target = null, item := "") -> void:
+	if $Player.has_method("act"):
+		$Player.act(kind, target, item)
+
 func _on_plant_tree(pos: Vector2) -> void:
 	if $HUD.is_shop_open() or $HUD.is_diary_open():
 		return
@@ -204,6 +209,7 @@ func _on_plant_tree(pos: Vector2) -> void:
 	if not world.forest.add_tree(pos, selected_species, selected_form):
 		$HUD.show_message("%sの%sがない(市場で買える)" % [world.forest.SPECIES[selected_species].name, FORM_NAMES[selected_form]])
 		return
+	_act("plant", pos)
 	if selected_form == "seed":
 		$HUD.show_message("種をまいた。芽が出るかは1日たつと分かる")
 	_check_quests()
@@ -230,7 +236,10 @@ func _cabin_action() -> void:
 			_seedling_action(pos)
 		return
 	var s: Dictionary = c.current_stage()
-	match c.work(pos):
+	var result: String = c.work(pos)
+	if result in ["worked", "stage_done", "finished"]:
+		_act("build", c.site)
+	match result:
 		"worked":
 			$HUD.show_message("%sの作業をした(丸太 -%d本)。続きは明日" % [CABIN_STAGE_NAMES[s.id], s.logs_per_day], 5.0)
 		"stage_done":
@@ -250,12 +259,16 @@ func _cabin_action() -> void:
 func _seedling_action(pos: Vector2) -> void:
 	var sl := world.seedlings
 	var crop: Dictionary = world.garden.CROPS[selected_crop]
+	var sill: Vector2 = world.cabin.site + Vector2(world.cabin.WIDTH * 0.5 - 0.3, 0.2)  # 東の窓辺の鉢
 	match sl.act(pos, selected_crop):
 		"collected":
+			_act("pick", sill, "tomato")
 			$HUD.show_message("苗が%d鉢育った(春に畑へ植えるか、市場で売れる)" % sl.last_count, 5.0)
 		"tended":
+			_act("water", sill)
 			$HUD.show_message("苗の世話をした(%d鉢)" % sl.last_count)
 		"sown":
+			_act("plant", sill)
 			$HUD.show_message("%sの種を鉢にまいた(%d/%d鉢。毎日世話をすれば%d日で苗になる)" % [crop.name, sl.pots.size(), sl.POTS, sl.GROW_DAYS], 5.0)
 		"far":
 			$HUD.show_message("小屋まで行って作業する(%.0fm以内)" % world.cabin.REACH)
@@ -438,6 +451,8 @@ func cabin_line() -> String:
 func _pond_action() -> void:
 	var result: String = world.pond_action(player_pos())
 	$HUD.show_message(POND_MESSAGES[result], 5.0)
+	if result == "dug" or result == "finished":
+		_act("dig", world.land.pond)
 	if result == "placed" or result == "finished":
 		world.save_game()
 		_check_quests()
@@ -482,6 +497,7 @@ func _sow(pos: Vector2) -> void:
 	var result: String = sl.transplant(pos, selected_crop) if from_seedling else g.sow(pos, selected_crop)
 	match result:
 		"sown":
+			_act("plant", world.land.plot_center(pos))
 			var verb := "の苗を植えた" if from_seedling else "をまいた"
 			$HUD.show_message("%s%s(毎日水をやれば%d日で収穫できる)" % [crop.name, verb, g.days_left(g.crop_at(pos))], 5.0)
 		"needs_seedling":
@@ -672,6 +688,8 @@ func _toggle_plot() -> void:
 	elif result == "limit":
 		msg = msg % world.garden.NEW_PLOTS_PER_DAY
 	$HUD.show_message(msg)
+	if result == "placed" or result == "removed":
+		_act("dig", world.land.plot_center(player_pos()))
 	_after_land_change(result)
 
 func _after_land_change(result: String) -> void:
@@ -715,6 +733,7 @@ func _harvest() -> void:
 	var crop: String = g.harvest_at(pos)
 	if crop == "harvested":
 		var kind: String = c.kind
+		_act("pick", c.pos, kind)
 		var spoiled := "傷んでいて半分だけ。" if g.last_harvest_spoiled else ""
 		$HUD.show_message("%sを%dkg収穫した(%s市場で1kg %d₽で売れる)" % [g.CROPS[kind].name, g.last_harvest_kg, spoiled, world.market.SELL_PRICES[kind]])
 		return
@@ -729,6 +748,7 @@ func _harvest() -> void:
 	var msg: String = HARVEST_MESSAGES[result]
 	if result == "harvested":
 		msg = msg % [world.forest.last_harvest_count, world.market.SELL_PRICES.apple]
+		_act("pick_high", world.forest.trees[world.forest.nearest_index(pos, REACH, "apple")].pos, "apple")
 	$HUD.show_message(msg)
 
 func _water() -> void:
@@ -739,11 +759,13 @@ func _water() -> void:
 	var pond_result: String = world.pond.water_around(pos)
 	if pond_result == "watered":
 		var n: Array = world.pond.last_watered
+		_act("water")
 		$HUD.show_message("池の水を運んだ(区画 %d・木 %d に水やり。池の水 %d%%)" % [n[0], n[1], world.pond.water], 5.0)
 		return
 	# 足元の区画の野菜を先に。今日もう水をあげていれば、近くの木を見る
 	var crop: String = g.water_at(pos)
 	if crop == "watered":
+		_act("water", g.crop_at(pos).pos)
 		$HUD.show_message("%sに水をあげた(水をやった日は1日ぶん、やらない日は半日ぶん育つ)" % g.CROPS[g.crop_at(pos).kind].name)
 		return
 	# 足元 2m 以内の木に水をあげる
@@ -759,6 +781,7 @@ func _water() -> void:
 	if result == "watered":
 		var i: int = f.nearest_index(pos, REACH, "")
 		msg = msg % [f.SPECIES[f.trees[i].species].name, f.WATER_BONUS_YEARS]
+		_act("water", f.trees[i].pos)
 	$HUD.show_message(msg)
 
 # 足元の野菜を抜く。なければ 2m 以内の木を伐る(育った木は丸太になる。種は戻らない。
@@ -768,11 +791,18 @@ func _remove() -> void:
 	var pos := player_pos()
 	var c: Dictionary = g.crop_at(pos)
 	if g.remove_at(pos):
+		_act("pull", c.pos)
 		$HUD.show_message("%sを抜いた(種は戻らない)" % g.CROPS[c.kind].name)
 		return
 	if _needs_fell_confirm(pos):
 		return
+	# 消える前に、倒れる形を作る(幹のある木だけ。苗木や種は抜く動き)
+	var nearest: int = world.forest.nearest_index(pos, REACH, "")
+	var felled: Dictionary = world.forest.trees[nearest] if nearest >= 0 else {}
+	var falls: bool = not felled.is_empty() and $Trees.has_method("start_fall") and $Trees.start_fall(felled, pos)
 	var logs: int = world.cabin.fell(pos, REACH)
+	if not felled.is_empty():
+		_act("chop" if falls else "pull", felled.pos)
 	if logs > 0:
 		$HUD.show_message("木を伐った(丸太 +%d本)" % logs)
 	elif logs == 0:

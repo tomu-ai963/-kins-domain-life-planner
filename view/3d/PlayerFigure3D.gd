@@ -2,8 +2,30 @@ extends Node3D
 
 # ── プレイヤーの体(顔と手足のある人物) ──────────────────────────
 # 基本の形を組み合わせて作り、手足を振って歩く。向きは -z が正面、足の裏が y = 0。
+# 作業(play)のときは腕と上体を動かし、道具を持つ。歩いている足はそのまま動く。
 # 当たり判定は Player3D.tscn のカプセルのままで、ここは見た目だけ
 const Look = preload("res://view/3d/Look.gd")
+
+signal action_finished
+
+# 作業の動き。seconds: 全体の長さ / hit: 道具が当たる(物が飛ぶ)までの秒 / tool: 持つ道具
+const ACTIONS := {
+	"water": {"seconds": 1.0, "hit": 0.22, "tool": "can"},
+	"dig": {"seconds": 0.65, "hit": 0.38, "tool": "hoe"},
+	"chop": {"seconds": 0.65, "hit": 0.38, "tool": "axe"},
+	"build": {"seconds": 0.8, "hit": 0.3, "tool": "hammer"},
+	"pick": {"seconds": 0.6, "hit": 0.28, "tool": ""},
+	"pick_high": {"seconds": 0.6, "hit": 0.2, "tool": ""},
+	"plant": {"seconds": 0.6, "hit": 0.3, "tool": ""},
+	"pull": {"seconds": 0.6, "hit": 0.35, "tool": ""},
+}
+# 道具を持つ角度(手に対する x 回転)。腕を振り下ろしたときに道具の先が前の低いところへ来るように
+const TOOL_ANGLES := {"can": -1.25, "hoe": -1.0, "axe": -1.3, "hammer": -1.0}
+const POUR_TILT := 0.55   # じょうろを傾ける角度(rad)
+const CAN_ARM := 1.25     # じょうろを持つ腕の角度(rad)
+const STEEL := Color(0.55, 0.57, 0.60)
+const HANDLE := Color(0.62, 0.44, 0.24)
+const CAN := Color(0.40, 0.62, 0.58)
 
 const SKIN := Color(0.93, 0.74, 0.60)
 const CHEEK := Color(0.93, 0.60, 0.52)
@@ -38,9 +60,14 @@ var _leg_l: Node3D
 var _leg_r: Node3D
 var _arm_l: Node3D
 var _arm_r: Node3D
+var _action := ""           # 今している作業。なければ ""
+var _action_t := 0.0        # 作業の進み具合 0〜1
+var _tools := {}            # 道具の名前 → Node3D
+var _spout: Node3D          # じょうろの注ぎ口
 
 func _ready() -> void:
 	_build()
+	_build_tools()
 
 func _process(delta: float) -> void:
 	var blend := minf(1.0, BLEND_SPEED * delta)
@@ -56,6 +83,114 @@ func _process(delta: float) -> void:
 	_arm_r.rotation.x = swing * ARM_SWING * (1.0 - _lift * 0.7) + _lift * LANTERN_ARM
 	_hips.position.y = absf(cos(_phase)) * BOB * _amount
 	_upper.rotation.x = -LEAN * _amount
+	if _action != "":
+		_apply_action(delta)
+
+# ── 作業の動き ─────────────────────────────────────────────
+func play(kind: String) -> void:
+	_show_tool("")
+	_action = kind
+	_action_t = 0.0
+	_show_tool(ACTIONS[kind].tool)
+
+func is_acting() -> bool:
+	return _action != ""
+
+func current_action() -> String:
+	return _action
+
+func current_tool() -> String:
+	for tool_name in _tools:
+		if _tools[tool_name].visible:
+			return tool_name
+	return ""
+
+func spout_pos() -> Vector3:
+	return _spout.global_position
+
+func _show_tool(tool_name: String) -> void:
+	for key in _tools:
+		_tools[key].visible = key == tool_name
+		_tools[key].rotation.x = TOOL_ANGLES[key]
+
+func _apply_action(delta: float) -> void:
+	_action_t += delta / float(ACTIONS[_action].seconds)
+	if _action_t >= 1.0:
+		_action = ""
+		_show_tool("")
+		action_finished.emit()
+		return
+	var t := _action_t
+	var e := smoothstep(0.0, 0.18, t) * (1.0 - smoothstep(0.82, 1.0, t))  # 作業の姿勢へ入って、戻る
+	match _action:
+		"water":
+			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, CAN_ARM, e)
+			_tools.can.rotation.x = TOOL_ANGLES.can - POUR_TILT * smoothstep(0.1, 0.25, t) * (1.0 - smoothstep(0.8, 0.95, t))
+			_upper.rotation.x = lerpf(_upper.rotation.x, -0.08, e)
+		"chop":
+			_swing_both(t, e, 2.5, 0.8, -0.35)
+		"dig":
+			_swing_both(t, e, 1.7, 0.55, -0.45)
+		"build":
+			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 1.6 + 0.7 * sin(t * TAU * 2.0), e)
+			_upper.rotation.x = lerpf(_upper.rotation.x, -0.12, e)
+		"pick":
+			_bow(e, -0.75, 0.9)
+		"plant":
+			_bow(e, -0.9, 1.0 + 0.2 * sin(t * TAU * 2.0))
+		"pull":
+			_bow(e, -0.7 + 0.3 * smoothstep(0.5, 0.7, t), 1.0)
+		"pick_high":
+			_arm_l.rotation.x = lerpf(_arm_l.rotation.x, 2.7, e)
+			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.7, e)
+			_upper.rotation.x = lerpf(_upper.rotation.x, 0.08, e)
+
+# 両手で振りかぶって振り下ろす(斧・くわ)。t = 0.45 までが振りかぶり、0.58 で当たる
+func _swing_both(t: float, e: float, high: float, low: float, lean: float) -> void:
+	var angle: float = high * smoothstep(0.0, 0.4, t) if t < 0.45 else lerpf(high, low, smoothstep(0.45, 0.58, t))
+	_arm_l.rotation.x = lerpf(_arm_l.rotation.x, angle, e)
+	_arm_r.rotation.x = lerpf(_arm_r.rotation.x, angle, e)
+	var bend: float = lerpf(0.1, lean, smoothstep(0.45, 0.58, t))
+	_upper.rotation.x = lerpf(_upper.rotation.x, bend, e)
+
+# 腰を曲げて手を伸ばす
+func _bow(e: float, lean: float, arms: float) -> void:
+	_upper.rotation.x = lerpf(_upper.rotation.x, lean, e)
+	_arm_l.rotation.x = lerpf(_arm_l.rotation.x, arms, e)
+	_arm_r.rotation.x = lerpf(_arm_r.rotation.x, arms, e)
+
+# 道具は右手の子。柄は手から -z へ伸び、刃は振り下ろす向き(-y)へ付ける。ふだんは見せない
+func _build_tools() -> void:
+	var can := _tool("can")
+	var can_mat := Look.mat(CAN)
+	_box(can, can_mat, Vector3(0, -0.02, -0.14), Vector3(0.17, 0.17, 0.2))
+	_box(can, can_mat, Vector3(0, 0.08, -0.14), Vector3(0.03, 0.03, 0.16))  # 取っ手
+	_box(can, can_mat, Vector3(0, 0.0, -0.33), Vector3(0.035, 0.035, 0.22)) # 注ぎ口
+	_spout = Node3D.new()
+	_spout.name = "Spout"
+	_spout.position = Vector3(0, 0.0, -0.45)
+	can.add_child(_spout)
+	var handle := Look.mat(HANDLE)
+	var steel := Look.mat(STEEL)
+	var hoe := _tool("hoe")
+	_box(hoe, handle, Vector3(0, 0, -0.35), Vector3(0.03, 0.03, 1.0))
+	_box(hoe, steel, Vector3(0, -0.09, -0.83), Vector3(0.17, 0.2, 0.03))
+	var axe := _tool("axe")
+	_box(axe, handle, Vector3(0, 0, -0.24), Vector3(0.03, 0.03, 0.62))
+	_box(axe, steel, Vector3(0, -0.07, -0.5), Vector3(0.03, 0.18, 0.13))
+	var hammer := _tool("hammer")
+	_box(hammer, handle, Vector3(0, 0, -0.14), Vector3(0.03, 0.03, 0.34))
+	_box(hammer, steel, Vector3(0, -0.02, -0.3), Vector3(0.06, 0.15, 0.06))
+	_show_tool("")
+
+func _tool(tool_name: String) -> Node3D:
+	var n := _pivot("Tool_" + tool_name, right_hand, Vector3.ZERO)
+	_tools[tool_name] = n
+	return n
+
+var _box_mesh := BoxMesh.new()
+func _box(parent: Node3D, m: Material, pos: Vector3, size: Vector3) -> void:
+	parent.add_child(Look.mesh_node(_box_mesh, m, pos, size))
 
 # 持ち物を手に持たせる(手の下にぶら下げる)
 func hold(item: Node3D) -> void:

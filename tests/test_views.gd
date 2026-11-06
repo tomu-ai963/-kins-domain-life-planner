@@ -538,6 +538,7 @@ func _test_3d_cabin_collision() -> void:
 	_check(not player.test_move(Transform3D(Basis.IDENTITY, Vector3(21.45, 0, 19.75)), Vector3(0, 0, 0.5)), "ストーブの南は空いている")
 	_test_cabin_inside()
 	_test_furniture()
+	_test_work_motions()
 
 func _test_cabin_inside() -> void:
 	print("小屋の中")
@@ -608,6 +609,148 @@ func _test_cabin_inside() -> void:
 	_check(player.view_distance() == far_dist, "外へ出るとカメラが元の距離に戻る")
 	player._process(10.0)
 	_check(player.get_node("Body").position.y == 0.0, "体が地面の高さに戻る")
+
+func _test_work_motions() -> void:
+	print("作業の動き")
+	var w = main.world
+	var f = w.forest
+	var g = w.garden
+	var player: CharacterBody3D = main.get_node("Player")
+	var figure: Node3D = player.get_node("Body/Figure")
+	var effects: Node3D = player.get_node("WorkEffects")
+	var arm_r: Node3D = figure._arm_r
+	var finish := func() -> void:
+		figure._process(10.0)
+		if player._effect_tween != null:
+			player._effect_tween.kill()
+	f.set_season("autumn")
+	f.last_day = f.today()
+	f.today_event = "birds"
+	player.global_position = Vector3(-30, 0, -30)
+	player.set_indoors(false)
+
+	# 耕す: くわを持って振る
+	finish.call()
+	_check(not figure.is_acting() and figure.current_tool() == "", "はじめは何もしておらず、道具も持っていない")
+	g.tilled_day = ""
+	main._toggle_plot()
+	_check(figure.current_action() == "dig" and figure.current_tool() == "hoe", "耕すと、くわを持つ")
+	figure._process(0.28)  # 振りかぶったところ
+	var raised: float = arm_r.rotation.x
+	_check(raised > 1.0, "くわを振りかぶる(腕 %.2f rad)" % raised)
+	figure._process(0.14)  # 振り下ろしたところ
+	_check(arm_r.rotation.x < raised, "くわを振り下ろす(腕 %.2f rad)" % arm_r.rotation.x)
+	player._effect_tween.custom_step(10.0)
+	_check(effects.get_child_count() >= 7, "土が飛ぶ(%d 個)" % effects.get_child_count())
+	figure._process(10.0)
+	_check(not figure.is_acting() and figure.current_tool() == "", "終わると道具をしまう")
+	figure._process(0.1)
+	_check(absf(arm_r.rotation.x) < 0.01, "腕が元に戻る")
+
+	# 種まき・水やり・収穫: 成功したときだけ動く
+	var plot_pos: Vector2 = main.player_pos()
+	g.seeds.radish = 1
+	main.selected_crop = "radish"
+	main._on_plant_tree(plot_pos)
+	_check(figure.current_action() == "plant", "種をまくとかがむ")
+	finish.call()
+	main._water()
+	_check(figure.current_action() == "water" and figure.current_tool() == "can", "水やりでじょうろを持つ")
+	figure._process(0.5)
+	var spout: Vector3 = figure.spout_pos()
+	_check(spout.y > 0.3 and spout.y < 1.6 and Vector2(spout.x, spout.z).distance_to(plot_pos) > 0.2, "注ぎ口は体の前の高さにある(高さ %.2f)" % spout.y)
+	var before_drop: int = effects.get_child_count()
+	effects._drop()
+	_check(effects.get_child_count() == before_drop + 1, "水の粒が落ちる")
+	finish.call()
+	main._water()
+	_check(not figure.is_acting(), "今日もう水をあげた区画では動かない")
+	var crop: Dictionary = g.crop_at(plot_pos)
+	crop.sown_day -= 10
+	main._harvest()
+	_check(figure.current_action() == "pick" and g.crop_at(plot_pos).is_empty(), "収穫するとかがんで手を伸ばす")
+	player._effect_tween.custom_step(10.0)  # 収穫の玉を飛ばす
+	_check(effects._mats.has(load("res://view/3d/GardenView3D.gd").LOOKS.radish.ripe), "収穫物の色の玉が飛ぶ")
+	finish.call()
+	main._harvest()
+	_check(not figure.is_acting(), "収穫するものがなければ動かない")
+
+	# 実ったリンゴは手を上げて採る
+	f.trees.append({"pos": Vector2(-31, -30), "species": "apple", "form": "sapling", "planted_at": f._now(), "start_age": 8.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	f.changed.emit()
+	var apples: int = int(f.produce.apple)
+	main._harvest()
+	_check(figure.current_action() == "pick_high" and int(f.produce.apple) > apples, "リンゴは手を上げて採る")
+	finish.call()
+	f.trees.pop_back()
+	f.changed.emit()
+
+	# 作業の相手のほうを向く
+	var body: Node3D = player.get_node("Body")
+	body.rotation.y = 0.0
+	player.act("water", Vector2(-25, -30))  # 東
+	player._process(10.0)
+	_check((-body.global_basis.z).dot(Vector3.RIGHT) > 0.99, "作業の相手のほうを向く")
+	finish.call()
+	player._face_yaw = null
+
+	# 夜はランタンを置いて作業する
+	player.set_night(1.0)
+	_check(figure.holding_lantern, "夜はランタンを持っている")
+	player.act("dig")
+	_check(not figure.holding_lantern and not player.get_node("Body").find_child("Lantern", true, false).visible, "作業のあいだはランタンを持たない")
+	figure._process(10.0)
+	_check(figure.holding_lantern, "終わるとランタンを持つ")
+	player.set_night(0.0)
+	if player._effect_tween != null:
+		player._effect_tween.kill()
+
+	# 育った木を伐る: 斧を振って、反対側へ倒れる
+	var tree_at := Vector2(-30, -27)
+	f.trees.append({"pos": tree_at, "species": "birch", "form": "sapling", "planted_at": f._now(), "start_age": 30.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	f.changed.emit()
+	player.global_position = Vector3(-30, 0, -28.5)
+	var trees_view: Node3D = main.get_node("Trees")
+	main._remove()
+	_check(not figure.is_acting(), "確認の 1 回目では動かない")
+	var logs_before: int = int(w.cabin.materials.log)
+	main._remove()
+	_check(figure.current_action() == "chop" and figure.current_tool() == "axe", "伐ると斧を振る")
+	_check(int(w.cabin.materials.log) > logs_before and f.nearest_index(tree_at, 0.5, "") < 0, "ルールの結果はすぐ入る(丸太が増え、木はなくなる)")
+	var falling: Array = main.get_children().filter(func(n): return str(n.name).contains("FallingTree"))
+	_check(not falling.is_empty(), "倒れる木の形ができる")
+	var pivot: Node3D = falling[-1]  # 前のテストで倒した木も、まだ動いている途中で残っている
+	_check(pivot.get_child_count() >= 2 and pivot.quaternion.is_equal_approx(Quaternion.IDENTITY), "はじめは立っている")
+	trees_view.last_fall.custom_step(trees_view.FALL_WAIT + trees_view.FALL_SECONDS)
+	var top: Vector3 = pivot.quaternion * Vector3.UP
+	_check(top.z > 0.9 and absf(top.x) < 0.01, "足元の反対側(南)へ倒れる")
+	trees_view.last_fall.custom_step(trees_view.FALL_FADE + 0.1)
+	_check(pivot.is_queued_for_deletion(), "倒れたあと消える")
+	finish.call()
+
+	# 幹のない苗木は倒れず、抜く動きになる
+	f.saplings.birch = 1
+	main.selected_species = "birch"
+	main.selected_form = "sapling"
+	player.global_position = Vector3(-35, 0, -35)
+	main._on_plant_tree(Vector2(-35, -35))
+	finish.call()
+	f.trees[-1].start_age = 0.1
+	f.changed.emit()
+	var count_before: int = main.get_child_count()
+	main._remove()
+	main._remove()
+	_check(figure.current_action() == "pull", "幹のない苗木は抜く動きになる")
+	_check(main.get_child_count() == count_before, "苗木は倒れない")
+	finish.call()
+	main.selected_form = "seed"
+
+	# 寝ているあいだは動かない
+	player.lie_down(Vector3(-35, 0.7, -35))
+	player.act("dig")
+	_check(not figure.is_acting(), "横になっているあいだは作業の動きをしない")
+	player.get_up()
+	player._pose.custom_step(10.0)
 
 # 名前が name で始まる、部屋の中の形
 func _room_pieces(view: Node3D, prefix: String) -> Array:
@@ -750,6 +893,7 @@ func _test_furniture() -> void:
 	player._pose.custom_step(10.0)
 	view._cover_tween.custom_step(10.0)
 	_check(body.position.is_equal_approx(Vector3(0, view.FLOOR_Y, 0)), "途中で起きても立った姿勢に戻る")
+	player.get_node("Body/Figure")._process(10.0)  # 前の作業の動きを終わらせる(このテストは 1 フレームの中で進む)
 	player.set_night(1.0)
 	key.call(KEY_H)
 	_check(not player.get_node("Body/Figure").holding_lantern, "夜に横になるとランタンを持たない")
@@ -1015,6 +1159,8 @@ func _test_2d_still_works() -> void:
 	_check(main is Node2D, "Main2D.tscn は 2D")
 	main.get_node("Player").global_position = Vector2(400, -200)
 	_check(main.player_pos() == Vector2(10, -5), "2D の px を m にしてロジックに渡す(400px → 10m)")
+	main._act("dig", Vector2(10, -5))  # 2D のプレイヤーには作業の動きがない
+	_check(not main.get_node("Player").has_method("act"), "2D では作業の動きを呼ばない")
 	main.world.forest.seeds["birch"] = 1
 	main._on_plant_tree(main.player_pos())
 	_check(main.world.forest.trees.size() == 1 and main.world.forest.trees[0].pos == Vector2(10, -5), "2D でも植えられる")

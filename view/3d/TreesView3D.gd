@@ -30,8 +30,12 @@ const BLOSSOM := Color(1.0, 0.80, 0.74)  # 空の光で青みが足されるの�
 const FRUIT := Color(0.85, 0.15, 0.12)
 const LEAF_SHADE := 0.06  # 木ごとの葉の色の違い(明るい・そのまま・暗いの 3 通り)
 const SPROUT_SCALE := 0.45
+const FALL_WAIT := 0.35     # 斧が当たるまで立っている時間
+const FALL_SECONDS := 0.9   # 倒れるのにかかる時間
+const FALL_FADE := 0.4      # 倒れたあと小さくなって消えるまでの時間
 
 var forest: Forest
+var last_fall: Tween  # 直前に倒れた木の動き(テスト用)
 var _timer := 0.0
 var _items := []  # 木ごとの {tree, trunk, crown, fruits: []} (forest.trees と同じ順)
 
@@ -85,6 +89,36 @@ func _material(key: String, c: Color) -> Material:
 		m.vertex_color_use_as_albedo = true
 		_mats[key] = m
 	return _mats[key]
+
+# 伐られた木が from(足元)の反対側へ倒れる形を作る。木を消す前に呼ぶ。
+# ロジックからはすぐ消えるので、形の写しを親に置く(作り直しで消えないように)。
+# 幹のない苗木や種は倒れない(false を返す)
+func start_fall(tree: Dictionary, from: Vector2) -> bool:
+	for item in _items:
+		if not is_same(item.tree, tree):
+			continue
+		if not item.trunk.visible:
+			return false
+		var base := Look.at(tree.pos)
+		var pivot := Node3D.new()
+		pivot.name = "FallingTree"
+		pivot.position = base
+		get_parent().add_child(pivot, true)
+		for node in [item.trunk, item.crown] + item.fruits:
+			var copy: MeshInstance3D = node.duplicate()
+			copy.position = node.position - base
+			pivot.add_child(copy)
+		var away: Vector2 = tree.pos - from
+		if away.length() < 0.01:
+			away = Vector2.RIGHT
+		var axis: Vector3 = Vector3.UP.cross(Vector3(away.x, 0.0, away.y).normalized())
+		last_fall = pivot.create_tween()
+		last_fall.tween_interval(FALL_WAIT)
+		last_fall.tween_property(pivot, "quaternion", Quaternion(axis, PI * 0.48), FALL_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		last_fall.tween_property(pivot, "scale", Vector3.ONE * 0.01, FALL_FADE)
+		last_fall.tween_callback(pivot.queue_free)
+		return true
+	return false
 
 # 冬の落葉樹は葉を落として枝だけになる
 func is_bare(species: String) -> bool:
