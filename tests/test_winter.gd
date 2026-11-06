@@ -141,7 +141,7 @@ func _test_seedlings() -> void:
 	_check(sl.act(OUTSIDE, "radish") == "not_seedling", "ラディッシュは苗にできない")
 	_check(sl.act(OUTSIDE, "tomato") == "no_seed", "種がなければまけない")
 	w.market.buy("tomato_seed")
-	_check(w.market.money == 1920 and w.garden.seeds.tomato == 1, "トマトの種を 80₽ で買える")
+	_check(w.market.money == 10920 and w.garden.seeds.tomato == 1, "トマトの種を 80₽ で買える")
 	_check(sl.act(OUTSIDE, "tomato") == "sown" and sl.pots.size() == 1 and w.garden.seeds.tomato == 0, "冬でも鉢にまける(種が減る)")
 	_check(sl.watered_today(sl.pots[0]), "まいた日の世話は済んでいる")
 	_check(sl.growth_days(sl.pots[0]) == 0.0 and sl.days_left() == 5, "まいた日は育っていない(あと 5 日)")

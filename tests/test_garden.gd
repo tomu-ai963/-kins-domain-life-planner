@@ -72,7 +72,7 @@ func _test_sowing() -> void:
 	_check(g.sow(SPOT, "radish") == "no_plot", "区画がなければまけない")
 	w.land.toggle_plot(SPOT)
 	_check(g.sow(SPOT, "radish") == "no_seed", "種がなければまけない")
-	_check(w.market.buy("radish_seed") == "bought" and g.seeds.radish == 1 and w.market.money == 1960, "ラディッシュの種(1 区画ぶん・40₽)を市場で買える")
+	_check(w.market.buy("radish_seed") == "bought" and g.seeds.radish == 1 and w.market.money == 10960,"ラディッシュの種(1 区画ぶん・40₽)を市場で買える")
 	_check(g.sow(SPOT + Vector2(3, 0), "radish") == "no_plot", "区画の外にはまけない")
 	_check(g.sow(SPOT, "potato") == "not_season", "じゃがいもは秋にはまけない(春だけ)")
 	_check(g.sow(SPOT, "radish") == "sown" and g.seeds.radish == 0 and g.crops.size() == 1, "まくと種が減り、区画に野菜が入る")

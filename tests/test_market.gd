@@ -57,7 +57,10 @@ func _test_buy_and_sell() -> void:
 	var w := _world()
 	var m := w.market
 	var f := w.forest
-	_check(m.money == 2000, "はじめの所持金は 2,000₽")
+	_check(m.money == 11000, "はじめの所持金は 11,000₽")
+	var log_packs := ceili(w.cabin.total_logs() / float(m.good("logs").amount))
+	_check(log_packs == 6 and m.money - log_packs * int(m.good("logs").price) == 2000, "小屋の丸太を全部買っても 2,000₽ 残る")
+	m.money = 2000  # 以下は値段の計算を確かめる
 	_check(m.is_near(Vector2(0, 54)) and not m.is_near(Vector2(0, 0)), "市場の前(南の境界の外)でだけ売り買いできる")
 	_check(m.buy("birch_seed") == "bought" and m.money == 1940 and f.seeds.birch == 13, "白樺の種(10粒・60₽)を買うと種が 10 増える")
 	_check(m.buy("cedar_sapling") == "bought" and m.money == 440 and f.saplings.cedar == 1, "シベリア杉の苗木(1,500₽)を買える")
@@ -198,7 +201,7 @@ func _test_save() -> void:
 	var w2 := _world(false)
 	w2.load_game()
 	var f2 := w2.forest
-	_check(w2.market.money == 1100, "所持金が保存・復元される")
+	_check(w2.market.money == 10100, "所持金が保存・復元される")
 	_check(f2.produce.apple == 7 and f2.saplings.apple == 0, "収穫物と苗木の数が保存・復元される")
 	_check(f2.trees[0].form == "sapling" and f2.trees[0].start_age == 3.0, "苗木から植えた木は苗木の樹齢ごと復元される")
 	_check(f2.trees[1].form == "seed" and f2.trees[1].sprouts == f.trees[1].sprouts, "種から植えた木は、芽が出るかどうかごと復元される")
@@ -214,5 +217,5 @@ func _test_save() -> void:
 	file.close()
 	var w3 := _world(false)
 	w3.load_game()
-	_check(w3.market.money == 2000 and w3.forest.saplings.birch == 0 and w3.forest.produce.apple == 0, "前のセーブには所持金 2,000₽ を足し、苗木・収穫物は 0 から")
+	_check(w3.market.money == 11000 and w3.forest.saplings.birch == 0 and w3.forest.produce.apple == 0, "お金の記録がない古いセーブには、はじめの所持金を足し、苗木・収穫物は 0 から")
 	_check(w3.forest.is_established(w3.forest.trees[0]), "前のセーブの木は根付いている扱い")
