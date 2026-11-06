@@ -23,6 +23,7 @@ func _initialize() -> void:
 	_test_one_at_a_time()
 	_test_current_save_shape()
 	_test_stuck()
+	_test_bee_hints()
 	_test_cabin_hints()
 	_test_season_and_pond()
 	_test_people()
@@ -242,6 +243,33 @@ func _test_stuck() -> void:
 	w3.land.plots.append(Vector2(1.5, 1.5))
 	w3.market.money = 20
 	_check(_tick(w3) != "stuck", "2D では訪問者の案内を出さない")
+
+func _test_bee_hints() -> void:
+	print("巣箱")
+	var w := _world()
+	var g := w.guide
+	g.seen = ["walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell", "stuck", "broke", "cabin_site"]
+	_add_tree(w)
+	w.land.plots.append(Vector2(1.5, 1.5))
+	_check(_tick(w) == "", "自分の丸太がなければ案内しない")
+	w.cabin.materials.log = 5
+	_check(_tick(w) == "", "市場の丸太では案内しない")
+	w.cabin.own_logs = 2
+	_check(_tick(w) == "hive_make", "自分の丸太があると巣箱を案内する")
+	w.bees.act(FAR)
+	_tick(w)
+	_check("hive_make" in g.seen, "置くと消える")
+	var h: Dictionary = w.bees.hive_near(FAR)
+	h.days_done = w.bees.HOLLOW_DAYS
+	_check(_tick(w) == "hive_bees", "空の巣箱ができると、蜂の入れ方を案内する")
+	h.occupied = true
+	_tick(w)
+	_check("hive_bees" in g.seen, "蜂が入ると消える")
+	h.comb = 2.0
+	_check(_tick(w) == "honey", "たまると採り方を案内する")
+	h.comb = 0.0
+	_tick(w)
+	_check("honey" in g.seen, "採ると消える")
 
 func _test_cabin_hints() -> void:
 	print("小屋")

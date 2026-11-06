@@ -84,6 +84,7 @@ func start(id: String) -> String:
 		if int(cabin.materials.log) <= 0:
 			return "no_wood"
 		cabin.materials.log -= 1
+		cabin.clamp_own_logs()
 		firewood += LOG_FIRES
 	firewood -= 1
 	_pile(r.input)[r.input] -= int(r.amount)

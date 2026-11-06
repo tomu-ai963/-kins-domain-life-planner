@@ -253,6 +253,9 @@ func _status_lines() -> PackedStringArray:
 	if pot != "":
 		lines.append(pot)
 	lines.append(_main.pond_line())
+	var hive: String = _main.hive_line()
+	if hive != "":
+		lines.append(hive)
 	lines.append(_main.selection_line())
 	# その場所でだけ意味があること
 	if _main.world.market.is_near(_main.player_pos()) and not is_shop_open():
@@ -293,6 +296,7 @@ func _inventory_lines() -> PackedStringArray:
 func _help_lines() -> PackedStringArray:
 	return PackedStringArray([
 		"─ 操作 ─",
+		"J:丸太の巣箱を作る/くり抜く/はちみつを採る",
 		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者と話す",
 		"[1]白樺 [2]リンゴ [3]シベリア杉 [V]種/苗木",
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク [9]トマト",

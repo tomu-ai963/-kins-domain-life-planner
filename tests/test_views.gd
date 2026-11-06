@@ -45,6 +45,7 @@ func _process(_delta: float) -> bool:
 			_wait_until = Time.get_ticks_msec() + 200
 		11:
 			_test_visitor_collision()
+			_test_hive_collision()
 			_wait_until = Time.get_ticks_msec() + 200
 		12:
 			_test_visitor_collision_off()
@@ -552,6 +553,7 @@ func _test_3d_cabin_collision() -> void:
 	_test_wildlife_view()
 	_test_visitor_view()
 	_test_hint_panel()
+	_test_hive_view()
 
 func _test_cabin_inside() -> void:
 	print("小屋の中")
@@ -659,6 +661,123 @@ func _test_visitor_collision_off() -> void:
 	var at: Vector2 = view.ground_pos()
 	var south := Transform3D(Basis.IDENTITY, Vector3(at.x, 0, at.y + 2.0))
 	_check(not player.test_move(south, Vector3(0, 0, -2.0)), "帰っているあいだは通り抜けられる(閉じ込められない)")
+
+func _test_hive_view() -> void:
+	print("巣箱")
+	var w = main.world
+	var b = w.bees
+	var view: Node3D = main.get_node("Hives")
+	var player: CharacterBody3D = main.get_node("Player")
+	var hud = main.get_node("HUD")
+	var figure: Node3D = player.get_node("Body/Figure")
+	var at := Vector2(-40, 40)
+	var names := func() -> Array:
+		var spot: Node3D = view.get_child(0)
+		return spot.get_children().map(func(n): return str(n.name))
+	var has_piece := func(prefix: String) -> bool:
+		return names.call().any(func(n): return n.contains(prefix))
+	figure._process(10.0)
+	player.global_position = Vector3(at.x, 0, at.y)
+	b.hives.clear()
+	b.changed.emit()
+	w.cabin.materials.log = 0
+	w.cabin.own_logs = 0
+	_check(view.get_child_count() == 0 and main.hive_line() == "", "はじめは巣箱がなく、案内も出ない")
+	var key := InputEventKey.new()
+	key.keycode = KEY_J
+	key.pressed = true
+	main._unhandled_input(key)
+	_check(hud._message.contains("自分の木を伐った丸太"), "丸太がないと、何がいるかを知らせる")
+	w.cabin.materials.log = 2
+	w.cabin.own_logs = 2
+	_check(main.hive_line().contains("J で足元に作れる"), "自分の丸太があると案内する")
+	main._unhandled_input(key)
+	_check(view.get_child_count() == 1 and not has_piece.call("HiveRoof"), "J で丸太が立つ(まだ屋根はない)")
+	_check(is_equal_approx(b.hives[0].pos.distance_to(at), main.HIVE_FRONT), "体の前に立つ(足元に埋まらない)")
+	_check(figure.current_action() == "build", "作業の動きをする")
+	figure._process(10.0)
+	_check(main.hive_line().contains("くり抜き 0/3日") and main.hive_line().contains("J でくり抜く"), "そばではくり抜きの案内が出る: %s" % main.hive_line())
+	main._unhandled_input(key)
+	_check(hud._message.contains("1/3日") and main.hive_line().contains("今日は済んだ"), "くり抜くと進む")
+	main._unhandled_input(key)
+	_check(hud._message.contains("1日1回"), "今日はもうくり抜けない")
+	figure._process(10.0)
+	var h: Dictionary = b.hive_near(at)
+	h.days_done = 2
+	h.last_worked = ""
+	main._unhandled_input(key)
+	_check(has_piece.call("HiveRoof") and has_piece.call("HiveDoor"), "できあがると屋根と入口が付く")
+	_check(hud._message.contains("フョードルさん"), "蜂の入れ方を知らせる")
+	_check(not has_piece.call("HiveBee"), "まだ蜂はいない")
+	figure._process(10.0)
+	_check(main.hive_line().contains("蜂を待っている"), "そばで分かる")
+
+	# フョードルさんに分けてもらう
+	var vs = w.visitors
+	vs.visit = {"day": w.forest.day_number(), "who": "fyodor", "kind": "bees", "done": false, "line": 0}
+	var visitor: Node3D = main.get_node("Visitor")
+	visitor._state = "away"
+	visitor.sync_visit()
+	for _i in range(600):
+		if visitor.state() == "wait":
+			break
+		visitor.step(0.1)
+	_check(visitor._mark.get_child(0).material_override == visitor._request_mat, "蜂を分けてくれる人は橙の印")
+	main._talk()
+	_check(main.shop_header().contains("蜂を一群れ"), "言葉: %s" % main.shop_header())
+	_check(main.visitor_rows().any(func(r): return r.id == "receive_bees"), "受け取る行が出る")
+	main._on_shop_action("receive_bees")
+	_check(h.occupied and not vs.is_here() and not hud.is_shop_open(), "分けてもらうと巣箱に蜂が入る")
+	_check(has_piece.call("HiveBee"), "蜂が飛ぶ")
+	var bee: MeshInstance3D = view._flying[0].node
+	var bee_from: Vector3 = bee.position
+	view._process(0.4)
+	_check(bee.position != bee_from and bee.position.distance_to(Vector3(0, view.LOG_H * 0.7, 0)) < view.BEE_ORBIT * 2.0, "入口のまわりを飛ぶ")
+	visitor.sync_visit()
+	for _i in range(600):
+		if visitor.state() == "away":
+			break
+		visitor.step(0.1)
+	_check(main.hive_line().contains("ためている"), "そばで分かる")
+	main._unhandled_input(key)
+	_check(hud._message.contains("まだ採れるほど"), "たまるまで採れない")
+
+	# はちみつを採って売る
+	h.comb = 3.0
+	b.changed.emit()
+	_check(has_piece.call("HiveHoney"), "たまると金色になる")
+	_check(main.hive_line().contains("3kg 採れる"), "採れる量が分かる: %s" % main.hive_line())
+	_check(main.diary_text().contains("はちみつが採れる巣箱が 1"), "日記に出る")
+	figure._process(10.0)
+	main._unhandled_input(key)
+	_check(int(b.stock.honey) == 3 and hud._message.contains("3kg") and figure.current_action() == "pick", "J で採る")
+	_check(not has_piece.call("HiveHoney"), "採ると金色が消える")
+	_check(main.produce_line().contains("はちみつ 3kg"), "持ち物に出る")
+	main._panel = "market"
+	_check(main.shop_rows().any(func(r): return r.id == "sell_honey" and r.text.contains("はちみつ 3kg × 200₽")), "市場に売る行が出る")
+	var money: int = w.market.money
+	main._on_shop_action("sell_honey")
+	_check(w.market.money == money + 600, "売れる")
+	figure._process(10.0)
+
+	# 離れていると全体の様子
+	player.global_position = Vector3(0, 0, 0)
+	_check(main.hive_line().contains("1箱") and main.hive_line().contains("蜂 1箱"), "離れていると数が出る: %s" % main.hive_line())
+	var hive_at: Vector2 = b.hives[0].pos
+	player.global_position = Vector3(hive_at.x + 0.5, 0, hive_at.y)
+	main._on_plant_tree(main.player_pos())
+	_check(hud._message.contains("巣箱の近くには"), "巣箱の近くには木を植えられない")
+	# 訪問者は巣箱を回り込む
+	_check(visitor._obstacles().any(func(r): return r.has_point(hive_at)), "訪問者は巣箱を回り込む")
+	# 当たり判定(物理サーバーに入るのを待って _test_hive_collision で確かめる)
+	_check(view.get_child(0).get_node("HiveBody") is StaticBody3D, "巣箱に当たり判定がある")
+
+func _test_hive_collision() -> void:
+	var player: CharacterBody3D = main.get_node("Player")
+	var at: Vector2 = main.world.bees.hives[0].pos
+	var south := Transform3D(Basis.IDENTITY, Vector3(at.x, 0, at.y + 2.0))
+	_check(player.test_move(south, Vector3(0, 0, -2.0)), "巣箱は通り抜けられない")
+	_check(not player.test_move(south, Vector3(1.5, 0, 0)), "巣箱の横は歩ける")
 
 func _test_hint_panel() -> void:
 	print("ヒントの表示")

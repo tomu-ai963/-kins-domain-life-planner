@@ -25,7 +25,7 @@ const MIN_PLOTS_FOR_CABIN := 4  # 畑に慣れてから小屋を案内する
 const HINTS := [
 	"walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell", "stuck", "broke",
 	"apple", "visitor", "pond_rain", "pond_water", "cabin_site", "cabin_logs",
-	"cabin_inside", "stove", "bed", "winter", "creatures",
+	"cabin_inside", "stove", "bed", "hive_make", "hive_bees", "honey", "winter", "creatures",
 ]
 # お知らせのヒント(やることではなく、知らせるだけ)
 const NOTICES := ["apple", "visitor", "pond_rain", "pond_water", "bed", "winter", "creatures"]
@@ -39,6 +39,7 @@ var market: Market
 var kitchen: Kitchen
 var visitors: Visitors
 var wildlife: Wildlife
+var bees = null          # GameWorld が設定する
 var has_people := false  # 訪問者の姿があるか(3D だけ Main が true にする)
 
 var seen := []           # 出し終えたヒントの id
@@ -98,7 +99,7 @@ func _has_produce() -> bool:
 	for k in kitchen.stock:
 		if int(kitchen.stock[k]) > 0:
 			return true
-	return false
+	return int(bees.stock.honey) > 0
 
 func _any_ripe() -> bool:
 	return garden.crops.any(func(c): return garden.is_ripe(c))
@@ -166,6 +167,12 @@ func _wants(id: String) -> bool:
 			return cabin.is_inside(_pos) and _has_produce()
 		"bed":
 			return cabin.is_inside(_pos)
+		"hive_make":
+			return cabin.own_log_count() >= bees.LOG_COST
+		"hive_bees":
+			return bees.has_empty_hive()
+		"honey":
+			return bees.ready_count() > 0
 		"winter":
 			return forest.season == "winter"
 		"creatures":
@@ -205,6 +212,12 @@ func _is_done(id: String) -> bool:
 			return not kitchen.is_empty() or kitchen.firewood > 0
 		"visitor":
 			return not visitors.is_here()
+		"hive_make":
+			return not bees.hives.is_empty()
+		"hive_bees":
+			return bees.occupied_count() > 0
+		"honey":
+			return bees.ready_count() == 0
 	return false
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────

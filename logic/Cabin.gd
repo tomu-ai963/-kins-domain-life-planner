@@ -41,6 +41,7 @@ var stage := 0           # いまの段階(0〜2)。3 で完成
 var days_done := 0       # いまの段階で作業した日数
 var last_worked := ""    # 最後に作業した日(YYYY-MM-DD)
 var materials := {"log": 0}  # 丸太の本数(市場の GOODS から買い足せるよう Dictionary にする)
+var own_logs := 0            # そのうち、自分の木を伐った丸太の本数(巣箱に使う)。小屋や薪には市場の丸太を先に使う
 
 static func total_logs() -> int:
 	var n := 0
@@ -56,6 +57,19 @@ static func total_days() -> int:
 
 func is_complete() -> bool:
 	return stage >= STAGES.size()
+
+# 自分の木を伐った丸太の本数(丸太全体より多くはならない)
+func own_log_count() -> int:
+	return mini(own_logs, int(materials.log))
+
+# 自分の木の丸太を使う(巣箱)
+func spend_own_logs(n: int) -> void:
+	own_logs = own_log_count() - n
+	materials.log = int(materials.log) - n
+
+# 丸太全体が減ったあとに呼ぶ(市場の丸太から先に使ったことにする)
+func clamp_own_logs() -> void:
+	own_logs = own_log_count()
 
 # 壁まで建っているか(当たり判定を付ける)
 func has_walls() -> bool:
@@ -124,6 +138,7 @@ func work(pos: Vector2) -> String:
 	if int(materials.log) < int(s.logs_per_day):
 		return "no_wood"
 	materials.log -= int(s.logs_per_day)
+	clamp_own_logs()
 	last_worked = forest.today()
 	days_done += 1
 	var result := "worked"
@@ -180,13 +195,14 @@ func fell(pos: Vector2, max_dist: float) -> int:
 		return -1
 	var n: int = forest.wood_yield(forest.trees[i])
 	materials.log += n
+	own_logs += n
 	forest.remove_nearest(pos, max_dist)  # ここで保存される
 	changed.emit()
 	return n
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
-	var d := {"stage": stage, "days_done": days_done, "last_worked": last_worked, "logs": materials.log}
+	var d := {"stage": stage, "days_done": days_done, "last_worked": last_worked, "logs": materials.log, "own_logs": own_logs}
 	if site != null:
 		d["site"] = [site.x, site.y]
 	return d
@@ -200,4 +216,5 @@ func from_save(d: Dictionary) -> void:
 	days_done = int(d.get("days_done", 0))
 	last_worked = str(d.get("last_worked", ""))
 	materials = {"log": int(d.get("logs", 0))}
+	own_logs = int(d.get("own_logs", 0))  # 記録がないセーブの丸太は、どこから来たか分からないので自分の木に数えない
 	changed.emit()

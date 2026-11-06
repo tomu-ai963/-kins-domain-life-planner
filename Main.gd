@@ -10,6 +10,7 @@ const PICKUP_RADIUS := 1.2  # 落ちている種は、これだけ近づくと�
 const FELL_CONFIRM_SECONDS := 4.0  # 根付いた木は、この時間内にもう一度 Z を押すと伐れる
 const WILDLIFE_CHECK_SECONDS := 5.0  # はじめて来た生き物がいないか見る間隔
 const GUIDE_CHECK_SECONDS := 0.5     # ヒントを見直す間隔
+const HIVE_FRONT := 1.2              # 巣箱を置く場所(体の前、m)。足元に置くと当たり判定に埋まる
 
 # ヒント(logic/Guide.gd の id)の文言。実際のルールに合わせて書く
 const GUIDE_TEXTS := {
@@ -32,6 +33,9 @@ const GUIDE_TEXTS := {
 	"cabin_inside": "小屋が建った。南のドアから中に入れる。\n窓辺で苗づくり、ストーブで料理、ベッドで日記。",
 	"stove": "ストーブの前で H を押すと、収穫物を保存食にできる。\n生で売るより高く売れる。薪は丸太から作る。",
 	"bed": "ベッドのそばで H を押すと、横になって日記を見る。\n明日の予定が分かる。寝ても時間は進まない。",
+	"hive_make": "自分の木を伐った丸太で、巣箱を作れる(J・丸太2本)。\n3日かけてくり抜く。市場の丸太は使えない。",
+	"hive_bees": "巣箱に蜂が入るのを待とう(春と夏)。\nフョードルさんが来たら、分けてもらうこともできる。",
+	"honey": "はちみつが採れる。巣箱のそばで J を押す。\n市場で売れる。採っても蜂はいなくならない。",
 	"winter": "冬は地面が凍って、苗木を植えられない(白樺の種だけはまける)。\n小屋の窓辺なら、冬でも苗が育つ。",
 	"creatures": "見かけた生き物は、Tab の持ち物で見られる。\n木や畑が増えると、来る生き物も増える。",
 }
@@ -98,6 +102,7 @@ func _setup_3d_only() -> void:
 	$Cabin.set_kitchen(world.kitchen)
 	$Wildlife.setup(world.wildlife, $Player)
 	$Visitor.setup(world.visitors, $Player)
+	$Hives.setup(world.bees)
 	world.guide.has_people = true
 
 func _process(delta: float) -> void:
@@ -140,7 +145,61 @@ func _check_new_day() -> void:
 		lines.append("%sで池に水がたまった(%d%%)" % ["雪" if f.season == "winter" else "雨", pond.water])
 	for c in pond.last_arrivals:
 		lines.append("池に%sが来た" % pond.CREATURES[c].name)
+	if world.bees.last_arrivals > 0:
+		lines.append("空の巣箱に蜂が入った(%d箱)" % world.bees.last_arrivals)
 	$HUD.show_message("\n".join(PackedStringArray(lines)), 10.0)
+
+# ── 巣箱とはちみつ ─────────────────────────────────────────
+# J: 足元に巣箱を作る / くり抜く / はちみつを採る
+func _bee_action() -> void:
+	var b := world.bees
+	var pos := player_pos()
+	var front = pos + $Player.facing() * HIVE_FRONT if $Player.has_method("facing") else null
+	var result: String = b.act(pos, front)
+	var near: Dictionary = b.hive_near(pos)
+	match result:
+		"placed":
+			_act("build", near.pos)
+			$HUD.show_message("丸太を立てて巣箱にすることにした(丸太 -%d本)。J で1日1回くり抜く(%d日)" % [b.LOG_COST, b.HOLLOW_DAYS], 6.0)
+		"hollowed":
+			_act("build", near.pos)
+			$HUD.show_message("丸太をくり抜いた(%d/%d日)。続きは明日" % [near.days_done, b.HOLLOW_DAYS])
+		"finished":
+			_act("build", near.pos)
+			$HUD.show_message("巣箱ができた。春と夏は自然に蜂が入るのを待てる。フョードルさんに分けてもらうこともできる", 8.0)
+		"done_today":
+			$HUD.show_message("今日はもうくり抜いた(1日1回)")
+		"no_wood":
+			$HUD.show_message("自分の木を伐った丸太が%d本いる(今 %d本)。市場の丸太は使えない" % [b.LOG_COST, world.cabin.own_log_count()], 5.0)
+		"too_many":
+			$HUD.show_message("巣箱は%dつまで" % b.MAX_HIVES)
+		"blocked":
+			$HUD.show_message("ここには置けない(区画・小屋・池・木のそばや、土地の端は空ける)", 5.0)
+		"empty":
+			$HUD.show_message("この巣箱にはまだ蜂がいない")
+		"not_yet":
+			$HUD.show_message("まだ採れるほどたまっていない")
+		"harvested":
+			_act("pick", near.pos, "honey")
+			$HUD.show_message("はちみつを%dkg採った(市場で1kg %d₽で売れる)" % [b.last_harvest, world.market.SELL_PRICES.honey], 5.0)
+
+# HUD に出す、巣箱の 1 行。作れもせず巣箱もなければ ""
+func hive_line() -> String:
+	var b := world.bees
+	if b.hives.is_empty():
+		if world.cabin.own_log_count() >= b.LOG_COST:
+			return "巣箱: J で足元に作れる(自分の丸太 %d本)" % world.cabin.own_log_count()
+		return ""
+	var near: Dictionary = b.hive_near(player_pos())
+	if not near.is_empty():
+		if not b.is_hollowed(near):
+			return "巣箱: くり抜き %d/%d日(%s)" % [near.days_done, b.HOLLOW_DAYS, "今日は済んだ" if near.last_worked == world.forest.today() else "J でくり抜く"]
+		if not near.occupied:
+			return "巣箱: 蜂を待っている"
+		if float(near.comb) >= 1.0:
+			return "巣箱: はちみつ %dkg 採れる(J)" % floori(float(near.comb))
+		return "巣箱: 蜂がいる・はちみつをためている"
+	return "巣箱: %d箱・蜂 %d箱・採れる %d箱" % [b.hives.size(), b.occupied_count(), b.ready_count()]
 
 # HUD に出す、今のヒント。なければ ""
 func hint_text() -> String:
@@ -156,6 +215,7 @@ const VISITOR_CHATS := {
 		"冬が来る前に、ニンニク以外は収穫しておくんだよ。\n霜は待ってくれないからね。",
 	],
 	"fyodor": [
+		"自分の木で丸太の巣箱を作るといい。\nくり抜いてあれば、蜂を分けてあげるよ。",
 		"ミツバチは野菜の花が好きでね。\n畑が増えると、うちの蜂も喜ぶよ。",
 		"木が増えると小鳥が来る。\n育った木にはリスも来るさ。",
 		"丸太は育った木を伐れば手に入る。\n市場で買うと高いからね。",
@@ -184,6 +244,8 @@ const VISITOR_HELP := {
 	"tanya": ["畑、なんにもないね。\nお母さんが%sを持っていけって!", "雪だと畑はお休みだよね。\nお母さんが%sを持っていけって!"],
 	"pavel": ["差し出がましいですが、お困りのようで。\n%sをどうぞ。村のみんなからです。", "冬の間は大変でしょう。\n%sをどうぞ。村のみんなからです。"],
 }
+# フョードルさんが蜂を分けてくれるときの言葉
+const VISITOR_BEES := "いい巣箱ができたじゃないか。\nうちの蜂を一群れ分けよう。入れておくよ。"
 const VISITOR_THANKS := {
 	"nina": "ありがとう、助かったよ。",
 	"fyodor": "ありがたい。また来るよ。",
@@ -204,6 +266,8 @@ func reward_text(r: Dictionary) -> String:
 func visitor_text() -> String:
 	var v := world.visitors
 	var who: String = v.who()
+	if v.has_bees():
+		return VISITOR_BEES
 	if v.has_help():
 		var winter: bool = v.visit.reward.type == "money"
 		return VISITOR_HELP[who][1 if winter else 0] % reward_text(v.visit.reward)
@@ -233,7 +297,10 @@ func _talk() -> void:
 func visitor_rows() -> Array:
 	var v := world.visitors
 	var rows := []
-	if v.has_help():
+	if v.has_bees():
+		rows.append({"id": "receive_bees", "text": "ありがとう(巣箱に入れてもらう)", "column": 0})
+		rows.append({"id": "close", "text": "今はいい(C / Esc)", "column": 0})
+	elif v.has_help():
 		rows.append({"id": "receive", "text": "ありがとう(%sをもらう)" % reward_text(v.visit.reward), "column": 0})
 		rows.append({"id": "close", "text": "今はいい(C / Esc)", "column": 0})
 	elif v.has_request():
@@ -249,6 +316,11 @@ func _visitor_action(id: String) -> void:
 	var v := world.visitors
 	var who: String = v.who()
 	if id == "chat_end":
+		_close_shop()
+		return
+	if id == "receive_bees":
+		if v.receive_bees() == "received":
+			$HUD.show_message("フョードルさんが巣箱に蜂を入れてくれた。はちみつがたまるのを待とう", 6.0)
 		_close_shop()
 		return
 	if id == "receive":
@@ -279,6 +351,8 @@ func visitor_line() -> String:
 		errand = "頼みごとがあるらしい"
 	elif v.has_help():
 		errand = "渡したいものがあるらしい"
+	elif v.has_bees():
+		errand = "蜂を分けてくれるらしい"
 	if $Visitor.can_talk(player_pos()):
 		return "%s(C で話す)" % person
 	var to: Vector2 = $Visitor.ground_pos() - player_pos()
@@ -363,12 +437,14 @@ const PLOT_MESSAGES := {
 	"outside": "土地の外には作れない",
 	"has_crop": "野菜が育っている区画は戻せない(Z で抜くか、E で収穫してから)",
 	"cabin": "小屋にかかる場所には作れない",
+	"hive": "巣箱にかかる場所には作れない",
 	"limit": "新しく耕せるのは1日%d区画まで(続きは明日)",
 }
 const POND_MESSAGES := {
 	"placed": "ここに池を掘ることにした(P で 1日1回 掘る。掘りはじめる前なら Z で取り消せる)",
 	"outside": "土地の外には掘れない",
 	"cabin": "小屋にかかる場所には掘れない",
+	"hive": "巣箱にかかる場所には掘れない",
 	"dug": "池を掘った(続きは明日)",
 	"finished": "池を掘り終えた。あとは雨で水がたまる",
 	"far": "池はひとつまで(今の池の近くで P を押すと掘る)",
@@ -413,6 +489,9 @@ func _on_plant_tree(pos: Vector2) -> void:
 	if world.cabin.covers(pos):
 		$HUD.show_message("小屋の場所には植えられない")
 		return
+	if world.bees.covers(pos, world.bees.CLEARANCE):
+		$HUD.show_message("巣箱の近くには植えられない")
+		return
 	if not world.forest.can_plant(selected_species, selected_form):
 		$HUD.show_message("冬は地面が凍っていて植えられない(白樺の種だけは雪の上にまける)", 5.0)
 		return
@@ -435,6 +514,9 @@ func _cabin_action() -> void:
 	var c := world.cabin
 	var pos := player_pos()
 	if c.site == null:
+		if world.bees.hives.any(func(h): return c.rect_at(pos.round()).grow(world.bees.CLEARANCE).has_point(h.pos)):
+			$HUD.show_message("巣箱にかかる場所には建てられない")
+			return
 		$HUD.show_message(CABIN_PLACE_MESSAGES[c.place(pos)], 5.0)
 		return
 	if c.is_complete():
@@ -595,6 +677,8 @@ func diary_text() -> String:
 		todo.append("苗の世話がまだ")
 	if has_node("Visitor") and world.visitors.has_request():
 		todo.append("%sの頼みごとがまだ" % world.visitors.CAST[world.visitors.who()].name)
+	if world.bees.ready_count() > 0:
+		todo.append("はちみつが採れる巣箱が %d ある" % world.bees.ready_count())
 	lines.append("今日")
 	lines.append_array(_bullets(todo, "やり残したことはない"))
 	lines.append("")
@@ -633,6 +717,8 @@ func _tomorrow_lines() -> PackedStringArray:
 		lines.append("鍋の%sを受け取れる" % k.RECIPES[k.pot.recipe].name)
 	elif k.is_empty():
 		lines.append("鍋が空いている")
+	if world.bees.ready_tomorrow() > 0:
+		lines.append("はちみつが採れる巣箱: %d" % world.bees.ready_tomorrow())
 	if world.visitors.is_visit_day(world.forest.day_number() + 1):
 		lines.append("%sが来そう" % world.visitors.CAST[world.visitors.who_on(world.forest.day_number() + 1)].name)
 	return lines
@@ -794,6 +880,8 @@ func seedlings_line() -> String:
 func produce_name(item: String) -> String:
 	if item == "apple":
 		return "リンゴ"
+	if item == "honey":
+		return "はちみつ"
 	if item.begins_with("seedling_"):
 		return world.garden.CROPS[item.trim_prefix("seedling_")].name + "の苗"
 	if world.kitchen.RECIPES.has(item):
@@ -810,6 +898,8 @@ func produce_unit(item: String) -> String:
 func produce_count(item: String) -> int:
 	if item == "apple":
 		return int(world.forest.produce.apple)
+	if item == "honey":
+		return int(world.bees.stock.honey)
 	if item.begins_with("seedling_"):
 		return int(world.seedlings.ready[item.trim_prefix("seedling_")])
 	if world.kitchen.RECIPES.has(item):
@@ -1100,6 +1190,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_talk()
 		KEY_K:
 			world.guide.dismiss()
+		KEY_J:
+			_bee_action()
 		KEY_F:
 			_toggle_plot()
 		KEY_P:

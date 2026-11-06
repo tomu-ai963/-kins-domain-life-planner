@@ -201,6 +201,11 @@ func _apply_lantern() -> void:
 	_lantern.visible = holding
 	_figure.holding_lantern = holding
 
+# 向いている方向(長さ 1。ロジックの座標)
+func facing() -> Vector2:
+	var f: Vector3 = -_body.global_basis.z
+	return Vector2(f.x, f.z).normalized()
+
 # 足元の位置(m)。ロジックの座標 Vector2(x, y) は 3D の (x, z)
 func ground_pos() -> Vector2:
 	return Vector2(global_position.x, global_position.z)

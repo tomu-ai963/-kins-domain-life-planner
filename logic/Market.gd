@@ -8,6 +8,7 @@ const Garden = preload("res://logic/Garden.gd")
 const Cabin = preload("res://logic/Cabin.gd")
 const Seedlings = preload("res://logic/Seedlings.gd")
 const Kitchen = preload("res://logic/Kitchen.gd")
+const Bees = preload("res://logic/Bees.gd")
 
 signal changed
 
@@ -38,6 +39,7 @@ const SELL_PRICES := {
 	"apple": 15, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
 	"seedling_tomato": 150, "seedling_cucumber": 120,
 	"jam": 75, "sauce": 150, "pickles": 35, "garlic_pickle": 120, "pirozhki": 12,
+	"honey": 200,  # 1kg あたり。巣箱 1 つで 1 日 100〜140₽ ほどになる仮の数字
 }
 
 var money := INITIAL_MONEY
@@ -46,6 +48,7 @@ var garden: Garden  # GameWorld が設定する(野菜の種・収穫物の持�
 var cabin: Cabin    # GameWorld が設定する(丸太の持ち物は Cabin にある)
 var seedlings: Seedlings  # GameWorld が設定する(苗の持ち物は Seedlings にある)
 var kitchen: Kitchen  # GameWorld が設定する(保存食の持ち物は Kitchen にある)
+var bees: Bees        # GameWorld が設定する(はちみつの持ち物は Bees にある)
 
 func is_near(pos: Vector2) -> bool:
 	return pos.distance_to(POS) <= REACH
@@ -82,6 +85,8 @@ func pile_of(item: String) -> Dictionary:
 		return seedlings.ready
 	if Kitchen.RECIPES.has(item):
 		return kitchen.stock
+	if item == "honey":
+		return bees.stock
 	return garden.produce if garden.produce.has(item) else forest.produce
 
 func key_of(item: String) -> String:

@@ -136,6 +136,9 @@ func _obstacles() -> Array:
 	var cabin = visitors.market.cabin
 	if cabin.site != null:
 		list.append(cabin.rect().grow(OBSTACLE_MARGIN))
+	if visitors.bees != null:
+		for h in visitors.bees.hives:
+			list.append(Rect2(h.pos - Vector2.ONE * TREE_MARGIN, Vector2.ONE * TREE_MARGIN * 2.0))
 	var pond = visitors.garden.land.pond
 	if pond != null:
 		var r: float = visitors.garden.land.POND_RADIUS + OBSTACLE_MARGIN
@@ -271,7 +274,7 @@ func _show_mark() -> void:
 	if _mark == null:
 		return
 	_mark.visible = _state == "wait" or _state == "arrive"
-	var m: Material = _request_mat if visitors.has_request() or visitors.has_help() else _chat_mat
+	var m: Material = _request_mat if visitors.has_request() or visitors.has_help() or visitors.has_bees() else _chat_mat
 	for c in _mark.get_children():
 		c.material_override = m
 

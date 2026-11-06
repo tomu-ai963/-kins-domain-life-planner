@@ -14,6 +14,7 @@ const Kitchen = preload("res://logic/Kitchen.gd")
 const Wildlife = preload("res://logic/Wildlife.gd")
 const Visitors = preload("res://logic/Visitors.gd")
 const Guide = preload("res://logic/Guide.gd")
+const Bees = preload("res://logic/Bees.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 const DayClock = preload("res://logic/DayClock.gd")
@@ -35,6 +36,7 @@ var kitchen := Kitchen.new()
 var wildlife := Wildlife.new()
 var visitors := Visitors.new()
 var guide := Guide.new()
+var bees := Bees.new()
 var quests := Quests.new()
 var market := Market.new()
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
@@ -73,6 +75,14 @@ func _init() -> void:
 	visitors.seedlings = seedlings
 	visitors.market = market
 	visitors.kitchen = kitchen
+	visitors.bees = bees
+	bees.forest = forest
+	bees.land = land
+	bees.garden = garden
+	bees.cabin = cabin
+	market.bees = bees
+	wildlife.bees = bees
+	guide.bees = bees
 	guide.forest = forest
 	guide.land = land
 	guide.garden = garden
@@ -91,12 +101,15 @@ func _init() -> void:
 	wildlife.dirty.connect(save_game)
 	visitors.dirty.connect(save_game)
 	guide.dirty.connect(save_game)
+	bees.dirty.connect(save_game)
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
 # 結果: Garden.toggle_plot の結果か cabin
 func toggle_plot(pos: Vector2) -> String:
 	if land.plot_at(pos) == null and cabin.blocks_plot(land.plot_center(pos)):
 		return "cabin"
+	if land.plot_at(pos) == null and bees.blocks_plot(land.plot_center(pos), land.PLOT_SIZE * 0.5):
+		return "hive"
 	return garden.toggle_plot(pos)
 
 # P: 池がなければ足元を池の場所に決める。あれば今日の分を掘る
@@ -106,6 +119,8 @@ func pond_action(pos: Vector2) -> String:
 		return pond.dig(pos)
 	if cabin.blocks_pond(pos):
 		return "cabin"
+	if bees.covers(pos, land.POND_RADIUS + bees.CLEARANCE):
+		return "hive"
 	return land.toggle_pond(pos)
 
 # 日付が変わっていたら、その日の発見を起こして id を返す(Forest.check_new_day)。
@@ -119,6 +134,7 @@ func check_new_day() -> String:
 	if id == "rain":
 		garden.water_all()
 	pond.catch_up()
+	bees.catch_up()
 	visitors.check_today()  # 霜のあとの畑を見て、今日の頼みごとを決める
 	return id
 
@@ -156,6 +172,7 @@ func save_game() -> void:
 	data["wildlife"] = wildlife.to_save()
 	data["visitors"] = visitors.to_save()
 	data["guide"] = guide.to_save()
+	data["bees"] = bees.to_save()
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
@@ -217,6 +234,10 @@ func load_game() -> void:
 	var gud = data.get("guide", {})
 	if typeof(gud) != TYPE_DICTIONARY:
 		gud = {}
+	# 巣箱の記録がないセーブ(2026-11-06 より前)は、巣箱なしから
+	var bd = data.get("bees", {})
+	if typeof(bd) != TYPE_DICTIONARY:
+		bd = {}
 	# Godot 3 版(2026-11 より前)のセーブは座標が px。読むときに m に直す
 	if data.get("unit", "px") != SAVE_UNIT:
 		_px_to_m(data, ld)
@@ -229,6 +250,7 @@ func load_game() -> void:
 	wildlife.from_save(wd)
 	visitors.from_save(vd)
 	guide.from_save(gud)
+	bees.from_save(bd)
 	quests.from_save(qd)
 	market.from_save(md)
 	forest.from_save(data)

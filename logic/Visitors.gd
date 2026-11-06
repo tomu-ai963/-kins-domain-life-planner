@@ -5,6 +5,7 @@ extends RefCounted
 # 渡せるものがあれば頼みごとをして、渡すと市場より少し高いお金か、種や苗をくれる(物々交換)。
 # 渡せるものがなければ話すだけの日になる。頼みごとは断ってもよく、その日が終わると帰る(罰はない)。
 # 収入の手段が尽きているとき(is_stuck)だけは、種を少し分けてくれる(冬はまける種がないのでお金)。
+# フョードルさん(養蜂家)は、空の巣箱があれば蜂を分けてくれる(kind = bees)。
 # 今日の中身は最初に決めた時点で保存する(収穫や売買で中身が変わらないように)。
 # 文言は Main、見た目は view/ が決める
 const Forest = preload("res://logic/Forest.gd")
@@ -28,7 +29,7 @@ const HELP_MONEY := 200           # まける種がない冬に分けてくれ�
 const CAST := {
 	"nina": {"name": "ニーナさん", "likes": ["tomato", "cucumber", "carrot", "radish", "potato"]},
 	"fyodor": {"name": "フョードルさん", "likes": ["garlic", "apple", "garlic_pickle", "potato", "carrot"]},
-	"tanya": {"name": "ターニャさん", "likes": ["apple", "pirozhki", "jam", "carrot", "radish"]},
+	"tanya": {"name": "ターニャさん", "likes": ["honey", "apple", "pirozhki", "jam", "carrot", "radish"]},
 	"pavel": {"name": "パーヴェルさん", "likes": ["sauce", "pickles", "jam", "tomato", "cucumber"]},
 }
 const ORDER := ["nina", "fyodor", "tanya", "pavel"]  # 来る順番
@@ -36,16 +37,18 @@ const ORDER := ["nina", "fyodor", "tanya", "pavel"]  # 来る順番
 # 1 回に頼む量(リンゴは個、野菜は kg、保存食は瓶 / 個)
 const ASK := {
 	"apple": 5, "radish": 3, "carrot": 5, "cucumber": 5, "potato": 5, "garlic": 1, "tomato": 5,
-	"jam": 2, "sauce": 2, "pickles": 3, "garlic_pickle": 1, "pirozhki": 5,
+	"jam": 2, "sauce": 2, "pickles": 3, "garlic_pickle": 1, "pirozhki": 5, "honey": 1,
 }
+const BEEKEEPER := "fyodor"  # 蜂を分けてくれる人
 
 var forest: Forest      # GameWorld が設定する
 var garden: Garden
 var seedlings: Seedlings
 var market: Market
 var kitchen = null      # GameWorld が設定する(鍋の中身を見る)
+var bees = null         # GameWorld が設定する(空の巣箱を見る)
 
-var visit := {}         # 今日の訪問 {day, who, kind: request/chat/help, item, amount, reward: {...}, done: bool, line: int}。来ない日は who がない
+var visit := {}         # 今日の訪問 {day, who, kind: request/chat/help/bees, item, amount, reward: {...}, done: bool, line: int}。来ない日は who がない
 var last_reward := {}   # 直前にもらったお礼(文言用)
 
 static func is_visit_day(day: int) -> bool:
@@ -63,6 +66,10 @@ func check_today() -> bool:
 		# 話すだけの予定だった人も、手詰まりなら助けてくれる(その日のうちに手詰まりになったとき)
 		if is_here() and visit.kind == "chat" and is_stuck():
 			_make_help(visit)
+			dirty.emit()
+			changed.emit()
+		elif is_here() and visit.kind == "chat" and visit.who == BEEKEEPER and _can_share_bees():
+			visit.kind = "bees"  # その日のうちに巣箱ができたとき
 			dirty.emit()
 			changed.emit()
 		return false
@@ -118,6 +125,23 @@ func _help_reward() -> Dictionary:
 func has_help() -> bool:
 	return is_here() and visit.kind == "help"
 
+func has_bees() -> bool:
+	return is_here() and visit.kind == "bees"
+
+func _can_share_bees() -> bool:
+	return bees != null and bees.can_share_now()
+
+# 蜂を分けてもらう。結果: received / none / no_hive(空の巣箱がなくなった)
+func receive_bees() -> String:
+	if not has_bees():
+		return "none"
+	if not bees.add_colony():
+		return "no_hive"
+	visit.done = true
+	dirty.emit()
+	changed.emit()
+	return "received"
+
 # 分けてくれるものを受け取る。結果: received / none
 func receive_help() -> String:
 	if not has_help():
@@ -140,6 +164,9 @@ func _generate(day: int) -> Dictionary:
 	var v := {"day": day, "who": who, "kind": "chat", "done": false, "line": rng.randi_range(0, 99)}
 	if is_stuck():
 		_make_help(v)
+		return v
+	if who == BEEKEEPER and _can_share_bees():
+		v.kind = "bees"
 		return v
 	var item: String = _choose_item(who)
 	if item == "" or rng.randf() < CHAT_CHANCE:

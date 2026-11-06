@@ -41,6 +41,7 @@ var land: Land
 var garden: Garden
 var cabin: Cabin
 var clock: DayClock
+var bees = null      # GameWorld が設定する(巣箱の上には行かない)
 
 var seen := []       # 一度でも来た生き物の id
 
@@ -129,6 +130,8 @@ func is_free(pos: Vector2) -> bool:
 	if absf(pos.x) > limit or absf(pos.y) > limit:
 		return false
 	if cabin.site != null and cabin.rect().grow(CABIN_MARGIN).has_point(pos):
+		return false
+	if bees != null and bees.covers(pos):
 		return false
 	return land.pond == null or pos.distance_to(land.pond) > land.POND_RADIUS
 
