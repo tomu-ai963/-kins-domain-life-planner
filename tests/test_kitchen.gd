@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_sell()
 	_test_honey()
 	_test_season_prices()
+	_test_eat()
 	_test_save()
 	_test_old_save()
 	_test_places()
@@ -193,6 +194,38 @@ func _test_season_prices() -> void:
 	w.garden.produce.tomato = 5
 	_check(w.visitors.value_of("sauce", 2) == 450, "訪問者のお礼も冬の値段から決まる")
 	_check(w.visitors.value_of("tomato", 5) == 200, "生の野菜のお礼は変わらない")
+
+func _test_eat() -> void:
+	print("食べる")
+	var w := _world()
+	var k := w.kitchen
+	_check(not k.ate_today() and not k.ever_ate() and not k.has_food(), "はじめは食べていない")
+	_check(k.eat("nothing") == "unknown", "知らないものは食べられない")
+	_check(k.eat("sauce") == "none" and not k.ate_today(), "持っていないものは食べられない")
+	k.stock.sauce = 2
+	k.stock.pirozhki = 3
+	_check(k.has_food(), "持っているのが分かる")
+	_check(k.eat("sauce") == "eaten" and k.stock.sauce == 1 and k.last_eaten == "sauce", "1 つ食べると 1 つ減る")
+	_check(k.ate_today() and k.ever_ate(), "今日は食べた")
+	_check(k.eat("pirozhki") == "full" and k.stock.pirozhki == 3, "今日はもう食べられない(減らない)")
+	_check(w.market.sell_all("sauce") == 150, "残りは売れる")
+	k.ate_day = w.forest.day_number() - 1
+	_check(not k.ate_today() and k.ever_ate() and k.eat("pirozhki") == "eaten", "次の日はまた食べられる")
+	_check(Kitchen.MEAL_SPEED > 1.0, "食べた日は速く歩ける")
+	var k2 := Kitchen.new()
+	k2.forest = w.forest
+	k2.from_save(k.to_save())
+	_check(k2.ate_today() and k2.ever_ate(), "食べた日が残る")
+	k2.from_save({})
+	_check(not k2.ever_ate(), "記録がないセーブは、まだ食べていない")
+	# 座れる場所
+	var c := w.cabin
+	var stool := SITE + Cabin.STOOL_OFFSET
+	_check(c.is_at_stool(stool + Vector2(0.3, 0)), "腰掛けのそばで座れる")
+	_check(not c.is_at_stool(SITE) and not c.is_at_stool(SITE + Vector2(1.6, 0.4)), "部屋の真ん中と東の窓辺は違う(苗づくり)")
+	_check(not c.is_at_bed(stool) and not c.is_at_stove(stool), "腰掛けはベッドやストーブと重ならない")
+	c.stage = 1
+	_check(not c.is_at_stool(stool), "完成前は座れない")
 
 func _test_save() -> void:
 	print("セーブ")

@@ -220,7 +220,7 @@ func _process(delta: float) -> void:
 func status_text() -> String:
 	var lines := _status_lines()
 	# 市場を開いているあいだは持ち物を自動で出す。ストーブの画面は行の中に持っている数が出るので、重ならないよう出さない
-	var in_kitchen: bool = is_shop_open() and _main._panel == "kitchen"
+	var in_kitchen: bool = is_shop_open() and (_main._panel == "kitchen" or _main._panel == "table")
 	var talking: bool = is_shop_open() and _main._panel == "visitor"  # 話しているときも、持っている数は行の中に出る
 	if (inventory_open or is_shop_open()) and not in_kitchen and not talking:
 		lines.append_array(_inventory_lines())
@@ -252,6 +252,9 @@ func _status_lines() -> PackedStringArray:
 	var pot: String = _main.kitchen_line()
 	if pot != "":
 		lines.append(pot)
+	var meal: String = _main.meal_line()
+	if meal != "":
+		lines.append(meal)
 	lines.append(_main.pond_line())
 	var hive: String = _main.hive_line()
 	if hive != "":
@@ -304,7 +307,7 @@ func _help_lines() -> PackedStringArray:
 		"─ 操作 ─",
 		"J:丸太の巣箱を作る/くり抜く/はちみつを採る  M:音量(大/中/小/消す)",
 		"L:鳥の餌台を立てる/白樺の種を置く(秋と冬)  X:果樹を剪定する(冬)",
-		"U:押したまま歩いて雪かき(冬)  H:小屋の東の台で薪を割る",
+		"U:押したまま歩いて雪かき(冬)  H:小屋の東の台で薪を割る / 腰掛けで食べる",
 		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者と話す",
 		"[1]白樺 [2]果樹(押すたびに リンゴ/サクランボ/スモモ/ナシ) [3]シベリア杉 [V]種/苗木",
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク [9]トマト",

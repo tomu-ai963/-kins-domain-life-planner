@@ -16,6 +16,7 @@ signal dirty    # セーブに入る状態が変わった
 const LOG_FIRES := 10  # 丸太 1 本を割ってできる薪(回分)
 const SPLIT_FIRES := 2 # 1 回割るとできる薪(回分)。丸太 1 本を 5 回割る
 const MAX_FIREWOOD := 40  # 積んでおける薪(回分)。小屋の壁際に積める量
+const MEAL_SPEED := 1.15  # 食べた日の歩く速さの倍率(仮の数字)。売るか食べるかを選べるように、効くのは 1 日 1 回
 
 # input: 材料 / amount: 1 回に使う量(リンゴは個、野菜は kg) / output: できる数 / days: できるまでの暦の日数
 const RECIPES := {
@@ -41,6 +42,8 @@ var stock := {}     # できた保存食の数 {recipe: 数}
 var firewood := 0   # 割ってある薪(回分)
 var cooked := false # 一度でも仕込んだか(ヒント用。薪は剪定の枝でも増えるので、薪では分からない)
 var log_left := 0   # 台の上で割りかけの丸太の残り(回分)
+var ate_day := -1   # 最後に食べた日の通し番号(-1 = まだ)
+var last_eaten := "" # 直前に食べた保存食の id(文言用)
 var last_collected := {} # 直前に受け取った {recipe, count}(文言用)
 
 func _init() -> void:
@@ -100,6 +103,33 @@ func start(id: String) -> String:
 	_commit()
 	return "started"
 
+func ate_today() -> bool:
+	return ate_day == forest.day_number()
+
+func ever_ate() -> bool:
+	return ate_day >= 0
+
+# 保存食を持っているか
+func has_food() -> bool:
+	for id in stock:
+		if int(stock[id]) > 0:
+			return true
+	return false
+
+# 保存食を 1 つ食べる。結果: eaten / full(今日はもう食べた) / none(持っていない) / unknown
+func eat(id: String) -> String:
+	if not RECIPES.has(id):
+		return "unknown"
+	if ate_today():
+		return "full"
+	if int(stock[id]) <= 0:
+		return "none"
+	stock[id] = int(stock[id]) - 1
+	ate_day = forest.day_number()
+	last_eaten = id
+	_commit()
+	return "eaten"
+
 # 剪定で切った枝を薪にする(積める量まで)
 func add_firewood(n: int) -> void:
 	firewood = mini(firewood + n, MAX_FIREWOOD)
@@ -137,11 +167,12 @@ func collect() -> String:
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
-	return {"pot": pot, "stock": stock, "firewood": firewood, "log_left": log_left, "cooked": cooked}
+	return {"pot": pot, "stock": stock, "firewood": firewood, "log_left": log_left, "cooked": cooked, "ate_day": ate_day}
 
 func from_save(d: Dictionary) -> void:
 	firewood = int(d.get("firewood", 0))
 	log_left = int(d.get("log_left", 0))
+	ate_day = int(d.get("ate_day", -1))
 	stock = _zero_counts()
 	var saved = d.get("stock", {})
 	if typeof(saved) == TYPE_DICTIONARY:

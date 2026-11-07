@@ -38,6 +38,7 @@ const GUIDE_TEXTS := {
 	"split": "小屋の東の薪割り台で H を押すと、丸太を割れる。\n料理には薪がいる。丸太1本で10回分。",
 	"stove": "ストーブの前で H を押すと、収穫物を保存食にできる。\n生より高く、冬と春はもっと高く売れる。薪を1回分使う。",
 	"bed": "ベッドのそばで H を押すと、横になって日記を見る。\n明日の予定が分かる。寝ても時間は進まない。",
+	"table": "腰掛けのそばで H を押すと、座って保存食を食べられる。\n食べた日は少し速く歩ける(1日1回)。",
 	"hive_make": "自分の木を伐った丸太で、巣箱を作れる(J・丸太2本)。\n3日かけてくり抜く。市場の丸太は使えない。",
 	"hive_bees": "巣箱に蜂が入るのを待とう(春と夏)。\nフョードルさんが来たら、分けてもらうこともできる。",
 	"honey": "はちみつが採れる。巣箱のそばで J を押す。\n市場で売れて、ストーブで料理にも使える。採っても蜂はいなくならない。",
@@ -149,10 +150,14 @@ func update_shovel(delta: float, holding: bool) -> void:
 	if shoveling and _shovel_wait <= 0.0 and s.clear_at(pos) == "cleared":
 		_shovel_wait = SHOVEL_GAP
 		_act("shovel")
+	var speed := 1.0
 	if shoveling:
-		$Player.speed_scale = s.SHOVEL_SPEED
-	else:
-		$Player.speed_scale = s.PATH_SPEED if s.is_cleared(pos) else 1.0
+		speed = s.SHOVEL_SPEED
+	elif s.is_cleared(pos):
+		speed = s.PATH_SPEED
+	if world.kitchen.ate_today():
+		speed *= world.kitchen.MEAL_SPEED
+	$Player.speed_scale = speed
 
 func _check_new_day() -> void:
 	var f := world.forest
@@ -689,6 +694,8 @@ func _cabin_action() -> void:
 	if c.is_complete():
 		if c.is_at_chop_block(pos):
 			_split_wood()
+		elif c.is_at_stool(pos):
+			_open_table()
 		elif c.is_at_stove(pos):
 			_open_kitchen()
 		elif c.is_at_bed(pos):
@@ -802,6 +809,42 @@ func _kitchen_action(id: String) -> void:
 				$HUD.show_message("薪がない(小屋の東の薪割り台で、H で丸太を割る)", 5.0)
 	$HUD.refresh_shop()
 
+# ── テーブルと腰掛け ──────────────────────────────────────────
+# 腰掛けに座って、テーブルの保存食を 1 つ食べる。食べた日は少し速く歩ける
+func _open_table() -> void:
+	_panel = "table"
+	_sfx("open")
+	$Player.set_physics_process(false)  # 座っているあいだは歩かない
+	if $Player.has_method("sit_down"):  # 3D だけ
+		$Player.sit_down($Cabin.seat_spot(), $Cabin.SIT_YAW)
+	$HUD.open_shop()
+
+func table_rows() -> Array:
+	var k := world.kitchen
+	var rows := []
+	for id in k.RECIPES:
+		var n := produce_count(id)
+		if n > 0:
+			var r: Dictionary = k.RECIPES[id]
+			rows.append({"id": "eat_" + id, "text": "食べる: %s(%d%s。市場で1%s %d₽)" % [r.name, n, r.unit, r.unit, world.market.sell_price(id)], "column": 0})
+	if rows.is_empty():
+		rows.append({"id": "no_food", "text": "テーブルに保存食がない(ストーブで作る)", "column": 0})
+	rows.append({"id": "close", "text": "立つ(H / Esc)", "column": 1})
+	return rows
+
+func _table_action(id: String) -> void:
+	if not id.begins_with("eat_"):
+		return
+	var k := world.kitchen
+	match k.eat(id.trim_prefix("eat_")):
+		"eaten":
+			if $Player.has_method("eat_motion"):
+				$Player.eat_motion()
+			$HUD.show_message("%sを食べた。今日は少し速く歩ける" % k.RECIPES[k.last_eaten].name, 5.0)
+		"full":
+			$HUD.show_message("今日はもう食べた(速く歩けるのは1日1回)")
+	$HUD.refresh_shop()
+
 # 「市場で1瓶 150₽で売れる。冬は225₽」のような文言。冬と春は今の値段だけ
 func _preserve_price_text(id: String, unit: String) -> String:
 	var m := world.market
@@ -820,12 +863,18 @@ func kitchen_line() -> String:
 		return "鍋: %s できた(ストーブの前で H)" % recipe
 	return "鍋: %s あと%d日" % [recipe, k.days_left()]
 
+# HUD に出す、食事の 1 行。今日まだ食べていなければ ""
+func meal_line() -> String:
+	return "食事: 今日は食べた(少し速く歩ける)" if world.kitchen.ate_today() else ""
+
 # HUD に出す、家具のそばでの案内。そばにいなければ ""
 func furniture_line() -> String:
 	var c := world.cabin
 	var pos := player_pos()
 	if c.is_at_chop_block(pos):
 		return "薪割り台(H で割る・薪 %d回分・丸太 %d本)" % [world.kitchen.firewood, int(c.materials.log)]
+	if c.is_at_stool(pos):
+		return "腰掛けのそば(H で座って食べる)"
 	if c.is_at_stove(pos):
 		return "ストーブの前(H で料理)"
 	if c.is_at_bed(pos):
@@ -1121,12 +1170,16 @@ func good_name(g: Dictionary) -> String:
 func shop_title() -> String:
 	if _panel == "visitor":
 		return world.visitors.CAST[world.visitors.who()].name
+	if _panel == "table":
+		return "腰掛け(クリックか 矢印キー + Enter で選ぶ)"
 	return "ストーブ(クリックか 矢印キー + Enter で選ぶ)" if _panel == "kitchen" else "市場(クリックか 矢印キー + Enter で選ぶ)"
 
 # 右の画面の 2 行目
 func shop_header() -> String:
 	if _panel == "visitor":
 		return visitor_text()
+	if _panel == "table":
+		return "今日はもう食べた" if world.kitchen.ate_today() else "1つ食べると、今日は少し速く歩ける"
 	if _panel == "kitchen":
 		return "薪: %d回分   丸太: %d本(丸太1本で%d回分)" % [world.kitchen.firewood, int(world.cabin.materials.log), world.kitchen.LOG_FIRES]
 	return "所持金: %s₽" % $HUD._money_text(world.market.money)
@@ -1135,6 +1188,8 @@ func shop_header() -> String:
 func shop_rows() -> Array:
 	if _panel == "kitchen":
 		return kitchen_rows()
+	if _panel == "table":
+		return table_rows()
 	if _panel == "visitor":
 		return visitor_rows()
 	var m := world.market
@@ -1166,9 +1221,12 @@ func _toggle_shop() -> void:
 
 func _close_shop() -> void:
 	var was_chat: bool = _panel == "visitor" and not world.visitors.has_request()
+	var was_sitting: bool = _panel == "table"
 	_sfx("click")
 	$HUD.close_shop()
 	$Player.set_physics_process(true)
+	if was_sitting and $Player.has_method("stand_up"):
+		$Player.stand_up()
 	if was_chat:
 		world.visitors.finish_chat()  # 話し終えると帰っていく
 	_panel = "market"
@@ -1181,6 +1239,10 @@ func _on_shop_action(id: String) -> void:
 	if _panel == "kitchen":
 		_sfx("click")
 		_kitchen_action(id)
+		return
+	if _panel == "table":
+		_sfx("click")
+		_table_action(id)
 		return
 	if _panel == "visitor":
 		_visitor_action(id)
@@ -1360,7 +1422,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if $HUD.is_shop_open():
 		# 開いているあいだは閉じるキーだけ(選ぶのは画面のボタン)。市場は B、ストーブは H、訪問者は C でも閉じる
-		var close_key: int = {"kitchen": KEY_H, "visitor": KEY_C}.get(_panel, KEY_B)
+		var close_key: int = {"kitchen": KEY_H, "table": KEY_H, "visitor": KEY_C}.get(_panel, KEY_B)
 		if event.keycode == close_key or event.keycode == KEY_ESCAPE:
 			_close_shop()
 		return

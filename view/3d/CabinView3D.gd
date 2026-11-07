@@ -27,6 +27,8 @@ const DOOR_OPEN_ANGLE := -1.8     # 開いたときの角度(南へ外開き)
 const DOOR_SPEED := 4.0           # 開け閉めの速さ
 const TABLE_POS := Vector2(-1.2, 0.75)
 const TABLE_SIZE := Vector2(0.95, 0.7)
+const STOOL_H := 0.45             # 腰掛けの高さ(m)
+const SIT_YAW := PI * 0.5         # 腰掛けに座る向き(西のテーブルのほう)
 const STOVE_H := 0.85             # ストーブの高さ(m)
 const FIRE_GLOW := 2.5            # 仕込んでいるあいだの火の明るさ
 const JARS_SHOWN := 8             # テーブルに並べる保存食の数(多くても机に収まるように)
@@ -119,6 +121,10 @@ func set_kitchen(k: Kitchen) -> void:
 	kitchen = k
 	kitchen.changed.connect(_rebuild)
 	_rebuild()
+
+# 腰掛けの座面の中心(世界の座標)
+func seat_spot() -> Vector3:
+	return Look.at(cabin.site + Cabin.STOOL_OFFSET) + Vector3(0, FLOOR_Y + STOOL_H, 0)
 
 # 横になるときの足の裏の位置(世界の座標)
 func lying_spot() -> Vector3:
@@ -298,7 +304,7 @@ func _interior(spot: Node3D) -> void:
 	for x in [-1.6, -0.8]:
 		for z in [0.47, 1.03]:
 			_piece(room, _sill, Vector3(x, 0.35, z), Vector3(0.06, 0.7, 0.06))
-	_piece(room, _sill, Vector3(-0.45, 0.22, 0.75), Vector3(0.3, 0.45, 0.3))
+	_piece(room, _sill, Vector3(Cabin.STOOL_OFFSET.x, STOOL_H * 0.5, Cabin.STOOL_OFFSET.y), Vector3(0.3, STOOL_H, 0.3)).name = "Stool"
 	_food_on_table(room)
 	# 敷物(ドアを入ったところ)
 	room.add_child(Look.strip(Vector2(-0.2, 0.2), Vector2(0.2, 0.2), 1.0, 0.01, _rug))

@@ -25,7 +25,7 @@ const MIN_PLOTS_FOR_CABIN := 4  # 畑に慣れてから小屋を案内する
 const HINTS := [
 	"walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell", "stuck", "broke",
 	"apple", "visitor", "pond_rain", "pond_water", "cabin_site", "cabin_logs",
-	"cabin_inside", "split", "stove", "bed", "hive_make", "hive_bees", "honey", "winter", "shovel", "prune", "feeder", "feed", "creatures",
+	"cabin_inside", "split", "stove", "bed", "table", "hive_make", "hive_bees", "honey", "winter", "shovel", "prune", "feeder", "feed", "creatures",
 ]
 # お知らせのヒント(やることではなく、知らせるだけ)
 const NOTICES := ["apple", "visitor", "pond_rain", "pond_water", "bed", "winter", "creatures"]
@@ -174,6 +174,8 @@ func _wants(id: String) -> bool:
 			return cabin.is_inside(_pos) and _has_produce()
 		"bed":
 			return cabin.is_inside(_pos)
+		"table":
+			return cabin.is_inside(_pos) and kitchen.has_food()
 		"hive_make":
 			return cabin.own_log_count() >= bees.LOG_COST
 		"hive_bees":
@@ -227,6 +229,8 @@ func _is_done(id: String) -> bool:
 			return not snow.cells.is_empty()
 		"stove":
 			return kitchen.cooked
+		"table":
+			return kitchen.ever_ate()
 		"prune":
 			return forest.pruned_count() > 0
 		"feeder":

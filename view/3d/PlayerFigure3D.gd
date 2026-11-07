@@ -19,12 +19,13 @@ const ACTIONS := {
 	"prune": {"seconds": 0.9, "hit": 0.35, "tool": "shears"},
 	"feed": {"seconds": 0.7, "hit": 0.3, "tool": ""},
 	"shovel": {"seconds": 0.5, "hit": 0.28, "tool": "shovel"},
+	"eat": {"seconds": 1.2, "hit": 0.0, "tool": "bite"},
 	"plant": {"seconds": 0.6, "hit": 0.3, "tool": ""},
 	"pull": {"seconds": 0.6, "hit": 0.35, "tool": ""},
 	"wave": {"seconds": 1.1, "hit": 0.0, "tool": ""},
 }
 # 道具を持つ角度(手に対する x 回転)。腕を振り下ろしたときに道具の先が前の低いところへ来るように
-const TOOL_ANGLES := {"can": -1.25, "hoe": -1.0, "axe": -1.3, "hammer": -1.0, "shears": -1.4, "shovel": -0.95}
+const TOOL_ANGLES := {"can": -1.25, "hoe": -1.0, "axe": -1.3, "hammer": -1.0, "shears": -1.4, "shovel": -0.95, "bite": 0.0}
 const POUR_TILT := 0.55   # じょうろを傾ける角度(rad)
 const CAN_ARM := 1.25     # じょうろを持つ腕の角度(rad)
 const STEEL := Color(0.55, 0.57, 0.60)
@@ -50,15 +51,19 @@ const LEAN := 0.10          # 歩くときの前かがみ(rad)
 const BLEND_SPEED := 8.0    # 歩きと立ちを切り替える速さ
 const LANTERN_ARM := 0.55   # ランタンを持つ腕を前に出す角度(rad)
 const ARM_SPREAD := 0.12    # 腕を体から少し離す角度(rad)
+const SIT_LEG := 0.85       # 座ったときの足の角度(rad)。膝がないので、前へ伸ばして足の裏を床に付ける
+const SIT_ARM := 0.75       # 座ったときの腕の角度(rad)。手をテーブルの手前に置く
 
 var moving := false         # Player3D が毎フレーム決める
 var holding_lantern := false
+var sitting := false        # 腰掛けに座っている(Player3D が決める)
 var look := {}              # 色を変えるとき { "TUNIC": Color, ... }。add_child の前に設定する(訪問者)
 var right_hand: Node3D      # ランタンを持たせる場所
 
 var _phase := 0.0
 var _amount := 0.0          # 0 = 立っている、1 = 歩いている
 var _lift := 0.0            # ランタンを持つ腕の上がり具合
+var _sit := 0.0             # 0 = 立っている、1 = 座っている
 var _hips: Node3D
 var _upper: Node3D
 var _leg_l: Node3D
@@ -88,6 +93,12 @@ func _process(delta: float) -> void:
 	_arm_r.rotation.x = swing * ARM_SWING * (1.0 - _lift * 0.7) + _lift * LANTERN_ARM
 	_hips.position.y = absf(cos(_phase)) * BOB * _amount
 	_upper.rotation.x = -LEAN * _amount
+	_sit = lerpf(_sit, 1.0 if sitting else 0.0, blend)
+	if _sit > 0.001:
+		_leg_l.rotation.x = lerpf(_leg_l.rotation.x, SIT_LEG, _sit)
+		_leg_r.rotation.x = lerpf(_leg_r.rotation.x, SIT_LEG, _sit)
+		_arm_l.rotation.x = lerpf(_arm_l.rotation.x, SIT_ARM, _sit)
+		_arm_r.rotation.x = lerpf(_arm_r.rotation.x, SIT_ARM, _sit)
 	if _action != "":
 		_apply_action(delta)
 
@@ -160,6 +171,9 @@ func _apply_action(delta: float) -> void:
 		"shovel":  # 腰を曲げて雪をすくい、横へ放る
 			var scoop: float = sin(t * PI)
 			_bow(e, -0.45 + 0.25 * scoop, 0.8 + 0.55 * scoop)
+		"eat":  # 手を口へ運んで、もぐもぐする
+			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.45 + 0.1 * sin(t * TAU * 4.0), e)
+			_upper.rotation.x = lerpf(_upper.rotation.x, 0.05, e)
 		"wave":  # 右手を上げて振る
 			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.8, e)
 			_arm_r.get_parent().rotation.z = ARM_SPREAD + e * (0.5 + 0.35 * sin(t * TAU * 3.0))
@@ -200,6 +214,8 @@ func _build_tools() -> void:
 	var hammer := _tool("hammer")
 	_box(hammer, handle, Vector3(0, 0, -0.14), Vector3(0.03, 0.03, 0.34))
 	_box(hammer, steel, Vector3(0, -0.02, -0.3), Vector3(0.06, 0.15, 0.06))
+	var bite := _tool("bite")
+	_box(bite, Look.mat(Color(0.74, 0.50, 0.24)), Vector3(0, -0.03, -0.05), Vector3(0.11, 0.09, 0.11))
 	var shovel := _tool("shovel")
 	_box(shovel, handle, Vector3(0, 0, -0.33), Vector3(0.03, 0.03, 0.95))
 	_box(shovel, steel, Vector3(0, -0.03, -0.9), Vector3(0.3, 0.03, 0.3))

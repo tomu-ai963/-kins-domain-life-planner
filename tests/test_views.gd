@@ -557,6 +557,7 @@ func _test_3d_cabin_collision() -> void:
 	_test_cabin_inside()
 	_test_furniture()
 	_test_chop_view()
+	_test_table_view()
 	_test_work_motions()
 	_test_wildlife_view()
 	_test_visitor_view()
@@ -1486,6 +1487,90 @@ func _test_chop_view() -> void:
 	c.materials.log = keep_logs
 	k.changed.emit()
 	player.global_position = keep_pos
+
+# 腰掛け: 座ってテーブルの保存食を食べると、その日は少し速く歩ける
+func _test_table_view() -> void:
+	print("テーブルと腰掛け")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var player: CharacterBody3D = main.get_node("Player")
+	var figure = player._figure
+	var view = main.get_node("Cabin")
+	var c = w.cabin
+	var k = w.kitchen
+	var keep_pos: Vector3 = player.global_position
+	var keep_basis: Basis = player._body.basis
+	var stool: Vector2 = c.site + c.STOOL_OFFSET
+	var press := func(code: int) -> void:
+		var e := InputEventKey.new()
+		e.keycode = code
+		e.pressed = true
+		main._unhandled_input(e)
+	k.ate_day = -1
+	k.stock.sauce = 3
+	k.changed.emit()
+	player.global_position = Vector3(stool.x + 0.3, 0, stool.y)
+	view._process(0.0)  # 中に入った
+	_check(_room_pieces(view, "Stool").size() == 1, "腰掛けが見える")
+	_check(main.furniture_line().contains("腰掛け"), "そばで案内が出る")
+	figure._process(10.0)
+	press.call(KEY_H)
+	_check(hud.is_shop_open() and main._panel == "table" and not player.is_physics_processing(), "H で座って、歩かなくなる")
+	_check(main.shop_title().contains("腰掛け") and main.shop_header().contains("速く歩ける"), "見出しが腰掛けになる")
+	_check(not hud.status_text().contains("─ 持ち物 ─"), "座っているあいだは持ち物を重ねない")
+	_check(figure.sitting and player._posing, "座る姿勢になる")
+	player._pose.custom_step(10.0)
+	figure._process(10.0)
+	var seat: Vector3 = view.seat_spot()
+	var hips_y: float = player._body.global_position.y + figure.HIP_Y
+	_check(is_equal_approx(hips_y, seat.y), "腰が座面の高さにある(%.2fm)" % hips_y)
+	_check(Vector2(player._body.global_position.x, player._body.global_position.z).distance_to(stool) < 0.01, "腰掛けの上にいる")
+	var facing: Vector3 = -player._body.global_basis.z
+	_check(facing.x < -0.9, "テーブルのほう(西)を向く")
+	_check(absf(figure._leg_l.rotation.x - figure.SIT_LEG) < 0.05, "足を前へ伸ばす")
+	var foot: Vector3 = figure._leg_l.get_node("Boot").global_position
+	_check(foot.y > view.FLOOR_Y - 0.1 and foot.y < view.FLOOR_Y + 0.15, "足が床に着いている(%.2fm)" % (foot.y - view.FLOOR_Y))
+	var rows: Array = main.table_rows()
+	_check(rows.any(func(r): return r.id == "eat_sauce" and r.text.contains("トマトソース") and r.text.contains("3瓶")), "持っている保存食が並ぶ")
+	_check(_room_pieces(view, "Food").size() == 3, "テーブルに 3 瓶ある")
+	main._on_shop_action("eat_sauce")
+	_check(k.stock.sauce == 2 and k.ate_today() and hud._message.contains("トマトソースを食べた"), "選ぶと 1 つ食べる")
+	_check(figure.current_action() == "eat" and figure.current_tool() == "bite", "座ったまま手を口へ運ぶ")
+	_check(_room_pieces(view, "Food").size() == 2, "テーブルの瓶が減る")
+	_check(main.shop_header().contains("もう食べた") and main.meal_line().contains("速く歩ける"), "今日は食べたと分かる")
+	figure._process(0.6)
+	_check(figure._arm_r.rotation.x > 2.0, "手が口のほうへ上がる(%.2f rad)" % figure._arm_r.rotation.x)
+	figure._process(10.0)
+	main._on_shop_action("eat_sauce")
+	_check(k.stock.sauce == 2 and hud._message.contains("今日はもう"), "1 日 1 回だけ")
+	press.call(KEY_H)
+	_check(not hud.is_shop_open() and player.is_physics_processing() and not figure.sitting, "H で立ち上がる")
+	player._pose.custom_step(10.0)
+	figure._process(10.0)
+	_check(not player._posing, "立つ動きが終わる")
+	_check(absf(player._body.position.x) < 0.01 and absf(player._body.position.z) < 0.01, "体が足元に戻る")
+	_check(absf(figure._leg_l.rotation.x) < 0.1, "足が戻る")
+	main.update_shovel(0.1, false)
+	_check(is_equal_approx(player.speed_scale, k.MEAL_SPEED), "食べた日は少し速く歩ける")
+	k.ate_day = w.forest.day_number() - 1
+	main.update_shovel(0.1, false)
+	_check(player.speed_scale == 1.0 and main.meal_line() == "", "次の日は、もとの速さ")
+	# 保存食がないとき
+	k.stock.sauce = 0
+	k.changed.emit()
+	press.call(KEY_H)
+	_check(main.table_rows().any(func(r): return r.id == "no_food"), "保存食がなければ、そう出る")
+	main._on_shop_action("no_food")
+	press.call(KEY_ESCAPE)
+	_check(not hud.is_shop_open() and not figure.sitting, "Esc でも立ち上がる")
+	player._pose.custom_step(10.0)
+	figure._process(10.0)
+	k.ate_day = -1
+	k.stock.sauce = 0
+	k.changed.emit()
+	player._body.basis = keep_basis
+	player.global_position = keep_pos
+	view._process(0.0)
 
 func _test_chop_collision() -> void:
 	var player: CharacterBody3D = main.get_node("Player")

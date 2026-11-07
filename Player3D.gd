@@ -27,6 +27,7 @@ const STEP_SPEED := 1.5   # 床の高さまで体が上がる速さ(m/s)
 const WALK_LIMIT := 78.0  # 歩ける範囲(東西南北)。この外は丘(GroundView3D.HILL_START)で、体が地面に埋まる
 const LIE_SECONDS := 0.8     # ベッドに横になるのにかかる時間
 const GET_UP_SECONDS := 0.5  # 起き上がるのにかかる時間
+const SIT_SECONDS := 0.5     # 腰掛けに座るのにかかる時間
 # 横になった体の向き: 頭が西、顔が上(体の +y が西、正面の -z が上)
 const LYING_BASIS := Basis(Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, -1, 0))
 const FACE_MIN_DIST := 0.3   # 作業の相手がこれより近ければ、向きを変えない
@@ -163,6 +164,23 @@ func get_up() -> void:
 	_lying = false
 	_move_pose(Vector3(0.0, _floor_y if _indoors else 0.0, 0.0), _stand_basis, GET_UP_SECONDS)
 	_pose.finished.connect(_on_got_up)
+
+# 腰掛けに座る。seat は座面の中心(世界の座標)、yaw は向き。動くのは見た目の体だけで、足元の位置は変わらない
+func sit_down(seat: Vector3, yaw: float) -> void:
+	_posing = true
+	_stand_basis = _body.basis
+	_figure.sitting = true
+	_apply_lantern()
+	_move_pose(seat - Vector3(0.0, _figure.HIP_Y, 0.0) - global_position, Basis(Vector3.UP, yaw), SIT_SECONDS)
+
+func stand_up() -> void:
+	_figure.sitting = false
+	_move_pose(Vector3(0.0, _floor_y if _indoors else 0.0, 0.0), _stand_basis, GET_UP_SECONDS)
+	_pose.finished.connect(_on_got_up)
+
+# 座ったまま食べる動き(座っているあいだも動く)
+func eat_motion() -> void:
+	_figure.play("eat")
 
 func _on_got_up() -> void:
 	_posing = false

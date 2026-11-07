@@ -25,6 +25,8 @@ const STOVE_REACH := 1.1  # ストーブの中心からこの距離までなら�
 const BED_OFFSET := Vector2(-0.9, -0.95)
 const BED_SIZE := Vector2(1.9, 0.85)
 const BED_REACH := 0.5    # ベッドの縁からこの距離までなら使える(部屋の真ん中は苗づくりに残す)
+const STOOL_OFFSET := Vector2(-0.45, 0.75)  # テーブルの東の腰掛け
+const STOOL_REACH := 0.55 # 腰掛けの中心からこの距離までなら座れる(部屋の真ん中は苗づくりに残す)
 # 東の庭(小屋の外)。薪割り台と、壁際に積んだ薪の山を置く
 const CHOP_OFFSET := Vector2(3.4, 0.7)
 const CHOP_REACH := 1.4   # 薪割り台の中心からこの距離までなら割れる
@@ -167,6 +169,10 @@ func is_at_stove(pos: Vector2) -> bool:
 # 中でベッドのそばにいるか
 func is_at_bed(pos: Vector2) -> bool:
 	return is_inside(pos) and Rect2(site + BED_OFFSET - BED_SIZE * 0.5, BED_SIZE).grow(BED_REACH).has_point(pos)
+
+# 中で腰掛けのそばにいるか
+func is_at_stool(pos: Vector2) -> bool:
+	return is_inside(pos) and pos.distance_to(site + STOOL_OFFSET) <= STOOL_REACH
 
 func chop_pos() -> Vector2:
 	return site + CHOP_OFFSET
