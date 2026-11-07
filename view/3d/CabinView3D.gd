@@ -44,6 +44,7 @@ const FOOD_COLORS := {
 	"jam": Color(0.70, 0.30, 0.20), "sauce": Color(0.78, 0.16, 0.12), "pickles": Color(0.42, 0.56, 0.26),
 	"garlic_pickle": Color(0.90, 0.86, 0.68), "pirozhki": Color(0.76, 0.54, 0.26),
 	"cherry_jam": Color(0.50, 0.06, 0.14), "plum_jam": Color(0.36, 0.14, 0.38), "pear_compote": Color(0.92, 0.84, 0.46),
+	"pryanik": Color(0.58, 0.34, 0.16), "sbiten": Color(0.78, 0.48, 0.10),
 }
 
 var cabin: Cabin

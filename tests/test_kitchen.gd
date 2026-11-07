@@ -19,6 +19,8 @@ func _initialize() -> void:
 	_test_cook()
 	_test_firewood()
 	_test_sell()
+	_test_honey()
+	_test_season_prices()
 	_test_save()
 	_test_old_save()
 	_test_places()
@@ -123,6 +125,52 @@ func _test_sell() -> void:
 	_check(w.market.sell_all("sauce") == 0, "なければ売れない")
 	w.garden.produce.garlic = 3
 	_check(w.market.sell_all("garlic") == 360 and w.kitchen.stock.garlic_pickle == 0, "生のニンニクは今までどおり売れる")
+
+func _test_honey() -> void:
+	print("はちみつの料理")
+	var w := _world()
+	var k := w.kitchen
+	w.cabin.materials.log = 1
+	_check(k.start("pryanik") == "no_input", "はちみつがないと仕込めない")
+	w.bees.stock.honey = 3
+	_check(k.input_count("pryanik") == 3 and k.input_count("sbiten") == 3, "持っているはちみつの量が分かる")
+	_check(k.start("pryanik") == "started" and w.bees.stock.honey == 2, "ピャーニクははちみつ 1kg を使う")
+	_check(k.days_left() == 1, "ピャーニクは 1 日でできる")
+	k.pot.start_day -= 1
+	_check(k.collect() == "collected" and k.stock.pryanik == 10, "ピャーニクが 10 個できる")
+	_check(k.start("sbiten") == "started" and w.bees.stock.honey == 0, "スビーテンははちみつ 2kg を使う")
+	_check(k.days_left() == 3, "スビーテンは 3 日かかる")
+	k.pot.start_day -= 3
+	_check(k.collect() == "collected" and k.stock.sbiten == 8, "スビーテンが 8 瓶できる")
+	_check(w.market.count_of("pryanik") == 10 and w.market.sell_all("pryanik") == 400, "ピャーニク 10 個で 400₽")
+	_check(w.market.sell_all("sbiten") == 800, "スビーテン 8 瓶で 800₽")
+	_check(w.visitors.ASK.has("pryanik") and w.visitors.ASK.has("sbiten"), "はちみつの料理も頼まれる")
+
+func _test_season_prices() -> void:
+	print("季節の値段")
+	var w := _world()
+	var m := w.market
+	var f := w.forest
+	for id in Kitchen.RECIPES:
+		var base: int = int(m.SELL_PRICES[id])
+		_check(m.price_in(id, "summer") == base and m.price_in(id, "autumn") == base, "%s: 夏と秋はもとの値段" % id)
+		_check(m.price_in(id, "spring") > base and m.price_in(id, "winter") > m.price_in(id, "spring"), "%s: 春は高く、冬はもっと高い" % id)
+	for item in ["tomato", "apple", "honey", "seedling_tomato"]:
+		for season in ["spring", "summer", "autumn", "winter"]:
+			_check(m.price_in(item, season) == int(m.SELL_PRICES[item]), "%s は %s も同じ値段(保存食だけ変わる)" % [item, season])
+	var earned := {}
+	for season in ["summer", "autumn", "spring", "winter"]:
+		f.season = season
+		w.kitchen.stock.sauce = 5
+		earned[season] = m.sell_all("sauce")
+	_check(earned.summer == 750 and earned.autumn == 750, "トマトソース 5 瓶: 夏と秋は 750₽")
+	_check(earned.spring == 940, "トマトソース 5 瓶: 春は 940₽(1 瓶 188₽)")
+	_check(earned.winter == 1125, "トマトソース 5 瓶: 冬は 1,125₽")
+	f.season = "winter"
+	w.kitchen.stock.sauce = 2
+	w.garden.produce.tomato = 5
+	_check(w.visitors.value_of("sauce", 2) == 450, "訪問者のお礼も冬の値段から決まる")
+	_check(w.visitors.value_of("tomato", 5) == 200, "生の野菜のお礼は変わらない")
 
 func _test_save() -> void:
 	print("セーブ")

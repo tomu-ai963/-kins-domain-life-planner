@@ -8,6 +8,7 @@ extends RefCounted
 const Forest = preload("res://logic/Forest.gd")
 const Garden = preload("res://logic/Garden.gd")
 const Cabin = preload("res://logic/Cabin.gd")
+const Bees = preload("res://logic/Bees.gd")
 
 signal changed  # 見た目に関わる状態が変わった
 signal dirty    # セーブに入る状態が変わった
@@ -24,11 +25,14 @@ const RECIPES := {
 	"cherry_jam": {"name": "サクランボジャム", "input": "cherry", "amount": 3, "output": 4, "unit": "瓶", "days": 1},
 	"plum_jam": {"name": "スモモジャム", "input": "plum", "amount": 5, "output": 4, "unit": "瓶", "days": 1},
 	"pear_compote": {"name": "ナシのコンポート", "input": "pear", "amount": 15, "output": 4, "unit": "瓶", "days": 1},
+	"pryanik": {"name": "ピャーニク", "input": "honey", "amount": 1, "output": 10, "unit": "個", "days": 1},  # ロシアの蜂蜜菓子
+	"sbiten": {"name": "スビーテン", "input": "honey", "amount": 2, "output": 8, "unit": "瓶", "days": 3},  # ロシアの蜂蜜の温かい飲み物
 }
 
 var forest: Forest  # GameWorld が設定する(リンゴの持ち物は Forest にある)
 var garden: Garden  # GameWorld が設定する(野菜の持ち物は Garden にある)
 var cabin: Cabin    # GameWorld が設定する(丸太の持ち物は Cabin にある)
+var bees: Bees      # GameWorld が設定する(はちみつの持ち物は Bees にある)
 
 var pot := {}       # 鍋の中身 {recipe, start_day: int}。空なら {}
 var stock := {}     # できた保存食の数 {recipe: 数}
@@ -49,8 +53,10 @@ func _commit() -> void:
 	dirty.emit()
 	changed.emit()
 
-# 材料の持ち物(果物は Forest、野菜は Garden)
+# 材料の持ち物(果物は Forest、はちみつは Bees、野菜は Garden)
 func _pile(input: String) -> Dictionary:
+	if input == "honey":
+		return bees.stock
 	return forest.produce if forest.produce.has(input) else garden.produce
 
 func input_count(id: String) -> int:

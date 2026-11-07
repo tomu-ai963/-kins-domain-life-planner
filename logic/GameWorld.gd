@@ -66,6 +66,7 @@ func _init() -> void:
 	kitchen.forest = forest
 	kitchen.garden = garden
 	kitchen.cabin = cabin
+	kitchen.bees = bees
 	wildlife.forest = forest
 	wildlife.land = land
 	wildlife.garden = garden

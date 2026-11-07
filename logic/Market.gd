@@ -43,8 +43,11 @@ const SELL_PRICES := {
 	"seedling_tomato": 150, "seedling_cucumber": 120,
 	"jam": 75, "sauce": 150, "pickles": 35, "garlic_pickle": 120, "pirozhki": 12,
 	"cherry_jam": 80, "plum_jam": 90, "pear_compote": 120,
+	"pryanik": 40, "sbiten": 100,
 	"honey": 200,  # 1kg あたり。巣箱 1 つで 1 日 100〜140₽ ほどになる仮の数字
 }
+# 保存食(Kitchen.RECIPES)の買い取り値の倍率。新鮮なものが少ない冬と、蓄えが尽きてくる春は高い(倍率は仮の数字)
+const PRESERVE_RATES := {"winter": 1.5, "spring": 1.25}
 
 var money := INITIAL_MONEY
 var forest: Forest  # GameWorld が設定する(木の種・苗木・リンゴの持ち物は Forest にある)
@@ -100,6 +103,18 @@ func key_of(item: String) -> String:
 func count_of(item: String) -> int:
 	return int(pile_of(item).get(key_of(item), 0))
 
+# 季節 season での買い取り値の倍率
+static func price_rate(item: String, season: String) -> float:
+	return float(PRESERVE_RATES.get(season, 1.0)) if Kitchen.RECIPES.has(item) else 1.0
+
+# 季節 season での 1 つあたりの買い取り値(₽)
+static func price_in(item: String, season: String) -> int:
+	return roundi(int(SELL_PRICES[item]) * price_rate(item, season))
+
+# 今の季節の 1 つあたりの買い取り値(₽)
+func sell_price(item: String) -> int:
+	return price_in(item, forest.season)
+
 # 収穫物 item を全部売る。売れた金額を返す(持っていなければ 0)
 func sell_all(item: String) -> int:
 	var pile: Dictionary = pile_of(item)
@@ -107,7 +122,7 @@ func sell_all(item: String) -> int:
 	var n := int(pile.get(key, 0))
 	if n <= 0 or not SELL_PRICES.has(item):
 		return 0
-	var income: int = n * int(SELL_PRICES[item])
+	var income: int = n * sell_price(item)
 	pile[key] = 0
 	money += income
 	changed.emit()

@@ -1949,10 +1949,37 @@ func _test_furniture() -> void:
 	_check(hud.status_text().contains("保存食: トマトソース 5瓶"), "市場の画面では持ち物に保存食が出る")
 	main._close_shop()
 	main._panel = "market"
-	_check(main.shop_rows().any(func(r): return r.id == "sell_sauce" and r.text.contains("トマトソース 5瓶 × 150₽")), "市場に売る行が出る")
+	var real_season: String = w.forest.season
+	w.forest.season = "winter"
+	_check(main.shop_rows().any(func(r): return r.id == "sell_sauce" and r.text.ends_with("トマトソース 5瓶 × 225₽(冬)")), "冬は高い値段と、そのわけが出る")
+	_check(main._preserve_price_text("sauce", "瓶") == "市場で1瓶 225₽で売れる", "冬にできあがると、今の値段を知らせる")
+	w.forest.season = "autumn"
+	_check(main.shop_rows().any(func(r): return r.id == "sell_sauce" and r.text.ends_with("トマトソース 5瓶 × 150₽")), "市場に売る行が出る")
+	_check(main._preserve_price_text("sauce", "瓶") == "市場で1瓶 150₽で売れる。冬は225₽", "秋にできあがると、冬の値段も知らせる")
 	var money: int = w.market.money
 	main._on_shop_action("sell_sauce")
 	_check(w.market.money == money + 750 and _room_pieces(view, "Food").is_empty(), "売るとお金が増え、テーブルから消える")
+	w.forest.season = real_season
+	# はちみつの料理: 画面から仕込めて、ピャーニクは平たく、スビーテンは瓶で並ぶ
+	for id in k.RECIPES:
+		_check(view.FOOD_COLORS.has(id), "%s の色がある(鍋とテーブルに見える)" % id)
+	w.bees.stock.honey = 1
+	main._open_kitchen()
+	_check(main.kitchen_rows().any(func(r): return r.id == "cook_pryanik" and r.text.contains("はちみつ 1kg") and r.text.contains("10個") and r.text.contains("持っている 1kg")), "ストーブの料理にはちみつの品が出る")
+	main._on_shop_action("cook_pryanik")
+	_check(k.pot.recipe == "pryanik" and int(w.bees.stock.honey) == 0, "画面からはちみつで仕込める")
+	k.pot.start_day -= 1
+	k.changed.emit()
+	_check(_room_pieces(view, "PotFood").size() == 1, "できあがると鍋にピャーニクの色が見える")
+	main._on_shop_action("pot_collect")
+	main._close_shop()
+	_check(_room_pieces(view, "Food").size() == view.JARS_SHOWN and main.food_line().contains("ピャーニク 10個"), "テーブルに並び、持ち物に出る")
+	k.stock.pryanik = 0
+	k.stock.sbiten = 2
+	k.changed.emit()
+	_check(_room_pieces(view, "Food").size() == 2 and main.food_line().contains("スビーテン 2瓶"), "スビーテンは瓶でテーブルに並ぶ")
+	k.stock.sbiten = 0
+	k.changed.emit()
 	k.stock.pickles = 100
 	k.changed.emit()
 	_check(_room_pieces(view, "Food").size() == view.JARS_SHOWN, "たくさんあっても机に収まる数だけ並べる")

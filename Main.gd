@@ -34,11 +34,11 @@ const GUIDE_TEXTS := {
 	"cabin_site": "H で足元を小屋の場所に決められる。\n丸太を集めて、1日1回ずつ建てていく。",
 	"cabin_logs": "小屋の丸太は、市場で買う(5本 1,500₽)か、\n育った木を Z で伐って集める(白樺は樹齢15年から)。",
 	"cabin_inside": "小屋が建った。南のドアから中に入れる。\n窓辺で苗づくり、ストーブで料理、ベッドで日記。",
-	"stove": "ストーブの前で H を押すと、収穫物を保存食にできる。\n生で売るより高く売れる。薪は丸太から作る。",
+	"stove": "ストーブの前で H を押すと、収穫物を保存食にできる。\n生より高く、冬と春はもっと高く売れる。薪は丸太から作る。",
 	"bed": "ベッドのそばで H を押すと、横になって日記を見る。\n明日の予定が分かる。寝ても時間は進まない。",
 	"hive_make": "自分の木を伐った丸太で、巣箱を作れる(J・丸太2本)。\n3日かけてくり抜く。市場の丸太は使えない。",
 	"hive_bees": "巣箱に蜂が入るのを待とう(春と夏)。\nフョードルさんが来たら、分けてもらうこともできる。",
-	"honey": "はちみつが採れる。巣箱のそばで J を押す。\n市場で売れる。採っても蜂はいなくならない。",
+	"honey": "はちみつが採れる。巣箱のそばで J を押す。\n市場で売れて、ストーブで料理にも使える。採っても蜂はいなくならない。",
 	"winter": "冬は地面が凍って、苗木を植えられない(白樺の種だけはまける)。\n小屋の窓辺なら、冬でも苗が育つ。",
 	"creatures": "見かけた生き物は、Tab の持ち物で見られる。\n木や畑が増えると、来る生き物も増える。",
 }
@@ -657,7 +657,7 @@ func _kitchen_action(id: String) -> void:
 		if k.collect() == "collected":
 			var made: Dictionary = k.last_collected
 			var r: Dictionary = k.RECIPES[made.recipe]
-			$HUD.show_message("%sが%d%sできた(市場で1%s %d₽で売れる)" % [r.name, made.count, r.unit, r.unit, world.market.SELL_PRICES[made.recipe]], 5.0)
+			$HUD.show_message("%sが%d%sできた(%s)" % [r.name, made.count, r.unit, _preserve_price_text(made.recipe, r.unit)], 5.0)
 	elif id.begins_with("cook_"):
 		var recipe := id.trim_prefix("cook_")
 		var r: Dictionary = k.RECIPES[recipe]
@@ -672,6 +672,14 @@ func _kitchen_action(id: String) -> void:
 			"no_wood":
 				$HUD.show_message("薪がない(丸太1本で%d回分。市場で買うか、育った木を Z で伐る)" % k.LOG_FIRES, 5.0)
 	$HUD.refresh_shop()
+
+# 「市場で1瓶 150₽で売れる。冬は225₽」のような文言。冬と春は今の値段だけ
+func _preserve_price_text(id: String, unit: String) -> String:
+	var m := world.market
+	var text := "市場で1%s %d₽で売れる" % [unit, m.sell_price(id)]
+	if m.price_rate(id, world.forest.season) > 1.0:
+		return text
+	return "%s。冬は%d₽" % [text, m.price_in(id, "winter")]
 
 # HUD に出す、鍋の 1 行。鍋が空なら ""
 func kitchen_line() -> String:
@@ -1000,7 +1008,8 @@ func shop_rows() -> Array:
 		# 野菜は持っているものだけ並べる(行が多くなりすぎないように)
 		var n := produce_count(item)
 		if item == "apple" or n > 0:
-			rows.append({"id": "sell_" + item, "text": "売る: %s %d%s × %d₽" % [produce_name(item), n, produce_unit(item), m.SELL_PRICES[item]], "column": 1})
+			var dear := "(%s)" % SEASON_NAMES[world.forest.season] if m.price_rate(item, world.forest.season) > 1.0 else ""
+			rows.append({"id": "sell_" + item, "text": "売る: %s %d%s × %d₽%s" % [produce_name(item), n, produce_unit(item), m.sell_price(item), dear], "column": 1})
 	rows.append({"id": "close", "text": "閉じる(B / Esc)", "column": 1})
 	return rows
 

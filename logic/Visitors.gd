@@ -29,8 +29,8 @@ const HELP_MONEY := 200           # まける種がない冬に分けてくれ�
 const CAST := {
 	"nina": {"name": "ニーナさん", "likes": ["tomato", "cucumber", "carrot", "radish", "potato", "plum"]},
 	"fyodor": {"name": "フョードルさん", "likes": ["garlic", "apple", "pear", "garlic_pickle", "potato", "carrot"]},
-	"tanya": {"name": "ターニャさん", "likes": ["honey", "cherry", "apple", "pirozhki", "jam", "cherry_jam", "carrot", "radish"]},
-	"pavel": {"name": "パーヴェルさん", "likes": ["sauce", "pickles", "jam", "plum_jam", "pear_compote", "tomato", "cucumber"]},
+	"tanya": {"name": "ターニャさん", "likes": ["honey", "cherry", "apple", "pirozhki", "jam", "cherry_jam", "pryanik", "carrot", "radish"]},
+	"pavel": {"name": "パーヴェルさん", "likes": ["sauce", "pickles", "jam", "plum_jam", "pear_compote", "sbiten", "tomato", "cucumber"]},
 }
 const ORDER := ["nina", "fyodor", "tanya", "pavel"]  # 来る順番
 
@@ -39,6 +39,7 @@ const ASK := {
 	"apple": 5, "cherry": 1, "plum": 2, "pear": 4, "cherry_jam": 1, "plum_jam": 1, "pear_compote": 1,
 	"radish": 3, "carrot": 5, "cucumber": 5, "potato": 5, "garlic": 1, "tomato": 5,
 	"jam": 2, "sauce": 2, "pickles": 3, "garlic_pickle": 1, "pirozhki": 5, "honey": 1,
+	"pryanik": 5, "sbiten": 2,
 }
 const BEEKEEPER := "fyodor"  # 蜂を分けてくれる人
 
@@ -198,7 +199,7 @@ func available(item: String) -> int:
 	return n
 
 func value_of(item: String, amount: int) -> int:
-	return amount * int(market.SELL_PRICES[item])
+	return amount * market.sell_price(item)  # 冬の保存食は市場でも高いので、お礼も今の値段から決める
 
 # お礼。市場で売るより少し高い。種や苗は値段に合う数だけ。今の季節に使えないものはお金にする
 func _choose_reward(item: String, amount: int, rng: RandomNumberGenerator) -> Dictionary:
