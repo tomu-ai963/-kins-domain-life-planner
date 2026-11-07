@@ -21,7 +21,12 @@ func _rebuild() -> void:
 		# 少し盛った土と、3 本の畝
 		var bed := BoxMesh.new()
 		bed.size = Vector3(size, 0.12, size)
-		add_child(Look.mesh_node(bed, _soil, Look.at(c, 0.06)))
+		var soil := Look.mesh_node(bed, _soil, Look.at(c, 0.06))
+		soil.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # 低い太陽だと、薄い箱の影の端がノコギリの歯のようになる
+		soil.layers = Look.GROUND_LAYER
+		add_child(soil)
 		for k in range(1, 4):
 			var y: float = c.y - size * 0.5 + size * k / 4.0
-			add_child(Look.strip(Vector2(c.x - size * 0.5 + 0.2, y), Vector2(c.x + size * 0.5 - 0.2, y), 0.14, 0.04, _furrow, 0.12))
+			var furrow := Look.strip(Vector2(c.x - size * 0.5 + 0.2, y), Vector2(c.x + size * 0.5 - 0.2, y), 0.14, 0.04, _furrow, 0.12)
+			furrow.layers = Look.GROUND_LAYER
+			add_child(furrow)

@@ -314,7 +314,8 @@ func _interior(spot: Node3D) -> void:
 	light.light_color = Color(1.0, 0.82, 0.6)
 	light.light_energy = ROOM_LIGHT_ENERGY
 	light.omni_range = 5.5
-	light.shadow_enabled = true  # 壁を突き抜けて外の地面を照らさないように
+	light.shadow_enabled = true  # 壁を突き抜けて外を照らさないように
+	light.light_cull_mask = 0xFFFFF & ~Look.GROUND_LAYER  # 開いたドアから漏れて、外の地面に台形の光が出ないように
 	room.add_child(light)
 	_inside_pieces.append(light)
 	# 南の壁の腰の高さまで(中にいるあいだ、壁の代わりに見せる)

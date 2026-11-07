@@ -22,6 +22,7 @@ func setup(s: Snow) -> void:
 	material_override = Look.mat(SOIL)
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	extra_cull_margin = Look.BEND_CULL_MARGIN
+	layers = Look.GROUND_LAYER
 	snow.changed.connect(_rebuild)
 	snow.forest.changed.connect(_rebuild)
 	_rebuild()

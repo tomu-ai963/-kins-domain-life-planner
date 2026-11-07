@@ -37,7 +37,26 @@ const GROUND := {
 	"spring": {"wild": Color(0.44, 0.63, 0.31), "grass": Color(0.62, 0.82, 0.42), "grid": Color(0.50, 0.70, 0.32)},
 	"summer": {"wild": Color(0.37, 0.56, 0.26), "grass": Color(0.56, 0.77, 0.34), "grid": Color(0.44, 0.65, 0.27)},
 	"autumn": {"wild": Color(0.56, 0.49, 0.24), "grass": Color(0.74, 0.66, 0.32), "grid": Color(0.62, 0.55, 0.26)},
-	"winter": {"wild": Color(0.80, 0.83, 0.86), "grass": Color(0.88, 0.90, 0.92), "grid": Color(0.78, 0.81, 0.85)},
+	# 冬: 空の青い環境光を受けるので、地面の色は暖かめにしておく(青白く見えないように)
+	"winter": {"wild": Color(0.92, 0.91, 0.88), "grass": Color(0.98, 0.95, 0.91), "grid": Color(0.86, 0.84, 0.82)},
+}
+
+# 土地の外の森(丘の上)。歩ける範囲より外だけに生えていて、見るだけのもの
+const FOREST_SEED := 20261107
+const FOREST_TRIES := 7000      # 置く場所を試す回数。林の外に当たったら置かない
+const FOREST_SIZE_MIN := 0.42   # 木の大きさ。丘はカメラに近いので、土地の木より小さくしないと岩のかたまりに見える
+const FOREST_SIZE_MAX := 0.78
+const FOREST_START := 86.0      # ここより内には生やさない(東西南北の距離。歩ける範囲は 78m)
+const FOREST_END := 250.0       # ここより外は世界の丸みで見えない
+const FOREST_NOISE := 2.6       # 林の大きさ(丘の起伏の何倍の細かさか)
+const FOREST_CLEARING := -0.08  # 雑音がこれより小さいところは林の切れ目
+const FIR_COLOR := Color(0.14, 0.34, 0.20)
+const FIR_COLOR_WINTER := Color(0.24, 0.38, 0.30)
+const LEAF_COLORS := {
+	"spring": Color(0.46, 0.66, 0.30),
+	"summer": Color(0.27, 0.52, 0.22),
+	"autumn": Color(0.80, 0.58, 0.18),
+	"winter": Color(0.42, 0.36, 0.31),  # 冬は隠すので見えない
 }
 
 var forest: Forest
@@ -49,8 +68,12 @@ var _grass_mat := Look.mat(Color.BLACK)
 var _grid_mat := Look.mat(Color.BLACK)
 var _tuft_mat := Look.mat(Color.BLACK)
 var _flower_mat := Look.mat(Color.WHITE)
+var _fir_mat := Look.mat(FIR_COLOR)
+var _leaf_mat := Look.mat(Color.BLACK)
 var _tufts: MultiMeshInstance3D
 var _flowers: MultiMeshInstance3D
+var _firs: MultiMeshInstance3D      # 土地の外の森の針葉樹
+var _broadleaves: MultiMeshInstance3D  # 土地の外の森の広葉樹
 var _hills := FastNoiseLite.new()
 var _hidden_count := 0  # 区画や小屋に隠れている株と花の数
 
@@ -62,6 +85,8 @@ func setup(f: Forest) -> void:
 	_hills.fractal_octaves = 3
 	_tuft_mat.vertex_color_use_as_albedo = true
 	_flower_mat.vertex_color_use_as_albedo = true
+	_fir_mat.vertex_color_use_as_albedo = true
+	_leaf_mat.vertex_color_use_as_albedo = true
 	_build()
 	_on_changed()
 
@@ -85,6 +110,9 @@ func _on_changed() -> void:
 	_tuft_mat.albedo_color = (pal.grass as Color).darkened(TUFT_DARKEN)
 	_tufts.visible = _season != "winter"  # 雪の下
 	_flowers.visible = _season == "spring" or _season == "summer"
+	_fir_mat.albedo_color = FIR_COLOR_WINTER if _season == "winter" else FIR_COLOR
+	_leaf_mat.albedo_color = LEAF_COLORS[_season]
+	_broadleaves.visible = _season != "winter"  # 葉を落とす。枝だけの形は遠くでは見えない
 
 # 土地の外の地面の高さ(m)。歩ける範囲では 0 より少し低い平ら
 func height_at(x: float, z: float) -> float:
@@ -140,6 +168,91 @@ func _build() -> void:
 
 	_tufts = _scatter(_tuft_mesh(), TUFT_COUNT, _tuft_mat, false)
 	_flowers = _scatter(_flower_mesh(), FLOWER_COUNT, _flower_mat, true)
+	# 部屋の明かりが地面に当たらないように、地面の仲間だけ別のレイヤーにする(森はこのあとで足す)
+	for child in get_children():
+		child.layers = Look.GROUND_LAYER
+	_build_forest()
+
+# 土地の外の森。場所は乱数の種で決まるので毎回同じ
+func _build_forest() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = FOREST_SEED
+	var fir_spots := []
+	var leaf_spots := []
+	for _i in range(FOREST_TRIES):
+		var x := rng.randf_range(-FOREST_END, FOREST_END)
+		var z := rng.randf_range(-FOREST_END, FOREST_END)
+		var is_fir := rng.randf() < 0.55
+		var size := rng.randf_range(FOREST_SIZE_MIN, FOREST_SIZE_MAX)
+		var yaw := rng.randf() * TAU
+		if maxf(absf(x), absf(z)) < FOREST_START or _hills.get_noise_2d(x * FOREST_NOISE, z * FOREST_NOISE) < FOREST_CLEARING:
+			continue
+		var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * size), Vector3(x, height_at(x, z) - 0.2, z))
+		if is_fir:
+			fir_spots.append(t)
+		else:
+			leaf_spots.append(t)
+	_firs = _forest_part(_fir_mesh(), fir_spots, _fir_mat)
+	_broadleaves = _forest_part(_broadleaf_mesh(), leaf_spots, _leaf_mat)
+
+func _forest_part(mesh: Mesh, spots: Array, material: Material) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = spots.size()
+	for i in range(spots.size()):
+		mm.set_instance_transform(i, spots[i])
+	var node := MultiMeshInstance3D.new()
+	node.multimesh = mm
+	node.set_meta("base", spots)  # 草の株と同じく、配置を読めるように持っておく
+	node.material_override = material
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.extra_cull_margin = Look.BEND_CULL_MARGIN
+	add_child(node)
+	return node
+
+# 針葉樹: 3 段の円錐。上の段ほど明るい
+func _fir_mesh() -> ArrayMesh:
+	var b := TreeShapes.MeshBuilder.new()
+	_add_cone(b, 1.0, 3.0, 4.6, 0.72)
+	_add_cone(b, 3.4, 2.3, 4.0, 0.86)
+	_add_cone(b, 5.8, 1.5, 3.6, 1.0)
+	return b.commit()
+
+func _add_cone(b, base_y: float, radius: float, height: float, tint: float) -> void:
+	const SIDES := 7
+	var tip: int = b.vertex(Vector3(0.0, base_y + height, 0.0), Vector3.UP, tint)
+	var rim := []
+	for i in range(SIDES):
+		var a := float(i) * TAU / SIDES
+		var out := Vector3(cos(a), 0.0, sin(a))
+		rim.append(b.vertex(out * radius + Vector3.UP * base_y, (out + Vector3.UP * 0.6).normalized(), tint * 0.85))
+	for i in range(SIDES):
+		b.tri(tip, rim[i], rim[(i + 1) % SIDES])
+
+# 広葉樹: 丸い葉のかたまりを 3 つ
+func _broadleaf_mesh() -> ArrayMesh:
+	var b := TreeShapes.MeshBuilder.new()
+	_add_cone(b, 0.0, 0.5, 4.5, 0.6)  # 幹
+	_add_blob(b, Vector3(0.0, 5.0, 0.0), Vector3(3.2, 2.9, 3.2), 0.86)
+	_add_blob(b, Vector3(1.5, 4.0, 0.8), Vector3(2.0, 1.8, 2.0), 0.76)
+	_add_blob(b, Vector3(-1.3, 4.3, -0.9), Vector3(2.2, 2.0, 2.2), 1.0)
+	return b.commit()
+
+func _add_blob(b, center: Vector3, radii: Vector3, tint: float) -> void:
+	const SIDES := 7
+	const RINGS := 4
+	var ids := []
+	for r in range(RINGS + 1):
+		var up := PI * float(r) / RINGS
+		for i in range(SIDES):
+			var a := float(i) * TAU / SIDES
+			var dir := Vector3(sin(up) * cos(a), cos(up), sin(up) * sin(a))
+			ids.append(b.vertex(center + dir * radii, dir, tint))
+	for r in range(RINGS):
+		for i in range(SIDES):
+			var next := (i + 1) % SIDES
+			b.quad(ids[r * SIDES + i], ids[r * SIDES + next], ids[(r + 1) * SIDES + i], ids[(r + 1) * SIDES + next])
 
 # 丘の地面。土地の中には穴をあける(草地と重なってちらつかないように)
 func _wild_mesh() -> ArrayMesh:

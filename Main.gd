@@ -58,6 +58,14 @@ var selected_species := "birch"
 var selected_form := "seed"   # V で種 ⇄ 苗木
 var selected_crop := "radish" # 4〜8 で選ぶ。区画の上で SPACE を押すとまく
 
+# 市場のページ。買う列は品の種類(Market.GOODS の form)で、売る列は収穫物と保存食で分ける
+const BUY_PAGES := [
+	{"name": "木の種と苗木", "forms": ["seed", "sapling"]},
+	{"name": "野菜の種", "forms": ["crop_seed"]},
+	{"name": "丸太", "forms": ["material"]},
+]
+const SELL_PAGES := ["収穫物", "保存食"]
+
 # 野菜を選ぶキー(HUD の並びもこの順)
 const CROP_KEYS := {KEY_4: "radish", KEY_5: "carrot", KEY_6: "cucumber", KEY_7: "potato", KEY_8: "garlic", KEY_9: "tomato"}
 
@@ -68,6 +76,8 @@ var _panel := "market"       # 右の画面に出しているもの: market(市�
 var _wildlife_timer := 0.0
 var _guide_timer := 0.0
 var _shovel_wait := 0.0
+var _buy_page := 0           # 市場の買う列の今のページ(閉じても覚えておく)
+var _sell_page := 0          # 市場の売る列の今のページ
 
 func _ready() -> void:
 	# 本物のセーブのときだけ控えを取る(テストや確認用のセーブでは取らない)
@@ -1200,16 +1210,41 @@ func shop_rows() -> Array:
 		return visitor_rows()
 	var m := world.market
 	var rows := []
+	var buy_next: int = (_buy_page + 1) % BUY_PAGES.size()
+	rows.append({"id": "page_buy", "text": "買う品: %s(押すと次: %s)" % [BUY_PAGES[_buy_page].name, BUY_PAGES[buy_next].name], "column": 0})
 	for g in m.GOODS:
-		rows.append({"id": g.id, "text": "買う: %s  %d₽" % [good_name(g), g.price], "column": 0})
+		rows.append({"id": g.id, "text": "買う: %s  %d₽" % [good_name(g), g.price], "column": 0, "page": _buy_page_of(g)})
+	var sell_next: int = (_sell_page + 1) % SELL_PAGES.size()
+	rows.append({"id": "page_sell", "text": "売る品: %s(押すと次: %s %d種類)" % [SELL_PAGES[_sell_page], SELL_PAGES[sell_next], _held_kinds(sell_next)], "column": 1})
 	for item in m.SELL_PRICES:
 		# 野菜は持っているものだけ並べる(行が多くなりすぎないように)
 		var n := produce_count(item)
 		if item == "apple" or n > 0:
 			var dear := "(%s)" % SEASON_NAMES[world.forest.season] if m.price_rate(item, world.forest.season) > 1.0 else ""
-			rows.append({"id": "sell_" + item, "text": "売る: %s %d%s × %d₽%s" % [produce_name(item), n, produce_unit(item), m.sell_price(item), dear], "column": 1})
+			rows.append({"id": "sell_" + item, "text": "売る: %s %d%s × %d₽%s" % [produce_name(item), n, produce_unit(item), m.sell_price(item), dear], "column": 1, "page": _sell_page_of(item)})
 	rows.append({"id": "close", "text": "閉じる(B / Esc)", "column": 1})
 	return rows
+
+func _buy_page_of(g: Dictionary) -> int:
+	for i in range(BUY_PAGES.size()):
+		if g.form in BUY_PAGES[i].forms:
+			return i
+	return 0
+
+func _sell_page_of(item: String) -> int:
+	return 1 if world.kitchen.RECIPES.has(item) else 0
+
+# そのページで持っている品の種類の数
+func _held_kinds(page: int) -> int:
+	var n := 0
+	for item in world.market.SELL_PRICES:
+		if _sell_page_of(item) == page and produce_count(item) > 0:
+			n += 1
+	return n
+
+# 右の画面に今出す行。市場は、今のページの品とページを送る行(ほかの画面は全部)
+func visible_shop_rows() -> Array:
+	return shop_rows().filter(func(r): return not r.has("page") or r.page == (_buy_page if r.column == 0 else _sell_page))
 
 func _toggle_shop() -> void:
 	if $HUD.is_shop_open():
@@ -1252,6 +1287,14 @@ func _on_shop_action(id: String) -> void:
 		return
 	if _panel == "visitor":
 		_visitor_action(id)
+		return
+	if id == "page_buy" or id == "page_sell":
+		_sfx("click")
+		if id == "page_buy":
+			_buy_page = (_buy_page + 1) % BUY_PAGES.size()
+		else:
+			_sell_page = (_sell_page + 1) % SELL_PAGES.size()
+		$HUD.refresh_shop()
 		return
 	if id.begins_with("sell_"):
 		var item := id.trim_prefix("sell_")

@@ -7,6 +7,7 @@ extends SceneTree
 const TEST_SAVE := "user://test_views.json"
 const DAY := 86400
 const WorldMaterial = preload("res://view/3d/WorldMaterial.gd")
+const Look = preload("res://view/3d/Look.gd")
 
 var _failed := 0
 var _passed := 0
@@ -289,6 +290,33 @@ func _test_ground() -> void:
 	_check(ground.height_at(170, 30) != ground.height_at(170, 110), "丘の高さは場所で変わる(起伏がある)")
 	_check(player.WALK_LIMIT < ground.HILL_START, "歩ける範囲は丘の手前まで")
 	_check(ground.get_child(0).cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "丘は土地に影を落とさない")
+
+	# 土地の外の森
+	var firs: MultiMesh = ground._firs.multimesh
+	var leaves: MultiMesh = ground._broadleaves.multimesh
+	_check(firs.instance_count > 200 and leaves.instance_count > 150, "丘に針葉樹と広葉樹が生えている(%d本・%d本)" % [firs.instance_count, leaves.instance_count])
+	var inside := 0
+	var floating := 0
+	for part in [ground._firs, ground._broadleaves]:
+		for t in part.get_meta("base"):
+			var o: Vector3 = t.origin
+			if maxf(absf(o.x), absf(o.z)) <= player.WALK_LIMIT:
+				inside += 1
+			if absf(o.y - ground.height_at(o.x, o.z)) > 0.5:
+				floating += 1
+	_check(inside == 0, "歩ける範囲の中には生えていない(%d本)" % inside)
+	_check(floating == 0, "丘の地面に立っている(%d本が浮いている)" % floating)
+	_check(ground._firs.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "森は土地に影を落とさない")
+	var forest_season: String = main.world.forest.season
+	main.world.forest.set_season("autumn")
+	var autumn_leaf: Color = ground._leaf_mat.albedo_color
+	main.world.forest.set_season("summer")
+	_check(ground._leaf_mat.albedo_color != autumn_leaf and ground._fir_mat.albedo_color == ground.FIR_COLOR, "広葉樹は季節で色が変わり、針葉樹は変わらない")
+	main.world.forest.set_season("winter")
+	_check(ground._fir_mat.albedo_color == ground.FIR_COLOR_WINTER and ground.GROUND.winter.grass.r > ground.GROUND.winter.grass.b, "冬は雪の色が暖かめで、針葉樹の色が少し明るい")
+	_check(ground._firs.visible and not ground._broadleaves.visible, "冬は広葉樹が葉を落として、針葉樹だけになる")
+	main.world.forest.set_season(forest_season)
+	_check(ground.get_child(1).layers == Look.GROUND_LAYER, "地面は部屋の明かりを受けないレイヤーにある")
 
 	# 歩ける範囲の外へは出られない
 	player.global_position = Vector3(500, 0, -500)
@@ -1442,6 +1470,8 @@ func _test_chop_view() -> void:
 	k.log_left = 0
 	c.materials.log = 2
 	k.changed.emit()
+	var room_light: OmniLight3D = view.get_child(0).get_node("Interior").find_children("*", "OmniLight3D", false, false)[0]
+	_check(room_light.light_cull_mask & Look.GROUND_LAYER == 0, "部屋の明かりは外の地面を照らさない")
 	_check(pieces.call("ChopBlock*").size() == 1 and pieces.call("ChopBody*").size() == 1, "完成した小屋の東に薪割り台がある")
 	_check(pieces.call("ChopLog*").is_empty() and pieces.call("*Woodpile*").is_empty(), "はじめは丸太も薪の山もない")
 	player.global_position = Vector3(at.x + 0.9, 0, at.y)
@@ -1589,6 +1619,65 @@ func _test_table_view() -> void:
 	player._body.basis = keep_basis
 	player.global_position = keep_pos
 	view._process(0.0)
+
+# 市場のページ: どのページも画面に収まり、全部の品にたどり着ける
+func _test_market_pages() -> void:
+	print("市場のページ")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var ids := func(rows: Array) -> Array:
+		return rows.map(func(r): return r.id)
+	var keep := {}
+	for item in w.market.SELL_PRICES:
+		keep[item] = main.produce_count(item)
+	var pile_set := func(item: String, n: int) -> void:
+		w.market.pile_of(item)[w.market.key_of(item)] = n
+	# 全部の品を持っている、いちばん行が多い状態
+	for item in w.market.SELL_PRICES:
+		pile_set.call(item, 3)
+	main._panel = "market"
+	main._buy_page = 0
+	main._sell_page = 0
+	hud.open_shop()
+	var seen := {}
+	var tallest := 0
+	for buy_step in range(main.BUY_PAGES.size()):
+		for sell_step in range(main.SELL_PAGES.size()):
+			var rows: Array = main.visible_shop_rows()
+			for id in ids.call(rows):
+				seen[id] = true
+			tallest = maxi(tallest, rows.filter(func(r): return r.column == 0).size())
+			tallest = maxi(tallest, rows.filter(func(r): return r.column == 1).size())
+			_check(hud._shop.get_combined_minimum_size().y <= 648.0, "画面の高さに収まる(買う %d・売る %d: %.0fpx)" % [main._buy_page, main._sell_page, hud._shop.get_combined_minimum_size().y])
+			main._on_shop_action("page_sell")
+		main._on_shop_action("page_buy")
+	_check(main._buy_page == 0 and main._sell_page == 0, "ページは一周すると最初に戻る")
+	_check(tallest <= 15, "1 列は多くても 15 行(%d 行)" % tallest)
+	var missing := []
+	for g in w.market.GOODS:
+		if not seen.has(g.id):
+			missing.append(g.id)
+	for item in w.market.SELL_PRICES:
+		if not seen.has("sell_" + item):
+			missing.append(item)
+	_check(missing.is_empty(), "どの品にもたどり着ける(足りない: %s)" % str(missing))
+	_check(hud._shop_columns[0].get_child(0).text.contains("押すと次: 野菜の種"), "1 行目で次のページが分かる")
+	_check(hud._shop_columns[1].get_child(0).text.contains("保存食 10種類"), "次のページに持っている数が分かる")
+	# 押すと買う列が変わる。フォーカスはページの行に残る
+	hud._shop_columns[0].get_child(0).grab_focus()
+	main._on_shop_action("page_buy")
+	_check(hud._shop_columns[0].get_child(1).text.contains("種(") or hud._shop_columns[0].get_child(1).text.contains("種いも") or hud._shop_columns[0].get_child(1).text.contains("ラディッシュ"), "野菜の種のページになる")
+	_check(hud._shop_columns[0].get_child(0).has_focus(), "続けて押せるように、フォーカスが残る")
+	# ほかの画面にページの行は出ない
+	main._panel = "kitchen"
+	_check(main.visible_shop_rows().size() == main.kitchen_rows().size(), "ストーブの画面はそのまま")
+	main._panel = "market"
+	main._buy_page = 0
+	main._sell_page = 0
+	hud.close_shop()
+	for item in keep:
+		pile_set.call(item, keep[item])
+	w.market.changed.emit()
 
 func _test_chop_collision() -> void:
 	var player: CharacterBody3D = main.get_node("Player")
@@ -2365,6 +2454,7 @@ func _test_furniture() -> void:
 	w.forest.season = "autumn"
 	_check(main.shop_rows().any(func(r): return r.id == "sell_sauce" and r.text.ends_with("トマトソース 5瓶 × 150₽")), "市場に売る行が出る")
 	_check(main._preserve_price_text("sauce", "瓶") == "市場で1瓶 150₽で売れる。冬は225₽", "秋にできあがると、冬の値段も知らせる")
+	_test_market_pages()
 	var money: int = w.market.money
 	main._on_shop_action("sell_sauce")
 	_check(w.market.money == money + 750 and _room_pieces(view, "Food").is_empty(), "売るとお金が増え、テーブルから消える")

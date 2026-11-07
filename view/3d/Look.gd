@@ -9,6 +9,7 @@ const WorldMaterial = preload("res://view/3d/WorldMaterial.gd")
 # 入れないと、本来の位置が画面の外にある物が、曲がって画面に入ってくるときに消えて見える
 const BEND_CULL_MARGIN := 40.0
 const STRIP_SEGMENT := 2.0  # 長い帯を分ける長さ(m)。頂点がないと曲がらない
+const GROUND_LAYER := 2     # 地面と区画の描画レイヤー。小屋の部屋の明かりは、これを照らさない(開いたドアから外へ漏れないように)
 
 static func at(p: Vector2, height := 0.0) -> Vector3:
 	return Vector3(p.x, height, p.y)

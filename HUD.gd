@@ -121,7 +121,7 @@ func refresh_shop() -> void:
 			b.queue_free()
 	_shop_title.text = _main.shop_title()
 	_shop_money.text = _main.shop_header()
-	for row in _main.shop_rows():
+	for row in _main.visible_shop_rows():
 		var b := Button.new()
 		b.text = row.text
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
