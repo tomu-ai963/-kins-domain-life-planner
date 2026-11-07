@@ -40,6 +40,13 @@ const LYING_OFFSET := Vector3(-0.14, 0.49, -0.95)
 const COVER_POS := Vector3(-0.60, 0.52, -0.95)   # 掛け布団のふくらみ(床の上)
 const COVER_SCALE := Vector3(1.25, 0.4, 0.84)
 const COVER_SECONDS := 0.3
+const CHOP_STUMP_R := 0.3     # 薪割り台(切り株)の半径(m)
+const CHOP_STUMP_H := 0.42
+const CHOP_LOG_R := 0.13      # 台の上の丸太の半径
+const CHOP_LOG_H := 0.38
+const FIRES_PER_PIECE := 2    # 薪の山の 1 本が表す薪(回分)
+const PILE_COLUMNS := 8       # 薪の山の 1 段の本数
+const PILE_GAP := 0.28        # 薪の山の並びの間隔(m)
 const FOOD_COLORS := {
 	"jam": Color(0.70, 0.30, 0.20), "sauce": Color(0.78, 0.16, 0.12), "pickles": Color(0.42, 0.56, 0.26),
 	"garlic_pickle": Color(0.90, 0.86, 0.68), "pirozhki": Color(0.76, 0.54, 0.26),
@@ -64,6 +71,7 @@ var _cook_pot := Look.mat(Color(0.82, 0.46, 0.24))  # 銅の鍋。黒いスト�
 var _pot_inside := Look.mat(Color(0.20, 0.13, 0.10))
 var _steam := Look.mat(Color(0.96, 0.96, 0.92), true)
 var _firewood := Look.mat(Color(0.66, 0.48, 0.30))
+var _chop_stump := Look.mat(Color(0.44, 0.31, 0.18))
 var _food_mats := {}
 var _cylinder: CylinderMesh
 var _steam_puffs := []        # 湯気の玉(仕込んでいるあいだだけ)
@@ -216,8 +224,42 @@ func _rebuild_pieces() -> void:
 		_porch_lamp(spot)
 		_interior(spot)
 		_pots(spot)
+		_yard(spot)
 	elif cabin.stage == 2 and cabin.days_done >= 1:
 		_rafters(spot)
+
+# 東の庭: 薪割り台(切り株)と、壁際に積んだ薪。割りかけの丸太は台の上に立っている
+func _yard(parent: Node3D) -> void:
+	var spot := Node3D.new()
+	spot.name = "Yard"
+	parent.add_child(spot)
+	var c: Vector2 = Cabin.CHOP_OFFSET
+	_round(spot, _chop_stump, Vector3(c.x, CHOP_STUMP_H * 0.5, c.y), Vector3(CHOP_STUMP_R * 2.0, CHOP_STUMP_H, CHOP_STUMP_R * 2.0)).name = "ChopBlock"
+	_round(spot, _firewood, Vector3(c.x, CHOP_STUMP_H + 0.004, c.y), Vector3(CHOP_STUMP_R * 1.8, 0.008, CHOP_STUMP_R * 1.8))
+	if kitchen != null and kitchen.log_left > 0:
+		# 割っていくと丸太が細くなる
+		var width: float = CHOP_LOG_R * 2.0 * (0.45 + 0.55 * kitchen.log_left / float(Kitchen.LOG_FIRES))
+		_round(spot, _chop_stump, Vector3(c.x, CHOP_STUMP_H + CHOP_LOG_H * 0.5, c.y), Vector3(width, CHOP_LOG_H, width)).name = "ChopLog"
+	var body := StaticBody3D.new()
+	body.name = "ChopBody"
+	var shape := CollisionShape3D.new()
+	var cyl := CylinderShape3D.new()
+	cyl.radius = CHOP_STUMP_R + 0.05
+	cyl.height = CHOP_STUMP_H
+	shape.shape = cyl
+	shape.position = Vector3(c.x, CHOP_STUMP_H * 0.5, c.y)
+	body.add_child(shape)
+	spot.add_child(body)
+	if kitchen == null:
+		return
+	# 薪の山: 東の壁に沿って下の段から積む
+	var pieces: int = ceili(kitchen.firewood / float(FIRES_PER_PIECE))
+	var x: float = Cabin.WIDTH * 0.5 + WALL_T * 0.5 + 0.2
+	for i in range(pieces):
+		var column: int = i % PILE_COLUMNS
+		var row: int = i / PILE_COLUMNS
+		var z: float = -1.15 + column * PILE_GAP + (0.1 if row % 2 == 1 else 0.0)
+		_piece(spot, _firewood, Vector3(x, 0.07 + row * 0.13, z), Vector3(0.4, 0.12, 0.13)).name = "Woodpile"
 
 # 窓辺の鉢: 東の窓の下に棚を置き、鉢と芽を並べる。芽は育つと大きくなる
 func _pots(spot: Node3D) -> void:

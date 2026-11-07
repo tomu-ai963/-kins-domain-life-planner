@@ -38,6 +38,7 @@ const WORK_REACH := 1.0      # 作業で物が飛ぶ場所は、体からこの�
 @onready var _lantern: Node3D = $Body/Lantern
 @onready var _lantern_light: OmniLight3D = $LanternLight
 
+var speed_scale := 1.0    # 歩く速さの倍率(雪かき。Main が毎フレーム決める)
 var _cam_dist := 28.0
 var shadow_light: DirectionalLight3D  # Main が太陽を渡す
 var _indoors := false
@@ -72,7 +73,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_key_pressed(KEY_LEFT)  or Input.is_key_pressed(KEY_A): dir.x -= 1
 	if Input.is_key_pressed(KEY_RIGHT) or Input.is_key_pressed(KEY_D): dir.x += 1
 	dir = dir.normalized()
-	velocity = dir * SPEED
+	velocity = dir * SPEED * speed_scale
 	move_and_slide()
 	position.x = clampf(position.x, -WALK_LIMIT, WALK_LIMIT)
 	position.z = clampf(position.z, -WALK_LIMIT, WALK_LIMIT)

@@ -2,7 +2,7 @@ extends RefCounted
 
 # ── 小屋のストーブ(描画を持たない) ──────────────────────────────
 # 完成した小屋のストーブで、収穫物を保存食に加工する。鍋はひとつで、仕込む → 日数を待つ → 受け取る の順。
-# 仕込むたびに薪を 1 回分使う。薪は丸太から割る(1 本 ≒ 0.1m³ で 10 回分)。
+# 仕込むたびに薪を 1 回分使う。薪は小屋の東の薪割り台で丸太から割る(1 本 ≒ 0.1m³ を 5 回割って 10 回分)。
 # 瓶・砂糖・塩・粉は売値に含めて、別に買わない(手間を増やしすぎないため)。
 # 文言は Main、値段は Market、見た目は view/ が決める
 const Forest = preload("res://logic/Forest.gd")
@@ -14,6 +14,8 @@ signal changed  # 見た目に関わる状態が変わった
 signal dirty    # セーブに入る状態が変わった
 
 const LOG_FIRES := 10  # 丸太 1 本を割ってできる薪(回分)
+const SPLIT_FIRES := 2 # 1 回割るとできる薪(回分)。丸太 1 本を 5 回割る
+const MAX_FIREWOOD := 40  # 積んでおける薪(回分)。小屋の壁際に積める量
 
 # input: 材料 / amount: 1 回に使う量(リンゴは個、野菜は kg) / output: できる数 / days: できるまでの暦の日数
 const RECIPES := {
@@ -38,7 +40,7 @@ var pot := {}       # 鍋の中身 {recipe, start_day: int}。空なら {}
 var stock := {}     # できた保存食の数 {recipe: 数}
 var firewood := 0   # 割ってある薪(回分)
 var cooked := false # 一度でも仕込んだか(ヒント用。薪は剪定の枝でも増えるので、薪では分からない)
-var last_split := false  # 直前の仕込みで丸太を割ったか(文言用)
+var log_left := 0   # 台の上で割りかけの丸太の残り(回分)
 var last_collected := {} # 直前に受け取った {recipe, count}(文言用)
 
 func _init() -> void:
@@ -89,13 +91,8 @@ func start(id: String) -> String:
 	var r: Dictionary = RECIPES[id]
 	if input_count(id) < int(r.amount):
 		return "no_input"
-	last_split = firewood <= 0
-	if last_split:
-		if int(cabin.materials.log) <= 0:
-			return "no_wood"
-		cabin.materials.log -= 1
-		cabin.clamp_own_logs()
-		firewood += LOG_FIRES
+	if firewood <= 0:
+		return "no_wood"
 	firewood -= 1
 	cooked = true
 	_pile(r.input)[r.input] -= int(r.amount)
@@ -103,10 +100,26 @@ func start(id: String) -> String:
 	_commit()
 	return "started"
 
-# 剪定で切った枝を薪にする
+# 剪定で切った枝を薪にする(積める量まで)
 func add_firewood(n: int) -> void:
-	firewood += n
+	firewood = mini(firewood + n, MAX_FIREWOOD)
 	_commit()
+
+# 薪割り台で 1 回割る。台に丸太がなければ 1 本のせる。結果: split / no_log / full
+func split() -> String:
+	if firewood >= MAX_FIREWOOD:
+		return "full"
+	if log_left <= 0:
+		if int(cabin.materials.log) <= 0:
+			return "no_log"
+		cabin.materials.log -= 1
+		cabin.clamp_own_logs()
+		log_left = LOG_FIRES
+	var n: int = mini(SPLIT_FIRES, MAX_FIREWOOD - firewood)
+	firewood += n
+	log_left = maxi(log_left - SPLIT_FIRES, 0)
+	_commit()
+	return "split"
 
 # できたものを受け取る。結果: collected / empty / cooking
 func collect() -> String:
@@ -124,10 +137,11 @@ func collect() -> String:
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
-	return {"pot": pot, "stock": stock, "firewood": firewood, "cooked": cooked}
+	return {"pot": pot, "stock": stock, "firewood": firewood, "log_left": log_left, "cooked": cooked}
 
 func from_save(d: Dictionary) -> void:
 	firewood = int(d.get("firewood", 0))
+	log_left = int(d.get("log_left", 0))
 	stock = _zero_counts()
 	var saved = d.get("stock", {})
 	if typeof(saved) == TYPE_DICTIONARY:
@@ -137,6 +151,6 @@ func from_save(d: Dictionary) -> void:
 	var p = d.get("pot", {})
 	if typeof(p) == TYPE_DICTIONARY and RECIPES.has(str(p.get("recipe", ""))):
 		pot = {"recipe": str(p.recipe), "start_day": int(p.get("start_day", 0))}
-	# 記録がないセーブは、薪があれば(当時は仕込まないと薪にならなかった)仕込んだことがある
+	# 記録がないセーブは、薪があれば(当時は仕込むときにしか割らなかった)仕込んだことがある
 	cooked = bool(d.get("cooked", firewood > 0 or not pot.is_empty()))
 	changed.emit()

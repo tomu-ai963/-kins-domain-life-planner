@@ -89,8 +89,7 @@ func _test_own_logs() -> void:
 	# 薪にしても同じ
 	var w2 := _world()
 	_fell_tree(w2)
-	w2.garden.produce.potato = 4
-	w2.kitchen.start("pirozhki")
+	w2.kitchen.split()
 	_check(w2.cabin.materials.log == 1 and w2.cabin.own_log_count() == 1, "薪に割ると自分の丸太も減る")
 
 func _test_place() -> void:

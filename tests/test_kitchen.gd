@@ -69,12 +69,12 @@ func _test_cook() -> void:
 	print("仕込む → 待つ → 受け取る")
 	var w := _world()
 	var k := w.kitchen
-	w.cabin.materials.log = 1
+	k.firewood = 5
 	_check(k.collect() == "empty", "鍋が空なら受け取れない")
 	_check(k.start("nothing") == "unknown", "知らない料理は作れない")
 	w.garden.produce.tomato = 9
 	_check(k.start("sauce") == "no_input", "材料が足りないと仕込めない")
-	_check(w.garden.produce.tomato == 9 and w.cabin.materials.log == 1 and k.firewood == 0, "仕込めなければ何も減らない")
+	_check(w.garden.produce.tomato == 9 and k.firewood == 5, "仕込めなければ何も減らない")
 	w.garden.produce.tomato = 12
 	_check(k.start("sauce") == "started", "トマトソースを仕込める")
 	_check(w.garden.produce.tomato == 2, "材料が 10kg 減る")
@@ -105,15 +105,37 @@ func _test_firewood() -> void:
 	var w := _world()
 	var k := w.kitchen
 	w.garden.produce.potato = 1000
-	_check(k.start("pirozhki") == "no_wood" and w.garden.produce.potato == 1000 and k.firewood == 0, "丸太がないと仕込めず、材料も減らない")
+	w.cabin.materials.log = 3
+	_check(k.start("pirozhki") == "no_wood" and w.garden.produce.potato == 1000 and w.cabin.materials.log == 3, "薪がないと仕込めない。丸太があっても勝手には割らない")
+	w.cabin.materials.log = 0
+	_check(k.split() == "no_log" and k.firewood == 0 and k.log_left == 0, "丸太がないと割れない")
 	w.cabin.materials.log = 1
-	_check(k.start("pirozhki") == "started" and k.last_split, "丸太を割って火をおこす")
-	_check(w.cabin.materials.log == 0 and k.firewood == Kitchen.LOG_FIRES - 1, "丸太 1 本で薪 10 回分。1 回使って残り 9")
-	for i in range(Kitchen.LOG_FIRES - 1):
+	_check(k.split() == "split" and w.cabin.materials.log == 0 and k.firewood == Kitchen.SPLIT_FIRES and k.log_left == Kitchen.LOG_FIRES - Kitchen.SPLIT_FIRES, "1 回割ると丸太を 1 本のせて、薪が 2 回分")
+	for _i in range(4):
+		_check(k.split() == "split", "同じ丸太の続きを割る(丸太は増えなくてよい)")
+	_check(k.firewood == Kitchen.LOG_FIRES and k.log_left == 0 and w.cabin.materials.log == 0, "5 回割ると丸太 1 本が薪 10 回分になる")
+	_check(k.split() == "no_log" and k.firewood == Kitchen.LOG_FIRES, "割り終えたら次の丸太がいる")
+	w.garden.produce.potato = 1000
+	for i in range(Kitchen.LOG_FIRES):
 		k.pot = {}
-		_check(k.start("pirozhki") == "started" and not k.last_split, "残りの薪で %d 回目" % (i + 2))
+		_check(k.start("pirozhki") == "started", "割った薪で %d 回目" % (i + 1))
 	k.pot = {}
 	_check(k.firewood == 0 and k.start("pirozhki") == "no_wood", "10 回で薪が尽きる")
+	# 積める量まで
+	k.firewood = Kitchen.MAX_FIREWOOD - 1
+	w.cabin.materials.log = 2
+	_check(k.split() == "split" and k.firewood == Kitchen.MAX_FIREWOOD, "積める量までで止まる")
+	var logs_at_full: int = w.cabin.materials.log
+	var left_at_full: int = k.log_left
+	_check(k.split() == "full" and w.cabin.materials.log == logs_at_full and k.log_left == left_at_full, "いっぱいなら割らない")
+	k.add_firewood(5)
+	_check(k.firewood == Kitchen.MAX_FIREWOOD, "剪定の枝でも、積める量は超えない")
+	# 割りかけの丸太はセーブに残る
+	var k2 := Kitchen.new()
+	k2.from_save(k.to_save())
+	_check(k2.log_left == k.log_left and k2.firewood == k.firewood, "割りかけの丸太が残る")
+	k2.from_save({"firewood": 3})
+	_check(k2.log_left == 0 and k2.firewood == 3, "記録がないセーブは、割りかけなしから")
 
 func _test_sell() -> void:
 	print("売る")
@@ -130,7 +152,7 @@ func _test_honey() -> void:
 	print("はちみつの料理")
 	var w := _world()
 	var k := w.kitchen
-	w.cabin.materials.log = 1
+	k.firewood = 2
 	_check(k.start("pryanik") == "no_input", "はちみつがないと仕込めない")
 	w.bees.stock.honey = 3
 	_check(k.input_count("pryanik") == 3 and k.input_count("sbiten") == 3, "持っているはちみつの量が分かる")
@@ -176,7 +198,7 @@ func _test_save() -> void:
 	print("セーブ")
 	var w := _world()
 	var k := w.kitchen
-	w.cabin.materials.log = 1
+	k.firewood = Kitchen.LOG_FIRES
 	w.forest.produce.apple = 10
 	k.stock.pirozhki = 7
 	k.start("jam")  # dirty で保存される

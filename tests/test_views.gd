@@ -40,6 +40,7 @@ func _process(_delta: float) -> bool:
 			_test_plot_limit()
 			_test_toon()
 			_test_winter_work()
+			_test_snow_view()
 		10:
 			_test_3d_cabin_collision()  # 当たり判定が物理サーバーに入るのを待ってから
 			_prepare_visitor_collision()
@@ -48,6 +49,7 @@ func _process(_delta: float) -> bool:
 			_test_visitor_collision()
 			_test_hive_collision()
 			_test_feeder_collision()
+			_test_chop_collision()
 			_test_tree_collision()
 			_test_market_collision()
 			_wait_until = Time.get_ticks_msec() + 200
@@ -554,6 +556,7 @@ func _test_3d_cabin_collision() -> void:
 	_check(not player.test_move(Transform3D(Basis.IDENTITY, Vector3(21.45, 0, 19.75)), Vector3(0, 0, 0.5)), "ストーブの南は空いている")
 	_test_cabin_inside()
 	_test_furniture()
+	_test_chop_view()
 	_test_work_motions()
 	_test_wildlife_view()
 	_test_visitor_view()
@@ -890,7 +893,7 @@ func _test_sound_view() -> void:
 	_check(audio.last_played == "", "止まっているときは足音がしない")
 
 	# 作業音: 道具が当たるときに鳴る
-	for kind in ["water", "dig", "chop", "build", "pick", "pick_high", "plant", "pull", "prune", "feed"]:
+	for kind in ["water", "dig", "chop", "build", "pick", "pick_high", "plant", "pull", "prune", "feed", "shovel"]:
 		audio.last_played = ""
 		player.act(kind, Vector2(-47, -44))
 		_check(audio.last_played == "", "%s: 押した瞬間にはまだ鳴らない" % kind)
@@ -1351,6 +1354,146 @@ func _test_winter_work() -> void:
 	f.set_season(keep_season)
 	f.changed.emit()
 	player.global_position = keep_pos
+
+# 雪かき: U を押したまま歩くと道ができて、道の上は速く歩ける
+func _test_snow_view() -> void:
+	print("雪かき")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var player: CharacterBody3D = main.get_node("Player")
+	var figure = player._figure
+	var view = main.get_node("SnowPath")
+	var f = w.forest
+	var s = w.snow
+	var keep_season: String = f.season
+	var keep_pos: Vector3 = player.global_position
+	var spot := Vector2(30.5, -44.5)
+	f.set_season("winter")
+	player.global_position = Vector3(spot.x, 0, spot.y)
+	figure._process(10.0)
+	main._shovel_wait = 0.0
+	main.update_shovel(0.1, false)
+	_check(player.speed_scale == 1.0 and view.shown_count() == 0, "雪の上は今までどおりの速さ")
+	main.update_shovel(0.1, true)
+	_check(s.is_cleared(spot) and view.shown_count() == 1, "U を押していると足元の雪がどく")
+	_check(figure.current_action() == "shovel" and figure.current_tool() == "shovel", "シャベルですくう動きをする")
+	_check(player.speed_scale == s.SHOVEL_SPEED, "雪かきしながらは、ゆっくり歩く")
+	var audio = main.get_node("Audio")
+	audio.last_played = ""
+	player._effect_tween.custom_step(10.0)
+	_check(audio.last_played == "dig", "雪かきの音が鳴る")
+	var effects = player.get_node("WorkEffects")
+	_check(effects._mats.has(effects.SNOW), "どかした雪が飛ぶ")
+	figure._process(10.0)
+	main.update_shovel(0.1, false)
+	_check(player.speed_scale == s.PATH_SPEED and player.speed_scale > 1.0, "道の上は速く歩ける")
+	# 動きが終わる前でも、次のマスはどかせないあいだ待つ
+	player.global_position = Vector3(spot.x + 1.6, 0, spot.y)
+	main.update_shovel(0.01, true)
+	_check(not s.is_cleared(player.ground_pos()), "続けてどかすには少し間がいる")
+	main.update_shovel(main.SHOVEL_GAP, true)
+	_check(s.is_cleared(player.ground_pos()) and view.shown_count() == 2, "歩いていくと道が伸びる")
+	player._effect_tween.custom_step(10.0)
+	figure._process(10.0)
+	player.global_position = Vector3(spot.x + 6.0, 0, spot.y)
+	main.update_shovel(0.1, false)
+	_check(player.speed_scale == 1.0, "道から外れると、もとの速さ")
+	# 画面を開いているあいだはどかさない
+	main._shovel_wait = 0.0
+	main._panel = "market"
+	hud.open_shop()
+	main.update_shovel(0.1, true)
+	_check(not s.is_cleared(player.ground_pos()), "市場の画面を開いているあいだは雪かきしない")
+	main._close_shop()
+	# 冬でなければ何も起きない
+	f.set_season("autumn")
+	_check(view.shown_count() == 0, "秋には道が見えない")
+	main.update_shovel(0.1, true)
+	_check(player.speed_scale == 1.0, "秋は雪かきにならない")
+	var e := InputEventKey.new()
+	e.keycode = KEY_U
+	e.pressed = true
+	main._unhandled_input(e)
+	_check(hud._message.contains("雪かきは冬"), "秋に U を押すと案内する")
+	s.cells.clear()
+	s.changed.emit()
+	player.speed_scale = 1.0
+	f.set_season(keep_season)
+	player.global_position = keep_pos
+
+# 薪割り: 小屋の東の台で H を押すと割れて、壁際に薪が積まれる
+func _test_chop_view() -> void:
+	print("薪割り")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var player: CharacterBody3D = main.get_node("Player")
+	var figure = player._figure
+	var view = main.get_node("Cabin")
+	var c = w.cabin
+	var k = w.kitchen
+	var keep_pos: Vector3 = player.global_position
+	var keep_logs: int = c.materials.log
+	var keep_wood: int = k.firewood
+	var pieces := func(pattern: String) -> Array:
+		return view.find_children(pattern, "", true, false)
+	var at: Vector2 = c.chop_pos()
+	k.firewood = 0
+	k.log_left = 0
+	c.materials.log = 2
+	k.changed.emit()
+	_check(pieces.call("ChopBlock*").size() == 1 and pieces.call("ChopBody*").size() == 1, "完成した小屋の東に薪割り台がある")
+	_check(pieces.call("ChopLog*").is_empty() and pieces.call("*Woodpile*").is_empty(), "はじめは丸太も薪の山もない")
+	player.global_position = Vector3(at.x + 0.9, 0, at.y)
+	_check(main.furniture_line().contains("薪割り台"), "そばで案内が出る")
+	figure._process(10.0)
+	main._cabin_action()
+	_check(k.firewood == k.SPLIT_FIRES and c.materials.log == 1 and hud._message.contains("薪を割った"), "H で 1 回割る")
+	_check(figure.current_action() == "chop" and figure.current_tool() == "axe", "斧を振る動きをする")
+	_check(pieces.call("ChopLog*").size() == 1 and pieces.call("*Woodpile*").size() == 1, "台に丸太がのり、壁際に薪が積まれる")
+	var wide: float = pieces.call("ChopLog*")[0].scale.x
+	figure._process(10.0)
+	main._cabin_action()
+	_check(pieces.call("ChopLog*")[0].scale.x < wide, "割っていくと丸太が細くなる")
+	_check(pieces.call("*Woodpile*").size() == 2, "薪の山が増える")
+	for _i in range(3):
+		main._cabin_action()
+	_check(k.firewood == k.LOG_FIRES and pieces.call("ChopLog*").is_empty(), "割り終えると台が空く")
+	c.materials.log = 0
+	figure._process(10.0)
+	main._cabin_action()
+	_check(hud._message.contains("割る丸太がない") and not figure.is_acting(), "丸太がなければ割れず、動かない")
+	k.firewood = k.MAX_FIREWOOD
+	k.changed.emit()
+	var all: Array = pieces.call("*Woodpile*")
+	_check(all.size() == ceili(k.MAX_FIREWOOD / float(view.FIRES_PER_PIECE)), "薪の山は積める量まで見える")
+	var tallest := 0.0
+	for p in all:
+		tallest = maxf(tallest, p.position.y)
+	_check(tallest < view.WALL_H, "薪の山は壁より低い(%.2fm)" % tallest)
+	main._cabin_action()
+	_check(hud._message.contains("十分ある"), "いっぱいなら割らない")
+	# 庭には物を置けない
+	var yard: Vector2 = c.site + Vector2(3.0, 0.0)
+	_check(c.in_yard(yard) and c.blocks_plot(w.land.plot_center(yard)), "東の庭には区画を作れない")
+	player.global_position = Vector3(yard.x, 0, yard.y)
+	main._on_plant_tree(main.player_pos())
+	_check(hud._message.contains("東の庭には") , "東の庭には木を植えられない")
+	# 台から離れれば、今までどおり苗づくり
+	player.global_position = Vector3(c.site.x + 3.2, 0, c.site.y - 1.9)
+	_check(not c.is_at_chop_block(main.player_pos()), "台から離れると薪割りにならない")
+	k.firewood = keep_wood
+	k.log_left = 0
+	c.materials.log = keep_logs
+	k.changed.emit()
+	player.global_position = keep_pos
+
+func _test_chop_collision() -> void:
+	var player: CharacterBody3D = main.get_node("Player")
+	var at: Vector2 = main.world.cabin.chop_pos()
+	var east := Transform3D(Basis.IDENTITY, Vector3(at.x + 1.5, 0, at.y))
+	_check(player.test_move(east, Vector3(-1.5, 0, 0)), "薪割り台は通り抜けられない")
+	var south := Transform3D(Basis.IDENTITY, Vector3(at.x + 1.5, 0, at.y + 1.5))
+	_check(not player.test_move(south, Vector3(0, 0, -1.0)), "台の横は歩ける")
 
 func _test_feeder_collision() -> void:
 	var player: CharacterBody3D = main.get_node("Player")
@@ -2062,10 +2205,15 @@ func _test_furniture() -> void:
 	_check(main.shop_title().contains("ストーブ") and main.shop_header().contains("薪"), "見出しが台所になる")
 	_check(main.kitchen_rows().any(func(r): return r.id == "cook_sauce" and r.text.contains("トマト 10kg") and r.text.contains("5瓶")), "料理の一覧に材料とできる数が出る")
 
+	# 薪がなければ仕込めない(丸太があっても、自動では割らない)
+	main._on_shop_action("cook_sauce")
+	_check(k.is_empty() and hud._message.contains("薪がない") and c.materials.log == 2, "薪がないと仕込めず、割り方を案内する")
+	k.firewood = k.LOG_FIRES
+
 	# 仕込む: 鍋と火と薪が見える
 	main._on_shop_action("cook_sauce")
 	_check(not k.is_empty() and k.pot.recipe == "sauce" and w.garden.produce.tomato == 0, "画面から仕込める")
-	_check(hud._message.contains("トマトソース") and hud._message.contains("割って"), "仕込んだ文言が出る")
+	_check(hud._message.contains("トマトソース") and hud._message.contains("薪 -1"), "仕込んだ文言が出る")
 	_check(_room_pieces(view, "CookPot").size() == 1 and _room_pieces(view, "PotLid").size() == 1 and _room_pieces(view, "PotInside").is_empty(), "仕込むと鍋に蓋がのる")
 	_check(view._steam_puffs.size() == view.STEAM_PUFFS, "仕込んでいるあいだは湯気が出る")
 	var puff: MeshInstance3D = view._steam_puffs[0]

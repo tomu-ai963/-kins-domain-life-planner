@@ -28,6 +28,10 @@ func _initialize() -> void:
 	_test_feeder_blocks()
 	_test_feeder_save()
 	_test_stove_hint()
+	_test_snow_rules()
+	_test_snow_burying()
+	_test_snow_save()
+	_test_chop_place()
 	_remove_save()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -274,6 +278,108 @@ func _test_feeder_save() -> void:
 	var fd := Feeders.new()
 	fd.from_save({"feeders": [{"x": 1, "y": 2}, "bad"]})
 	_check(fd.feeders.size() == 1 and int(fd.feeders[0].fed_day) == -1, "おかしな記録は無視し、餌なしにする")
+
+# ── 雪かき ────────────────────────────────────────────────────
+func _test_snow_rules() -> void:
+	print("雪かきの決まり")
+	var w := _world()
+	var s := w.snow
+	_check(not s.is_cleared(AT), "はじめは雪の上")
+	_check(s.clear_at(AT) == "cleared" and s.is_cleared(AT), "足元の雪をどかせる")
+	_check(s.clear_at(AT) == "done", "同じマスは 2 回どかさなくてよい")
+	_check(s.is_cleared(AT + Vector2(0.1, 0.1)) or s.cell_of(AT) != s.cell_of(AT + Vector2(0.1, 0.1)), "同じマスの中は道")
+	_check(not s.is_cleared(AT + Vector2(3, 3)), "離れたマスは雪のまま")
+	_check(s.PATH_SPEED > 1.0 and s.SHOVEL_SPEED < 1.0, "道の上は速く、雪かきしながらは遅い")
+	_check(s.clear_at(Vector2(0, 56)) == "cleared", "土地の外の市場への道もどかせる")
+	_check(s.clear_at(Vector2(0, 79)) == "blocked", "歩ける範囲の外はどかせない")
+	w.land.toggle_plot(Vector2(10, 10))
+	_check(s.clear_at(Vector2(10, 10)) == "blocked", "区画の上はどかせない")
+	w.cabin.site = Vector2(-20, 20)
+	_check(s.clear_at(Vector2(-20, 20)) == "blocked", "小屋の上はどかせない")
+	w.land.pond = Vector2(-20, -20)
+	_check(s.clear_at(Vector2(-20, -20)) == "blocked", "池の上はどかせない")
+	for season in ["spring", "summer", "autumn"]:
+		w.forest.season = season
+		_check(s.clear_at(Vector2(30, 30)) == "not_season" and not s.is_cleared(AT), "%s は雪かきしない" % season)
+
+# 2027 年 1 月の中から、雪の日か、雪でない日を探す
+func _january_day(w: GameWorld, snowy: bool) -> int:
+	var first := int(Time.get_unix_time_from_datetime_string("2027-01-05") / 86400.0)
+	for d in range(first, first + 20):
+		if (w.forest.roll_daily_event(Forest.date_of_day(d)) == "rain") == snowy:
+			return d
+	return -1
+
+func _test_snow_burying() -> void:
+	print("雪で道が埋まる")
+	var w := _world()
+	var s := w.snow
+	var dry := _january_day(w, false)
+	var snowy := _january_day(w, true)
+	_check(dry > 0 and snowy > 0, "前提: 1 月に雪の日と雪でない日がある")
+	s.clear_at(AT)
+	s.advance_to(dry)
+	_check(s.last_checked_day == dry and s.is_cleared(AT) and not s.last_fell, "はじめて数える日は埋まらない")
+	s.advance_to(dry)
+	_check(s.is_cleared(AT), "同じ日は何も起きない")
+	s.last_checked_day = dry - 1
+	s.advance_to(dry)
+	_check(s.is_cleared(AT) and not s.last_fell, "雪でない日は道が残る")
+	s.last_checked_day = snowy - 1
+	s.advance_to(snowy)
+	_check(not s.is_cleared(AT) and s.cells.is_empty() and s.last_fell, "雪の日に道が埋まる")
+	s.last_checked_day = snowy - 1
+	s.advance_to(snowy)
+	_check(not s.last_fell, "道がなければ知らせない")
+	# 閉じていたあいだの雪も数える
+	s.clear_at(AT)
+	s.last_checked_day = snowy - 1
+	s.advance_to(snowy + 1)
+	_check(s.cells.is_empty(), "閉じていたあいだの雪でも埋まる")
+	# 冬が終わると消える
+	s.clear_at(AT)
+	var march := int(Time.get_unix_time_from_datetime_string("2027-03-15") / 86400.0)
+	s.last_checked_day = march - 1
+	s.advance_to(march)
+	_check(s.cells.is_empty(), "冬が終わると道も消える")
+
+func _test_snow_save() -> void:
+	print("雪かきのセーブ")
+	var w := _world()
+	w.snow.clear_at(AT)
+	w.snow.clear_at(AT + Vector2(1.5, 0))
+	var w2 := GameWorld.new()
+	w2.save_path = TEST_SAVE
+	w2.load_game()
+	w2.forest.season = "winter"
+	_check(w2.snow.cells.size() == 2 and w2.snow.is_cleared(AT) and w2.snow.is_cleared(AT + Vector2(1.5, 0)), "道が残る")
+	var plain := GameWorld.new()
+	plain.snow.from_save({"cells": [[1, 2], "bad", [3]]})
+	_check(plain.snow.cells.size() == 1 and plain.snow.cells.has(Vector2i(1, 2)), "おかしな記録は無視する")
+	plain.snow.from_save({})
+	_check(plain.snow.cells.is_empty() and plain.snow.last_checked_day == 0, "記録がないセーブは、道なしから")
+
+# ── 薪割り台の場所 ───────────────────────────────────────────────
+func _test_chop_place() -> void:
+	print("薪割り台の場所")
+	var w := _world()
+	var c := w.cabin
+	_check(not c.in_yard(AT) and not c.blocks_plot(AT), "小屋の場所を決める前は、庭はない")
+	c.site = AT
+	var chop: Vector2 = c.chop_pos()
+	_check(not c.is_at_chop_block(chop + Vector2(0.5, 0)), "完成するまでは薪割りできない")
+	c.stage = c.STAGES.size()
+	_check(c.is_at_chop_block(chop + Vector2(1.0, 0)) and not c.is_at_chop_block(chop + Vector2(2.0, 0)), "台のそばだけ")
+	_check(not c.is_at_stove(chop) and not c.is_inside(chop), "台は小屋の外にある")
+	_check(not c.is_at_chop_block(AT + Vector2(1.9, 0.7)), "小屋の中からは割れない")
+	_check(c.in_yard(chop) and not c.in_yard(AT + Vector2(5, 0)), "台は東の庭の中にある")
+	_check(w.bees.is_blocked(chop), "東の庭には巣箱を置けない")
+	w.cabin.materials.log = 1
+	_check(w.feeders.act(chop) == "blocked", "東の庭には餌台を立てられない")
+	var w2 := _world()
+	w2.cabin.site = AT
+	_check(w2.toggle_plot(AT + Vector2(3.5, 0)) == "cabin", "東の庭には区画を作れない")
+	_check(w2.cabin.blocks_pond(AT + Vector2(5, 0)), "東の庭には池を掘れない")
 
 func _test_stove_hint() -> void:
 	print("ヒント: 枝の薪があっても、ストーブの案内は消えない")

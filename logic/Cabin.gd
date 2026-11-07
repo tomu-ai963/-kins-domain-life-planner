@@ -25,6 +25,10 @@ const STOVE_REACH := 1.1  # ストーブの中心からこの距離までなら�
 const BED_OFFSET := Vector2(-0.9, -0.95)
 const BED_SIZE := Vector2(1.9, 0.85)
 const BED_REACH := 0.5    # ベッドの縁からこの距離までなら使える(部屋の真ん中は苗づくりに残す)
+# 東の庭(小屋の外)。薪割り台と、壁際に積んだ薪の山を置く
+const CHOP_OFFSET := Vector2(3.4, 0.7)
+const CHOP_REACH := 1.4   # 薪割り台の中心からこの距離までなら割れる
+const YARD_RECT := Rect2(2.0, -1.5, 2.2, 3.0)  # 小屋の中心からの範囲。区画や木を置かない
 
 # days: 作業する日数 / logs_per_day: 1 回の作業で使う丸太(1 本 = 長さ 3m・径 20cm ほど = 約 0.1m³)
 const STAGES := [
@@ -164,6 +168,17 @@ func is_at_stove(pos: Vector2) -> bool:
 func is_at_bed(pos: Vector2) -> bool:
 	return is_inside(pos) and Rect2(site + BED_OFFSET - BED_SIZE * 0.5, BED_SIZE).grow(BED_REACH).has_point(pos)
 
+func chop_pos() -> Vector2:
+	return site + CHOP_OFFSET
+
+# 完成した小屋の外で、薪割り台のそばにいるか
+func is_at_chop_block(pos: Vector2) -> bool:
+	return is_complete() and not covers(pos) and pos.distance_to(chop_pos()) <= CHOP_REACH
+
+# 東の庭にかかるか(木や巣箱を置かない)
+func in_yard(pos: Vector2) -> bool:
+	return site != null and Rect2(site + YARD_RECT.position, YARD_RECT.size).has_point(pos)
+
 # ドアの位置(南の壁の真ん中)
 func door_pos() -> Vector2:
 	return site + Vector2(0.0, DEPTH * 0.5)
@@ -174,11 +189,15 @@ func covers(pos: Vector2) -> bool:
 
 # 区画(中心 c)を置くと小屋にかかるか
 func blocks_plot(c: Vector2) -> bool:
-	return site != null and rect().intersects(_plot_rect(c))
+	if site == null:
+		return false
+	return rect().intersects(_plot_rect(c)) or Rect2(site + YARD_RECT.position, YARD_RECT.size).intersects(_plot_rect(c))
 
-# 池(中心 c)を掘ると小屋にかかるか
+# 池(中心 c)を掘ると小屋(東の庭を含む)にかかるか
 func blocks_pond(c: Vector2) -> bool:
-	return site != null and _distance(rect(), c) < land.POND_RADIUS
+	if site == null:
+		return false
+	return _distance(rect(), c) < land.POND_RADIUS or _distance(Rect2(site + YARD_RECT.position, YARD_RECT.size), c) < land.POND_RADIUS
 
 # 作業を始める前なら、場所を取り消せる(丸太を使っていないので損はない)。取り消したら true
 func cancel(pos: Vector2) -> bool:

@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=20 format=3]
 
 [ext_resource type="Script" path="res://Main.gd" id="1"]
 [ext_resource type="PackedScene" path="res://Player3D.tscn" id="2"]
@@ -19,6 +19,7 @@
 [ext_resource type="Script" path="res://view/3d/HiveView3D.gd" id="17"]
 [ext_resource type="Script" path="res://view/3d/SoundView3D.gd" id="18"]
 [ext_resource type="Script" path="res://view/3d/FeederView3D.gd" id="19"]
+[ext_resource type="Script" path="res://view/3d/SnowView3D.gd" id="20"]
 
 [sub_resource type="ProceduralSkyMaterial" id="1"]
 sky_top_color = Color(0.42, 0.62, 0.86, 1)
@@ -94,6 +95,9 @@ script = ExtResource("17")
 
 [node name="Feeders" type="Node3D" parent="."]
 script = ExtResource("19")
+
+[node name="SnowPath" type="MultiMeshInstance3D" parent="."]
+script = ExtResource("20")
 
 [node name="Audio" type="Node" parent="."]
 script = ExtResource("18")

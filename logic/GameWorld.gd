@@ -16,6 +16,7 @@ const Visitors = preload("res://logic/Visitors.gd")
 const Guide = preload("res://logic/Guide.gd")
 const Bees = preload("res://logic/Bees.gd")
 const Feeders = preload("res://logic/Feeders.gd")
+const Snow = preload("res://logic/Snow.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 const DayClock = preload("res://logic/DayClock.gd")
@@ -40,6 +41,7 @@ var visitors := Visitors.new()
 var guide := Guide.new()
 var bees := Bees.new()
 var feeders := Feeders.new()
+var snow := Snow.new()
 var quests := Quests.new()
 var market := Market.new()
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
@@ -96,6 +98,10 @@ func _init() -> void:
 	wildlife.feeders = feeders
 	visitors.feeders = feeders
 	guide.feeders = feeders
+	snow.forest = forest
+	snow.land = land
+	snow.cabin = cabin
+	guide.snow = snow
 	guide.forest = forest
 	guide.land = land
 	guide.garden = garden
@@ -116,6 +122,7 @@ func _init() -> void:
 	guide.dirty.connect(save_game)
 	bees.dirty.connect(save_game)
 	feeders.dirty.connect(save_game)
+	snow.dirty.connect(save_game)
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
 # 結果: Garden.toggle_plot の結果か cabin / hive / feeder
@@ -160,6 +167,7 @@ func check_new_day() -> String:
 		garden.water_all()
 	pond.catch_up()
 	bees.catch_up()
+	snow.catch_up()
 	visitors.check_today()  # 霜のあとの畑を見て、今日の頼みごとを決める
 	return id
 
@@ -199,6 +207,7 @@ func save_game() -> void:
 	data["guide"] = guide.to_save()
 	data["bees"] = bees.to_save()
 	data["feeders"] = feeders.to_save()
+	data["snow"] = snow.to_save()
 	data["sound_level"] = sound_level
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
@@ -269,6 +278,10 @@ func load_game() -> void:
 	var fd = data.get("feeders", {})
 	if typeof(fd) != TYPE_DICTIONARY:
 		fd = {}
+	# 雪かきの記録がないセーブは、道なしから
+	var snow_data = data.get("snow", {})
+	if typeof(snow_data) != TYPE_DICTIONARY:
+		snow_data = {}
 	# Godot 3 版(2026-11 より前)のセーブは座標が px。読むときに m に直す
 	if data.get("unit", "px") != SAVE_UNIT:
 		_px_to_m(data, ld)
@@ -283,6 +296,7 @@ func load_game() -> void:
 	guide.from_save(gud)
 	bees.from_save(bd)
 	feeders.from_save(fd)
+	snow.from_save(snow_data)
 	sound_level = clampi(int(data.get("sound_level", 3)), 0, 3)
 	quests.from_save(qd)
 	market.from_save(md)

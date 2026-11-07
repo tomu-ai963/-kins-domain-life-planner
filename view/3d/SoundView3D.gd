@@ -28,7 +28,7 @@ const VOLUMES := {
 	"tree_fall": 0.45, "click": 0.15, "open": 0.18, "coin": 0.2,
 	"step_grass": 0.14, "step_soil": 0.16, "step_wood": 0.22,
 }
-const ALIASES := {"pick_high": "pick", "prune": "pick", "feed": "plant"}  # 作業の動きの名前 → 音の名前
+const ALIASES := {"pick_high": "pick", "prune": "pick", "feed": "plant", "shovel": "dig"}  # 作業の動きの名前 → 音の名前
 const STEP_VARIANTS := 3
 const UI_SOUNDS := ["click", "open", "coin"]
 

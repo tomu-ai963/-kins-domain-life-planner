@@ -11,6 +11,7 @@ const FELL_CONFIRM_SECONDS := 4.0  # 根付いた木は、この時間内にも�
 const WILDLIFE_CHECK_SECONDS := 5.0  # はじめて来た生き物がいないか見る間隔
 const GUIDE_CHECK_SECONDS := 0.5     # ヒントを見直す間隔
 const HIVE_FRONT := 1.2              # 巣箱を置く場所(体の前、m)。足元に置くと当たり判定に埋まる
+const SHOVEL_GAP := 0.35             # 雪かきの動きを次に始められるまでの間(秒)
 const SOUND_LEVELS := [0.0, 0.3, 0.6, 1.0]        # M で切り替える音量
 const SOUND_LEVEL_NAMES := ["消す", "小", "中", "大"]
 const TREE_FALL_SOUND_DELAY := 0.45  # 斧を振ってから、木が倒れる音を出すまで(秒)。木が倒れきる時に「どさっ」が合う
@@ -34,12 +35,14 @@ const GUIDE_TEXTS := {
 	"cabin_site": "H で足元を小屋の場所に決められる。\n丸太を集めて、1日1回ずつ建てていく。",
 	"cabin_logs": "小屋の丸太は、市場で買う(5本 1,500₽)か、\n育った木を Z で伐って集める(白樺は樹齢15年から)。",
 	"cabin_inside": "小屋が建った。南のドアから中に入れる。\n窓辺で苗づくり、ストーブで料理、ベッドで日記。",
-	"stove": "ストーブの前で H を押すと、収穫物を保存食にできる。\n生より高く、冬と春はもっと高く売れる。薪は丸太から作る。",
+	"split": "小屋の東の薪割り台で H を押すと、丸太を割れる。\n料理には薪がいる。丸太1本で10回分。",
+	"stove": "ストーブの前で H を押すと、収穫物を保存食にできる。\n生より高く、冬と春はもっと高く売れる。薪を1回分使う。",
 	"bed": "ベッドのそばで H を押すと、横になって日記を見る。\n明日の予定が分かる。寝ても時間は進まない。",
 	"hive_make": "自分の木を伐った丸太で、巣箱を作れる(J・丸太2本)。\n3日かけてくり抜く。市場の丸太は使えない。",
 	"hive_bees": "巣箱に蜂が入るのを待とう(春と夏)。\nフョードルさんが来たら、分けてもらうこともできる。",
 	"honey": "はちみつが採れる。巣箱のそばで J を押す。\n市場で売れて、ストーブで料理にも使える。採っても蜂はいなくならない。",
 	"winter": "冬は地面が凍って、苗木を植えられない(白樺の種だけはまける)。\n小屋の窓辺なら、冬でも苗が育つ。",
+	"shovel": "U を押したまま歩くと、雪をどかせる。\nどかした道は速く歩ける。次の雪で埋まる。",
 	"prune": "冬は果樹のそばで X を押すと剪定できる。\n次の収穫が増えて、切った枝は薪になる。",
 	"feeder": "L を押すと、丸太1本で鳥の餌台を立てられる。\n秋と冬に白樺の種を置くと、鳥が集まる。",
 	"feed": "餌台のそばで L を押すと、白樺の種を3粒置ける。\n餌は翌日まで残る。近づきすぎると鳥は逃げる。",
@@ -63,6 +66,7 @@ var _fell_deadline := 0.0    # いつまでにもう一度押せば伐れるか(
 var _panel := "market"       # 右の画面に出しているもの: market(市場) / kitchen(ストーブ)
 var _wildlife_timer := 0.0
 var _guide_timer := 0.0
+var _shovel_wait := 0.0
 
 func _ready() -> void:
 	# 本物のセーブのときだけ控えを取る(テストや確認用のセーブでは取らない)
@@ -111,6 +115,7 @@ func _setup_3d_only() -> void:
 	$Visitor.setup(world.visitors, $Player)
 	$Hives.setup(world.bees)
 	$Feeders.setup(world.feeders)
+	$SnowPath.setup(world.snow)
 	world.guide.has_people = true
 	$Audio.setup(world, $Player)
 	$Player.work_sound.connect($Audio.play)
@@ -132,6 +137,22 @@ func _process(delta: float) -> void:
 		_check_new_day()
 		_check_quests()  # 種から芽が出ると生垣などの数が増える
 	_collect_pickups()
+	if $Player.has_method("facing"):
+		update_shovel(delta, Input.is_key_pressed(KEY_U))
+
+# 雪かき: U を押しているあいだ、足元の雪をどかしながらゆっくり歩く。どかした道の上は速く歩ける
+func update_shovel(delta: float, holding: bool) -> void:
+	var s := world.snow
+	var pos := player_pos()
+	var shoveling: bool = holding and s.can_clear_now() and not $HUD.is_shop_open() and not $HUD.is_diary_open() and not world.cabin.covers(pos)
+	_shovel_wait -= delta
+	if shoveling and _shovel_wait <= 0.0 and s.clear_at(pos) == "cleared":
+		_shovel_wait = SHOVEL_GAP
+		_act("shovel")
+	if shoveling:
+		$Player.speed_scale = s.SHOVEL_SPEED
+	else:
+		$Player.speed_scale = s.PATH_SPEED if s.is_cleared(pos) else 1.0
 
 func _check_new_day() -> void:
 	var f := world.forest
@@ -157,6 +178,8 @@ func _check_new_day() -> void:
 		lines.append("池に%sが来た" % pond.CREATURES[c].name)
 	if world.bees.last_arrivals > 0:
 		lines.append("空の巣箱に蜂が入った(%d箱)" % world.bees.last_arrivals)
+	if world.snow.last_fell:
+		lines.append("雪かきの道が雪で埋まった")
 	$HUD.show_message("\n".join(PackedStringArray(lines)), 10.0)
 
 # ── 巣箱とはちみつ ─────────────────────────────────────────
@@ -619,6 +642,9 @@ func _on_plant_tree(pos: Vector2) -> void:
 	if world.feeders.covers(pos, world.bees.CLEARANCE):
 		$HUD.show_message("餌台の近くには植えられない")
 		return
+	if world.cabin.in_yard(pos):
+		$HUD.show_message("小屋の東の庭には植えられない(薪割り台と薪を置く場所)")
+		return
 	if selected_form == "seed" and selected_species in world.forest.SAPLING_ONLY:
 		$HUD.show_message("%sは苗木から育てる(V で苗木に切り替える。市場で買える)" % world.forest.SPECIES[selected_species].name, 5.0)
 		return
@@ -661,7 +687,9 @@ func _cabin_action() -> void:
 		$HUD.show_message(CABIN_PLACE_MESSAGES[c.place(pos)], 5.0)
 		return
 	if c.is_complete():
-		if c.is_at_stove(pos):
+		if c.is_at_chop_block(pos):
+			_split_wood()
+		elif c.is_at_stove(pos):
 			_open_kitchen()
 		elif c.is_at_bed(pos):
 			_sleep()
@@ -687,6 +715,18 @@ func _cabin_action() -> void:
 			$HUD.show_message("今日の作業はもう済んだ(1日1回)")
 		"no_wood":
 			$HUD.show_message("丸太が足りない(%d本 必要。市場で買うか、育った木を Z で伐る)" % s.logs_per_day, 5.0)
+
+# 薪割り台で H: 1 回割る
+func _split_wood() -> void:
+	var k := world.kitchen
+	match k.split():
+		"split":
+			_act("chop", world.cabin.chop_pos())
+			$HUD.show_message("薪を割った(薪 %d回分)" % k.firewood)
+		"no_log":
+			$HUD.show_message("割る丸太がない(市場で買うか、育った木を Z で伐る)", 5.0)
+		"full":
+			$HUD.show_message("薪はもう十分ある(%d回分)" % k.firewood)
 
 # 完成した小屋で H: 育った苗を受け取る → 世話をする → 種をまく
 func _seedling_action(pos: Vector2) -> void:
@@ -753,14 +793,13 @@ func _kitchen_action(id: String) -> void:
 		var r: Dictionary = k.RECIPES[recipe]
 		match k.start(recipe):
 			"started":
-				var split := "丸太を割って薪にした。" if k.last_split else ""
-				$HUD.show_message("%s%sを仕込んだ(%d日でできる)" % [split, r.name, r.days], 5.0)
+				$HUD.show_message("%sを仕込んだ(%d日でできる・薪 -1回分)" % [r.name, r.days], 5.0)
 			"busy":
 				$HUD.show_message("鍋は使っている(受け取ってから次を仕込む)")
 			"no_input":
 				$HUD.show_message("%sが足りない(%d%s 必要)" % [produce_name(r.input), r.amount, produce_unit(r.input)])
 			"no_wood":
-				$HUD.show_message("薪がない(丸太1本で%d回分。市場で買うか、育った木を Z で伐る)" % k.LOG_FIRES, 5.0)
+				$HUD.show_message("薪がない(小屋の東の薪割り台で、H で丸太を割る)", 5.0)
 	$HUD.refresh_shop()
 
 # 「市場で1瓶 150₽で売れる。冬は225₽」のような文言。冬と春は今の値段だけ
@@ -785,6 +824,8 @@ func kitchen_line() -> String:
 func furniture_line() -> String:
 	var c := world.cabin
 	var pos := player_pos()
+	if c.is_at_chop_block(pos):
+		return "薪割り台(H で割る・薪 %d回分・丸太 %d本)" % [world.kitchen.firewood, int(c.materials.log)]
 	if c.is_at_stove(pos):
 		return "ストーブの前(H で料理)"
 	if c.is_at_bed(pos):
@@ -829,6 +870,8 @@ func diary_text() -> String:
 		todo.append("%sの頼みごとがまだ" % world.visitors.CAST[world.visitors.who()].name)
 	if world.bees.ready_count() > 0:
 		todo.append("はちみつが採れる巣箱が %d ある" % world.bees.ready_count())
+	if world.cabin.is_complete() and world.kitchen.firewood <= 0:
+		todo.append("薪がない(東の薪割り台で割る)")
 	if world.feeders.hungry_count() > 0:
 		todo.append("餌台の餌が切れている")
 	if f.season == "winter" and f.prunable_count() > 0:
@@ -1353,6 +1396,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			world.guide.dismiss()
 		KEY_J:
 			_bee_action()
+		KEY_U:
+			if not world.snow.can_clear_now():
+				$HUD.show_message("雪かきは冬にする")
 		KEY_L:
 			_feeder_action()
 		KEY_X:

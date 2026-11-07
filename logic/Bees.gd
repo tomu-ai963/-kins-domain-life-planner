@@ -105,7 +105,7 @@ func is_blocked(pos: Vector2) -> bool:
 	if land.plot_at(pos) != null or land.plot_at(pos + Vector2(CLEARANCE, 0)) != null or land.plot_at(pos - Vector2(CLEARANCE, 0)) != null \
 			or land.plot_at(pos + Vector2(0, CLEARANCE)) != null or land.plot_at(pos - Vector2(0, CLEARANCE)) != null:
 		return true
-	if cabin.site != null and cabin.rect().grow(CLEARANCE).has_point(pos):
+	if cabin.site != null and (cabin.rect().grow(CLEARANCE).has_point(pos) or cabin.in_yard(pos)):
 		return true
 	if land.pond != null and pos.distance_to(land.pond) < land.POND_RADIUS + CLEARANCE:
 		return true

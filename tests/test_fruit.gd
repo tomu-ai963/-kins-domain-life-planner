@@ -191,7 +191,7 @@ func _test_kitchen() -> void:
 		_check(int(r.amount) <= int(Forest.FRUITS[r.input].most), "%s の材料は 1 本の収穫で足りる" % id)
 		_check(Market.SELL_PRICES.has(id) and Visitors.ASK.has(id), "%s は売れて、頼まれる" % id)
 	var w := _world()
-	w.cabin.materials.log = 1
+	w.kitchen.firewood = 1
 	w.forest.produce.plum = 5
 	_check(w.kitchen.input_count("plum_jam") == 5, "持っている量が分かる")
 	_check(w.kitchen.start("plum_jam") == "started" and w.forest.produce.plum == 0, "スモモから仕込む")

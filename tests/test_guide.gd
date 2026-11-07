@@ -293,6 +293,12 @@ func _test_cabin_hints() -> void:
 	_check(_tick(w) == "cabin_inside", "完成すると中に入れることを案内する")
 	_tick(w, Vector2(20, 20))
 	_check("cabin_inside" in g.seen, "中に入ると消える")
+	_check(_tick(w, Vector2(20, 20)) == "split", "薪がなければ、薪割りを案内する")
+	w.cabin.materials.log = 1
+	w.kitchen.split()
+	_tick(w, Vector2(20, 20))
+	_check("split" in g.seen, "割ると消える")
+	w.kitchen.firewood = 0
 	w.garden.produce.potato = 4
 	g.seen.append("sell")
 	_check(_tick(w, Vector2(20, 20)) == "stove", "中で収穫物を持っていると、ストーブを案内する")
