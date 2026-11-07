@@ -7,6 +7,9 @@
 # Export presets (contains build configs, not needed in repo)
 export_presets.cfg
 
+# Export output
+build/
+
 # UID files
 *.uid
 

@@ -13,6 +13,7 @@ const MIN_MOON_ELEVATION_DEG := 40.0  # 月はいつもこの高さ以上から�
 const MOON_BELOW_DEG := -1.0          # 太陽がこれより沈むと、光の向きを月(太陽の反対側)に切り替える。ここで光は 0
 const APPLY_SECONDS := 5.0            # 太陽は 5 秒で 0.02 度しか動かない。毎フレーム計算しない
 const PREVIEW_HOURS_PER_SECOND := 6.0 # N で先へ送ったとき、光が動いていく速さ
+const TYPICAL_ALBEDO := 0.3           # 影つきの光を直すときの基準にする材質の明るさ(草地くらい)
 
 # 太陽の高さ(度)ごとの光。あいだは直線でつなぐ。
 # トゥーンでは光が当たる面の明るさが角度で変わらないので、太陽の高さによる明るさの差はこの表の energy で作る
@@ -79,8 +80,13 @@ func apply_light() -> void:
 	var elev := DayClock.elevation_deg(dir)
 	var k := cloudy(sample(elev), overcast)
 	sun.basis = Basis.looking_at(-light_dir(dir))
-	sun.light_energy = k.energy
-	sun.light_color = k.light
+	if RenderingServer.get_current_rendering_method() == "gl_compatibility":
+		var fixed := additive_light(k.light, k.energy, k.top)
+		sun.light_energy = fixed.energy
+		sun.light_color = fixed.color
+	else:
+		sun.light_energy = k.energy
+		sun.light_color = k.light
 	var sky: ProceduralSkyMaterial = environment.sky.sky_material
 	sky.sky_top_color = k.top
 	sky.sky_horizon_color = k.horizon
@@ -92,6 +98,22 @@ func apply_light() -> void:
 	if absf(amount - night) > 0.001:
 		night = amount
 		night_changed.emit(night)
+
+# Compatibility(Web)では、影つきの光を環境光に sRGB のまま足すので、そのままだと明るくなりすぎる。
+# 正しい明るさになるよう、足す光を弱めて返す。環境光と光はどちらも材質の色に掛かるので、
+# この倍率は材質の色にほとんどよらず、太陽側で一度直せばよい。ambient は上を向いた面が受ける空の色
+static func additive_light(light: Color, energy: float, ambient: Color) -> Dictionary:
+	var sky := ambient.srgb_to_linear() * TYPICAL_ALBEDO
+	var added := light.srgb_to_linear() * energy * TYPICAL_ALBEDO
+	var base := sky.linear_to_srgb()
+	var total := Color(sky.r + added.r, sky.g + added.g, sky.b + added.b).linear_to_srgb()
+	var diff := Color(total.r - base.r, total.g - base.g, total.b - base.b).srgb_to_linear()
+	var peak := maxf(maxf(diff.r, diff.g), diff.b) / TYPICAL_ALBEDO
+	if peak <= 0.0:
+		return {"energy": 0.0, "color": light}
+	var color := Color(diff.r, diff.g, diff.b) / (peak * TYPICAL_ALBEDO)
+	color.a = 1.0
+	return {"energy": peak, "color": color.linear_to_srgb()}
 
 # 光の来る方向。沈んだら月(太陽の反対側)。低すぎる光は高さを止める
 static func light_dir(to_sun: Vector3) -> Vector3:

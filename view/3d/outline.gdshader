@@ -4,9 +4,12 @@ render_mode unshaded, blend_mix, depth_test_disabled, depth_draw_never, cull_dis
 // 画面全体の輪郭線。カメラの前に置いた板(Player3D.tscn の Outline)で描く。
 // 奥行きの差(物の外周)と、面の向きの差(箱の角など)が大きいところに線を引く。形や材質ごとの設定は要らない。
 // 半透明のもの(水面・冬の樹冠など)は奥行きを持たないので、線は付かない
+// 面の向きが読めるのは Forward+ だけ。Web など他の描画方式では、奥行きの差だけで線を引く
 
 uniform sampler2D depth_texture : hint_depth_texture, filter_nearest;
+#if CURRENT_RENDERER == RENDERER_FORWARD_PLUS
 uniform sampler2D normal_texture : hint_normal_roughness_texture, filter_nearest;
+#endif
 uniform vec3 line_color : source_color = vec3(0.13, 0.09, 0.07);
 uniform float line_alpha = 0.7;
 uniform float thickness = 1.0;          // 線の太さ(画素)
@@ -14,13 +17,20 @@ uniform float depth_threshold = 0.012;  // 奥行きの差(今の距離に対す
 uniform float normal_threshold = 0.5;   // 面の向きの差(1 - 内積)
 
 float view_depth(vec2 uv, mat4 inv_projection) {
-	vec4 view = inv_projection * vec4(uv * 2.0 - 1.0, texture(depth_texture, uv).r, 1.0);
+	float depth = texture(depth_texture, uv).r;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	vec4 view = inv_projection * vec4(vec3(uv, depth) * 2.0 - 1.0, 1.0);  // Compatibility の奥行きは -1〜1 に直す
+#else
+	vec4 view = inv_projection * vec4(uv * 2.0 - 1.0, depth, 1.0);
+#endif
 	return -view.z / view.w;
 }
 
+#if CURRENT_RENDERER == RENDERER_FORWARD_PLUS
 vec3 view_normal(vec2 uv) {
 	return texture(normal_texture, uv).xyz * 2.0 - 1.0;
 }
+#endif
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
@@ -44,11 +54,13 @@ void fragment() {
 	// (世界が曲がって奥の面が斜めに見えても、面全体が線で塗られない)
 	float depth_edge = max(2.0 * here - da - db, 2.0 * here - dc - dd) / nearest;
 
+	float edge = step(depth_threshold, depth_edge);
+#if CURRENT_RENDERER == RENDERER_FORWARD_PLUS
 	float normal_edge = max(
 		1.0 - dot(view_normal(a), view_normal(b)),
 		1.0 - dot(view_normal(c), view_normal(d)));
-
-	float edge = max(step(depth_threshold, depth_edge), step(normal_threshold, normal_edge));
+	edge = max(edge, step(normal_threshold, normal_edge));
+#endif
 	ALBEDO = line_color;
 	ALPHA = edge * line_alpha;
 }

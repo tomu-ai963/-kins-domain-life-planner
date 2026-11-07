@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_remove_save()
 	_test_sun_position()
 	_test_light_keys()
+	_test_additive_light()
 	main = load("res://Main.tscn").instantiate()
 	main.world.save_path = TEST_SAVE
 	main.world.clock.fixed_now = {"month": 11, "day": 5, "hour": 12, "minute": 0, "second": 0}
@@ -48,6 +49,27 @@ func _check(cond: bool, label: String) -> void:
 	else:
 		_failed += 1
 		print("  FAIL ", label)
+
+# Compatibility(Web)は影つきの光を sRGB のまま足す。弱めた光を足した結果が、本来の明るさになること
+func _test_additive_light() -> void:
+	print("Web の影つきの光")
+	var albedo: float = DayLight.TYPICAL_ALBEDO
+	var off := 0.0
+	var dimmer := true
+	for k in DayLight.KEYS:
+		var fixed: Dictionary = DayLight.additive_light(k.light, k.energy, k.top)
+		var sky: Color = k.top.srgb_to_linear() * albedo
+		var want_light: Color = k.light.srgb_to_linear() * k.energy * albedo
+		var want := Color(sky.r + want_light.r, sky.g + want_light.g, sky.b + want_light.b).linear_to_srgb()
+		var added: Color = fixed.color.srgb_to_linear() * fixed.energy * albedo
+		var base := sky.linear_to_srgb()
+		var got := added.linear_to_srgb()
+		off = maxf(off, maxf(absf(base.r + got.r - want.r), maxf(absf(base.g + got.g - want.g), absf(base.b + got.b - want.b))))
+		dimmer = dimmer and fixed.energy <= k.energy + 0.001
+	_check(off < 0.005, "どの時間でも、足した結果が本来の明るさになる(ずれ %.4f)" % off)
+	_check(dimmer, "足す光は元の光より強くならない")
+	var dark: Dictionary = DayLight.additive_light(Color.WHITE, 0.0, Color(0.42, 0.62, 0.86))
+	_check(dark.energy == 0.0, "光が 0 なら 0 のまま")
 
 func _remove_save() -> void:
 	if FileAccess.file_exists(TEST_SAVE):
