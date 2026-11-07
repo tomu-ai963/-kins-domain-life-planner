@@ -10,6 +10,7 @@ extends CanvasLayer
 const Forest = preload("res://logic/Forest.gd")
 const MESSAGE_SECONDS := 3.0
 const DIARY_FADE_SECONDS := 0.6
+const TOUCH_STATUS_SECONDS := 0.25  # タッチのときに左上の文字を更新する間隔
 const TOUCH_ROW_HEIGHT := 38.0    # タッチのときの市場の行の高さ
 const SHOP_HEADER_HEIGHT := 70.0  # 市場の画面の見出しと余白
 const SHOP_ROW_GAP := 4.0         # 行のあいだ(VBoxContainer の既定)
@@ -30,6 +31,7 @@ var _message_label: Label
 var inventory_open := false  # Tab
 var help_open := false       # F1
 var touch_mode := false      # タッチ操作のとき(市場の画面のボタンを指で押せる大きさにする)
+var _status_timer := 0.0
 var _shop: PanelContainer
 var _shop_columns := []  # 買う列と売る列(VBoxContainer)
 var _shop_money: Label
@@ -104,10 +106,12 @@ func is_shop_open() -> bool:
 
 func open_shop() -> void:
 	_shop.visible = true
+	_status_timer = 0.0  # ヒントをすぐ隠す
 	refresh_shop()
 
 func close_shop() -> void:
 	_shop.visible = false
+	_status_timer = 0.0
 
 # 所持金と品の並びを作り直す(買う・売るたびに呼ぶ)
 func refresh_shop() -> void:
@@ -228,10 +232,14 @@ func _process(delta: float) -> void:
 		if _message_timer <= 0.0:
 			_message = ""
 			_message_panel.visible = false
-	_label.text = status_text()
-	_update_hint()
-	# 背景は文字の量に合わせる
-	_bg.size = _label.get_combined_minimum_size() + Vector2(12, 8)
+	# タッチのとき(遅いスマホ)は文字を組み直す回数を減らす。PC では毎フレーム
+	_status_timer -= delta
+	if not touch_mode or _status_timer <= 0.0:
+		_status_timer = TOUCH_STATUS_SECONDS
+		_label.text = status_text()
+		_update_hint()
+		# 背景は文字の量に合わせる
+		_bg.size = _label.get_combined_minimum_size() + Vector2(12, 8)
 	# タッチの狭い画面では、市場の画面と左の文字が重なるので、開いているあいだは文字を隠す(所持金は市場の画面にも出る)
 	var hide_status: bool = touch_mode and is_shop_open()
 	_label.visible = not hide_status

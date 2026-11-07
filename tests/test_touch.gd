@@ -63,6 +63,9 @@ func _run() -> void:
 	_test_hidden_on_pc()
 	tc.set_active(true)
 	await _frames()
+	_check(main.get_node("Sun").directional_shadow_mode == DirectionalLight3D.SHADOW_ORTHOGONAL, "タッチでは太陽の影を分割しない(特に重いので)")
+	_check(not player.get_node("Camera3D/Outline").visible, "タッチでは輪郭線を出さない(草の周りが黒い点になるので)")
+	await _test_status_refresh()
 	_test_layout()
 	await _test_stick()
 	await _test_buttons()
@@ -82,6 +85,17 @@ func _test_hidden_on_pc() -> void:
 	_check(not tc.active and tc.pads(VIEW).is_empty(), "タッチ画面がなければボタンを出さない")
 	_check(root.content_scale_mode == Window.CONTENT_SCALE_MODE_DISABLED, "画面の拡大もしない")
 	_check(not hud.touch_mode, "市場の行の高さも変えない")
+
+# 左上の文字は間引いて更新するが、変わったら少し待つと出る
+func _test_status_refresh() -> void:
+	print("左上の文字の更新")
+	var money: int = main.world.market.money
+	main.world.market.money = money + 123
+	await create_timer(hud.TOUCH_STATUS_SECONDS + 0.1).timeout
+	_check(hud._label.text.contains(hud._money_text(money + 123)), "所持金が変わると、間もなく表示も変わる")
+	main.world.market.money = money
+	await create_timer(tc.REFRESH_SECONDS + 0.1).timeout
+	_check(tc._last_signature != "", "ボタンの変化を調べている")
 
 func _test_layout() -> void:
 	print("並び")
@@ -254,6 +268,8 @@ func _test_keyboard_hides() -> void:
 	_check(not tc.active and tc.pads(VIEW).is_empty(), "物理キーを押すとタッチ操作は消える")
 	_check(root.content_scale_mode == Window.CONTENT_SCALE_MODE_DISABLED, "画面の拡大も元に戻る")
 	_check(root.msaa_3d == ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d"), "縁のなめらかさも PC の設定に戻る")
+	_check(main.get_node("Sun").directional_shadow_mode == DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS, "太陽の影も PC の設定に戻る")
+	_check(player.get_node("Camera3D/Outline").visible, "輪郭線も PC の設定に戻る")
 	tc.touch(0, Vector2(100, 200), true)
 	tc.touch(0, Vector2.ZERO, false)
 	_check(tc.active, "また触るとタッチ操作が出る")

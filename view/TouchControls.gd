@@ -11,7 +11,9 @@ const STICK_DEADZONE := 0.12  # スティックの半径に対する割合。こ
 const STICK_AREA := 0.4       # 画面の左からこの割合までを触ると、スティックが出る
 const STICK_REST_INSET := 92.0  # 触っていないときにスティックの目印を出す場所(左下の角から)
 const MIN_VIEW_HEIGHT := 400  # 画面の高さをこれ以上の論理サイズで扱う(スマホで文字が小さくなりすぎないように)
-const MAX_3D_HEIGHT := 720.0  # 3D はこの高さまでで描く(高解像度のスマホでも重くしない。文字はくっきりしたまま)
+const MAX_3D_HEIGHT := 480.0  # 3D はこの高さまでで描く(高解像度のスマホでも重くしない。文字はくっきりしたまま)
+const SHADOW_ATLAS_SIZE := 2048  # 太陽の影のテクスチャの大きさ
+const REFRESH_SECONDS := 0.25    # 出すボタンが変わったかを確かめる間隔(毎フレーム調べると、遅いスマホでは重い)
 const ZOOM_STEP := 0.85       # ホイール 1 目盛りと同じ
 const PAD_SIZE := Vector2(72, 56)
 const MENU_PAD_SIZE := Vector2(112, 52)
@@ -50,6 +52,9 @@ var _held := {}            # 指の番号 → 押しているボタン
 var _stick_finger := -1    # スティックを動かしている指。いなければ -1
 var _stick_origin := Vector2.ZERO
 var _stick_pos := Vector2.ZERO
+var _dirty := true           # 描き直しが要る
+var _refresh_timer := 0.0
+var _last_signature := ""
 var _pad_style := StyleBoxFlat.new()
 var _on_style := StyleBoxFlat.new()
 var _down_style := StyleBoxFlat.new()
@@ -69,6 +74,7 @@ func setup(main: Node, player: Node, hud: Node) -> void:
 	_down_style = _style(Color(0.96, 0.84, 0.46, 0.75), Color(0.96, 0.84, 0.46))
 	get_window().size_changed.connect(_apply_scale)
 	set_active(DisplayServer.is_touchscreen_available())
+
 
 static func _style(fill: Color, border: Color) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
@@ -91,14 +97,23 @@ func set_active(on: bool) -> void:
 # 縁のなめらかさ(MSAA)と影の柔らかさを落として軽くする。PC に戻ったらプロジェクトの設定に戻す
 func _apply_scale() -> void:
 	var win := get_window()
+	_dirty = true
+	var sun: DirectionalLight3D = _player.shadow_light
+	var outline: Node3D = _player.get_node("Camera3D/Outline")
 	if not active:
 		win.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
 		win.scaling_3d_scale = 1.0
 		win.msaa_3d = ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d")
 		RenderingServer.directional_soft_shadow_filter_set_quality(ProjectSettings.get_setting("rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality"))
+		RenderingServer.directional_shadow_atlas_set_size(ProjectSettings.get_setting("rendering/lights_and_shadows/directional_shadow/size"), true)
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+		outline.visible = true
 		return
 	win.msaa_3d = Viewport.MSAA_DISABLED
 	RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+	RenderingServer.directional_shadow_atlas_set_size(SHADOW_ATLAS_SIZE, true)
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL  # 影を分割すると、世界全体を分割の数だけ描き直して特に重い
+	outline.visible = false  # 低い解像度では草の周りが黒い点になり、切ると少し軽くもなる
 	var short_side: int = mini(win.size.x, win.size.y)
 	var side := maxi(MIN_VIEW_HEIGHT, roundi(short_side / DisplayServer.screen_get_scale()))
 	win.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
@@ -211,6 +226,7 @@ func _input(event: InputEvent) -> void:
 
 # 指が触れた / 離れた。この操作で受け取ったら true(後ろの画面には渡さない)
 func touch(finger: int, pos: Vector2, pressed: bool) -> bool:
+	_dirty = true
 	if not pressed:
 		return _lift(finger)
 	if not active:
@@ -234,6 +250,7 @@ func _can_walk(view: Vector2) -> bool:
 func drag(finger: int, pos: Vector2) -> bool:
 	if finger != _stick_finger:
 		return _held.has(finger)
+	_dirty = true
 	# 半径より外へ動かしたら、スティックの中心もついてくる(逆へ向き直しやすいように)
 	var offset := pos - _stick_origin
 	if offset.length() > STICK_RADIUS:
@@ -253,6 +270,7 @@ func stick_value() -> Vector2:
 	return v.normalized() * minf(1.0, (length - STICK_DEADZONE) / (1.0 - STICK_DEADZONE))
 
 func _lift(finger: int) -> bool:
+	_dirty = true
 	if finger == _stick_finger:
 		_stick_finger = -1
 		_player.move_input = Vector2.ZERO
@@ -305,8 +323,25 @@ func _send_key(key: int, pressed: bool) -> void:
 
 # ── 描く ─────────────────────────────────────────────────────
 func _process(_delta: float) -> void:
-	if active:
+	if not active:
+		return
+	# 指が動いたときと、出すボタンが変わったときだけ描き直す
+	_refresh_timer += _delta
+	if _refresh_timer >= REFRESH_SECONDS:
+		_refresh_timer = 0.0
+		var signature := _pad_signature()
+		if signature != _last_signature:
+			_last_signature = signature
+			_dirty = true
+	if _dirty:
+		_dirty = false
 		_canvas.queue_redraw()
+
+func _pad_signature() -> String:
+	var parts := PackedStringArray()
+	for p in pads(_view()):
+		parts.append("%s:%s:%s" % [p.id, p.text, p.on])
+	return ",".join(parts)
 
 func _draw_controls() -> void:
 	var view := _view()
