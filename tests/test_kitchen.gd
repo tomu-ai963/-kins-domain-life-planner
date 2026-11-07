@@ -206,16 +206,30 @@ func _test_eat() -> void:
 	k.stock.pirozhki = 3
 	_check(k.has_food(), "持っているのが分かる")
 	_check(k.eat("sauce") == "eaten" and k.stock.sauce == 1 and k.last_eaten == "sauce", "1 つ食べると 1 つ減る")
-	_check(k.ate_today() and k.ever_ate(), "今日は食べた")
-	_check(k.eat("pirozhki") == "full" and k.stock.pirozhki == 3, "今日はもう食べられない(減らない)")
+	_check(k.ate_today() and k.ever_ate() and k.eaten_today() == ["sauce"], "今日食べたものを覚える")
+	_check(k.eat("sauce") == "same" and k.stock.sauce == 1, "同じものは 1 日 1 つまで(減らない)")
 	_check(w.market.sell_all("sauce") == 150, "残りは売れる")
+	k.stock.sauce = 2
+	k.stock.jam = 2
+	k.stock.pryanik = 2
+	_check(k.eat("pirozhki") == "eaten" and k.stock.pirozhki == 2, "種類が違えば食べられる(2 つ目)")
+	_check(k.eat("jam") == "eaten" and k.eaten_today().size() == Kitchen.MEAL_KINDS, "3 つ目まで食べられる")
+	_check(k.eat("pryanik") == "full" and k.stock.pryanik == 2, "4 つ目は食べられない(減らない)")
+	_check(k.eat("jam") == "same", "3 つ食べたあとも、同じものは同じものと答える")
+	k.stock.sbiten = 0
+	_check(k.eat("sbiten") == "full", "3 つ食べたあとは、持っていなくてもお腹いっぱい")
 	k.ate_day = w.forest.day_number() - 1
-	_check(not k.ate_today() and k.ever_ate() and k.eat("pirozhki") == "eaten", "次の日はまた食べられる")
+	_check(not k.ate_today() and k.ever_ate() and k.eaten_today().is_empty(), "次の日は食べていないことになる")
+	_check(k.eat("sauce") == "eaten" and k.eaten_today() == ["sauce"], "次の日は、前の日と同じものも食べられる")
 	_check(Kitchen.MEAL_SPEED > 1.0, "食べた日は速く歩ける")
 	var k2 := Kitchen.new()
 	k2.forest = w.forest
 	k2.from_save(k.to_save())
-	_check(k2.ate_today() and k2.ever_ate(), "食べた日が残る")
+	_check(k2.ate_today() and k2.ever_ate() and k2.eaten_today() == ["sauce"], "食べた日と食べたものが残る")
+	k2.from_save({"ate_day": w.forest.day_number(), "ate_foods": ["sauce", "gone"]})
+	_check(k2.eaten_today() == ["sauce"], "知らない料理の記録は無視する")
+	k2.from_save({"ate_day": w.forest.day_number()})
+	_check(k2.ate_today() and k2.eaten_today().is_empty(), "食べたものの記録がないセーブは、数えない")
 	k2.from_save({})
 	_check(not k2.ever_ate(), "記録がないセーブは、まだ食べていない")
 	# 座れる場所

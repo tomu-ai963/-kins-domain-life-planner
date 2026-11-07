@@ -1537,12 +1537,29 @@ func _test_table_view() -> void:
 	_check(k.stock.sauce == 2 and k.ate_today() and hud._message.contains("トマトソースを食べた"), "選ぶと 1 つ食べる")
 	_check(figure.current_action() == "eat" and figure.current_tool() == "bite", "座ったまま手を口へ運ぶ")
 	_check(_room_pieces(view, "Food").size() == 2, "テーブルの瓶が減る")
-	_check(main.shop_header().contains("もう食べた") and main.meal_line().contains("速く歩ける"), "今日は食べたと分かる")
+	_check(main.shop_header().contains("1/3種類") and main.meal_line().contains("1/3種類") and main.meal_line().contains("速く歩ける"), "今日は何種類食べたか分かる")
+	_check(main.table_rows().any(func(r): return r.id == "eat_sauce" and r.text.begins_with("今日は食べた")), "食べたものは一覧で分かる")
 	figure._process(0.6)
 	_check(figure._arm_r.rotation.x > 2.0, "手が口のほうへ上がる(%.2f rad)" % figure._arm_r.rotation.x)
 	figure._process(10.0)
 	main._on_shop_action("eat_sauce")
-	_check(k.stock.sauce == 2 and hud._message.contains("今日はもう"), "1 日 1 回だけ")
+	_check(k.stock.sauce == 2 and hud._message.contains("同じものは") and not figure.is_acting(), "同じものは 1 日 1 つまで")
+	k.stock.jam = 1
+	k.stock.pirozhki = 1
+	k.stock.pryanik = 1
+	k.changed.emit()
+	main._on_shop_action("eat_jam")
+	_check(k.stock.jam == 0 and figure.current_action() == "eat", "種類が違えば食べられる")
+	figure._process(10.0)
+	main._on_shop_action("eat_pirozhki")
+	_check(k.stock.pirozhki == 0 and main.shop_header().contains("3/3種類"), "3 種類まで食べられる")
+	figure._process(10.0)
+	main._on_shop_action("eat_pryanik")
+	_check(k.stock.pryanik == 1 and hud._message.contains("お腹いっぱい") and not figure.is_acting(), "4 つ目はお腹いっぱい")
+	main.update_shovel(0.1, false)
+	_check(is_equal_approx(player.speed_scale, k.MEAL_SPEED), "速さは食べた数では重ならない")
+	k.stock.pryanik = 0
+	k.changed.emit()
 	press.call(KEY_H)
 	_check(not hud.is_shop_open() and player.is_physics_processing() and not figure.sitting, "H で立ち上がる")
 	player._pose.custom_step(10.0)
@@ -1566,6 +1583,7 @@ func _test_table_view() -> void:
 	player._pose.custom_step(10.0)
 	figure._process(10.0)
 	k.ate_day = -1
+	k.ate_foods = []
 	k.stock.sauce = 0
 	k.changed.emit()
 	player._body.basis = keep_basis

@@ -38,7 +38,7 @@ const GUIDE_TEXTS := {
 	"split": "小屋の東の薪割り台で H を押すと、丸太を割れる。\n料理には薪がいる。丸太1本で10回分。",
 	"stove": "ストーブの前で H を押すと、収穫物を保存食にできる。\n生より高く、冬と春はもっと高く売れる。薪を1回分使う。",
 	"bed": "ベッドのそばで H を押すと、横になって日記を見る。\n明日の予定が分かる。寝ても時間は進まない。",
-	"table": "腰掛けのそばで H を押すと、座って保存食を食べられる。\n食べた日は少し速く歩ける(1日1回)。",
+	"table": "腰掛けのそばで H を押すと、座って保存食を食べられる。\n食べた日は少し速く歩ける。同じものは1日1つまで。",
 	"hive_make": "自分の木を伐った丸太で、巣箱を作れる(J・丸太2本)。\n3日かけてくり抜く。市場の丸太は使えない。",
 	"hive_bees": "巣箱に蜂が入るのを待とう(春と夏)。\nフョードルさんが来たら、分けてもらうこともできる。",
 	"honey": "はちみつが採れる。巣箱のそばで J を押す。\n市場で売れて、ストーブで料理にも使える。採っても蜂はいなくならない。",
@@ -826,7 +826,8 @@ func table_rows() -> Array:
 		var n := produce_count(id)
 		if n > 0:
 			var r: Dictionary = k.RECIPES[id]
-			rows.append({"id": "eat_" + id, "text": "食べる: %s(%d%s。市場で1%s %d₽)" % [r.name, n, r.unit, r.unit, world.market.sell_price(id)], "column": 0})
+			var verb := "今日は食べた" if id in k.eaten_today() else "食べる"
+			rows.append({"id": "eat_" + id, "text": "%s: %s(%d%s。市場で1%s %d₽)" % [verb, r.name, n, r.unit, r.unit, world.market.sell_price(id)], "column": 0})
 	if rows.is_empty():
 		rows.append({"id": "no_food", "text": "テーブルに保存食がない(ストーブで作る)", "column": 0})
 	rows.append({"id": "close", "text": "立つ(H / Esc)", "column": 1})
@@ -841,8 +842,10 @@ func _table_action(id: String) -> void:
 			if $Player.has_method("eat_motion"):
 				$Player.eat_motion()
 			$HUD.show_message("%sを食べた。今日は少し速く歩ける" % k.RECIPES[k.last_eaten].name, 5.0)
+		"same":
+			$HUD.show_message("%sは今日もう食べた(同じものは1日1つまで)" % k.RECIPES[id.trim_prefix("eat_")].name)
 		"full":
-			$HUD.show_message("今日はもう食べた(速く歩けるのは1日1回)")
+			$HUD.show_message("今日はもうお腹いっぱい(1日%d種類まで)" % k.MEAL_KINDS)
 	$HUD.refresh_shop()
 
 # 「市場で1瓶 150₽で売れる。冬は225₽」のような文言。冬と春は今の値段だけ
@@ -865,7 +868,8 @@ func kitchen_line() -> String:
 
 # HUD に出す、食事の 1 行。今日まだ食べていなければ ""
 func meal_line() -> String:
-	return "食事: 今日は食べた(少し速く歩ける)" if world.kitchen.ate_today() else ""
+	var k := world.kitchen
+	return "食事: 今日は %d/%d種類 食べた(少し速く歩ける)" % [k.eaten_today().size(), k.MEAL_KINDS] if k.ate_today() else ""
 
 # HUD に出す、家具のそばでの案内。そばにいなければ ""
 func furniture_line() -> String:
@@ -1179,7 +1183,9 @@ func shop_header() -> String:
 	if _panel == "visitor":
 		return visitor_text()
 	if _panel == "table":
-		return "今日はもう食べた" if world.kitchen.ate_today() else "1つ食べると、今日は少し速く歩ける"
+		var k := world.kitchen
+		var note := "同じものは1日1つ、%d種類まで" % k.MEAL_KINDS
+		return "今日は %d/%d種類 食べた(%s)" % [k.eaten_today().size(), k.MEAL_KINDS, note] if k.ate_today() else "食べると今日は少し速く歩ける(%s)" % note
 	if _panel == "kitchen":
 		return "薪: %d回分   丸太: %d本(丸太1本で%d回分)" % [world.kitchen.firewood, int(world.cabin.materials.log), world.kitchen.LOG_FIRES]
 	return "所持金: %s₽" % $HUD._money_text(world.market.money)
