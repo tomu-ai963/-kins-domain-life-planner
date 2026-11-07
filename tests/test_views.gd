@@ -1547,7 +1547,7 @@ func _test_table_view() -> void:
 	figure._process(10.0)
 	press.call(KEY_H)
 	_check(hud.is_shop_open() and main._panel == "table" and not player.is_physics_processing(), "H で座って、歩かなくなる")
-	_check(main.shop_title().contains("腰掛け") and main.shop_header().contains("速く歩ける"), "見出しが腰掛けになる")
+	_check(main.shop_title().contains("腰掛け") and main.shop_header().contains("調子が変わる"), "見出しが腰掛けになる")
 	_check(not hud.status_text().contains("─ 持ち物 ─"), "座っているあいだは持ち物を重ねない")
 	_check(figure.sitting and player._posing, "座る姿勢になる")
 	player._pose.custom_step(10.0)
@@ -1562,13 +1562,15 @@ func _test_table_view() -> void:
 	var foot: Vector3 = figure._leg_l.get_node("Boot").global_position
 	_check(foot.y > view.FLOOR_Y - 0.1 and foot.y < view.FLOOR_Y + 0.15, "足が床に着いている(%.2fm)" % (foot.y - view.FLOOR_Y))
 	var rows: Array = main.table_rows()
-	_check(rows.any(func(r): return r.id == "eat_sauce" and r.text.contains("トマトソース") and r.text.contains("3瓶")), "持っている保存食が並ぶ")
+	_check(rows.any(func(r): return r.id == "eat_sauce" and r.text.contains("トマトソース") and r.text.contains("3瓶") and r.text.contains("薪割りと雪かきが楽")), "持っている保存食と効果が並ぶ")
 	_check(_room_pieces(view, "Food").size() == 3, "テーブルに 3 瓶ある")
 	main._on_shop_action("eat_sauce")
-	_check(k.stock.sauce == 2 and k.ate_today() and hud._message.contains("トマトソースを食べた"), "選ぶと 1 つ食べる")
+	_check(k.stock.sauce == 2 and k.ate_today() and hud._message.contains("トマトソースを食べた") and hud._message.contains("温まる"), "選ぶと 1 つ食べて、効果を知らせる")
 	_check(figure.current_action() == "eat" and figure.current_tool() == "bite", "座ったまま手を口へ運ぶ")
 	_check(_room_pieces(view, "Food").size() == 2, "テーブルの瓶が減る")
-	_check(main.shop_header().contains("1/3種類") and main.meal_line().contains("1/3種類") and main.meal_line().contains("速く歩ける"), "今日は何種類食べたか分かる")
+	_check(main.shop_header().contains("1/3種類") and main.meal_line().contains("1/3種類") and main.meal_line().contains("薪割りと雪かきが楽"), "今日は何種類食べて、何が効いているか分かる")
+	main.update_shovel(0.1, false)
+	_check(player.speed_scale == 1.0, "トマトソースでは速く歩けない(系統が違う)")
 	_check(main.table_rows().any(func(r): return r.id == "eat_sauce" and r.text.begins_with("今日は食べた")), "食べたものは一覧で分かる")
 	figure._process(0.6)
 	_check(figure._arm_r.rotation.x > 2.0, "手が口のほうへ上がる(%.2f rad)" % figure._arm_r.rotation.x)
@@ -1579,16 +1581,30 @@ func _test_table_view() -> void:
 	k.stock.pirozhki = 1
 	k.stock.pryanik = 1
 	k.changed.emit()
+	k.stock.sbiten = 1
+	_check(main.table_rows().any(func(r): return r.id == "eat_sbiten" and r.text.contains("もう効いている")), "同じ系統の品は「もう効いている」と分かる")
+	k.stock.sbiten = 0
 	main._on_shop_action("eat_jam")
 	_check(k.stock.jam == 0 and figure.current_action() == "eat", "種類が違えば食べられる")
 	figure._process(10.0)
 	main._on_shop_action("eat_pirozhki")
-	_check(k.stock.pirozhki == 0 and main.shop_header().contains("3/3種類"), "3 種類まで食べられる")
+	_check(k.stock.pirozhki == 0 and main.shop_header().contains("3/3種類") and main.shop_header().contains("速く歩ける"), "3 種類まで食べられて、効果が並ぶ")
 	figure._process(10.0)
 	main._on_shop_action("eat_pryanik")
 	_check(k.stock.pryanik == 1 and hud._message.contains("お腹いっぱい") and not figure.is_acting(), "4 つ目はお腹いっぱい")
 	main.update_shovel(0.1, false)
-	_check(is_equal_approx(player.speed_scale, k.MEAL_SPEED), "速さは食べた数では重ならない")
+	_check(is_equal_approx(player.speed_scale, k.MEAL_SPEED), "ピロシキを食べると速く歩ける")
+	var w_forest_season: String = w.forest.season
+	w.forest.set_season("winter")
+	var seat_pos: Vector3 = player.global_position
+	player.global_position = Vector3(c.site.x, 0, c.site.y + 8.0)  # 小屋の外で、画面を閉じて
+	hud.close_shop()
+	main._shovel_wait = 0.0
+	main.update_shovel(0.1, true)
+	_check(is_equal_approx(player.speed_scale, k.MEAL_SHOVEL_SPEED * k.MEAL_SPEED), "温まると雪かきしながらも速く歩ける")
+	hud.open_shop()
+	player.global_position = seat_pos
+	w.forest.set_season(w_forest_season)
 	k.stock.pryanik = 0
 	k.changed.emit()
 	press.call(KEY_H)
@@ -1599,10 +1615,12 @@ func _test_table_view() -> void:
 	_check(absf(player._body.position.x) < 0.01 and absf(player._body.position.z) < 0.01, "体が足元に戻る")
 	_check(absf(figure._leg_l.rotation.x) < 0.1, "足が戻る")
 	main.update_shovel(0.1, false)
-	_check(is_equal_approx(player.speed_scale, k.MEAL_SPEED), "食べた日は少し速く歩ける")
+	_check(is_equal_approx(player.speed_scale, k.MEAL_SPEED), "立ったあとも速く歩ける")
 	k.ate_day = w.forest.day_number() - 1
 	main.update_shovel(0.1, false)
-	_check(player.speed_scale == 1.0 and main.meal_line() == "", "次の日は、もとの速さ")
+	_check(player.speed_scale == 1.0 and main.meal_line() == "", "次の日は切れて、もとの速さ")
+	w.snow.cells.clear()
+	w.snow.changed.emit()
 	# 保存食がないとき
 	k.stock.sauce = 0
 	k.changed.emit()

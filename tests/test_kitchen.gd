@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_honey()
 	_test_season_prices()
 	_test_eat()
+	_test_meal_effects()
 	_test_save()
 	_test_old_save()
 	_test_places()
@@ -195,6 +196,74 @@ func _test_season_prices() -> void:
 	_check(w.visitors.value_of("sauce", 2) == 450, "訪問者のお礼も冬の値段から決まる")
 	_check(w.visitors.value_of("tomato", 5) == 200, "生の野菜のお礼は変わらない")
 
+func _test_meal_effects() -> void:
+	print("食べたもので変わる効果")
+	var seen := {}
+	for id in Kitchen.RECIPES:
+		var meal: String = Kitchen.RECIPES[id].meal
+		_check(Kitchen.MEALS.has(meal), "%s は効果の系統を持つ" % id)
+		seen[meal] = true
+	for m in Kitchen.MEAL_ORDER:
+		_check(seen.has(m) and Kitchen.MEALS.has(m), "%s の料理がある" % m)
+	_check(Kitchen.RECIPES.pirozhki.meal == "strength" and Kitchen.RECIPES.jam.meal == "sweet" and Kitchen.RECIPES.pickles.meal == "pickle" and Kitchen.RECIPES.sauce.meal == "warm", "料理の系統が決まりどおり")
+	var w := _world()
+	var k := w.kitchen
+	var eat := func(id: String) -> void:
+		k.stock[id] = int(k.stock[id]) + 1
+		k.eat(id)
+	_check(k.active_effects().is_empty() and k.harvest_rate() == 1.0, "食べなければ効果はない")
+	# 系統と重なり
+	eat.call("pirozhki")
+	_check(k.has_effect("strength") and not k.has_effect("warm") and k.active_effects() == ["strength"], "食べた系統だけ効く")
+	eat.call("pryanik")
+	_check(k.active_effects() == ["strength"] and k.eaten_today().size() == 2, "同じ系統は重ならない(3 種類の枠は使う)")
+	eat.call("pickles")
+	_check(k.active_effects() == ["strength", "pickle"], "違う系統を食べると増える")
+	k.ate_day = w.forest.day_number() - 1
+	_check(k.active_effects().is_empty(), "次の日には切れる")
+	# 漬物: 畑と果樹の収穫が増える
+	var g := w.garden
+	var spot := Vector2(1.5, 1.5)
+	w.land.toggle_plot(spot)
+	var radish := {"pos": spot, "kind": "radish", "sown_day": g.day_number() - 7, "water_days": 0, "last_watered": "", "head": 0.0}
+	g.crops.append(radish)
+	_check(g.harvest_at(spot) == "harvested" and g.last_harvest_kg == 6 and g.last_meal_extra == 0, "ふだんのラディッシュは 6kg")
+	k.ate_day = -1
+	k.ate_foods = []
+	eat.call("garlic_pickle")
+	radish = radish.duplicate()
+	g.crops.append(radish)
+	var before: int = g.produce.radish
+	_check(g.harvest_at(spot) == "harvested" and g.last_harvest_kg == 8 and g.last_meal_extra == 2 and g.produce.radish == before + 8, "漬物を食べると 8kg(+20%・切り上げ)")
+	var f := w.forest
+	f.season = "autumn"
+	f.trees.append({"pos": Vector2(30, 30), "species": "apple", "form": "sapling", "planted_at": f._now(), "start_age": 30.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0, "pruned_year": 0})
+	_check(f.harvest_nearest(Vector2(30, 30), 2.0) == "harvested" and f.last_harvest_count == 24 and f.last_meal_extra == 4 and f.last_harvest_extra == 0, "リンゴ 20 個 → 24 個")
+	f.trees[-1].last_harvest = ""
+	f.trees[-1].pruned_year = f.harvest_year_of(f.today())
+	_check(f.harvest_nearest(Vector2(30, 30), 2.0) == "harvested" and f.last_harvest_count == 30 and f.last_harvest_extra == 5 and f.last_meal_extra == 5, "剪定と重なると 20 → 25 → 30 個")
+	# 温まる: 薪割りが倍進む。丸太 1 本の薪の量は変わらない
+	var w2 := _world()
+	var k3 := w2.kitchen
+	w2.cabin.materials.log = 1
+	k3.stock.sauce = 1
+	k3.eat("sauce")
+	_check(k3.split() == "split" and k3.firewood == Kitchen.SPLIT_FIRES * Kitchen.MEAL_SPLIT, "温まると 1 回で 4 回分割れる")
+	k3.split()
+	k3.split()
+	_check(k3.firewood == Kitchen.LOG_FIRES and k3.log_left == 0 and w2.cabin.materials.log == 0, "丸太 1 本は 3 回で割れて、薪の量は同じ 10 回分")
+	# 甘い: 親しくなりやすい
+	var w3 := _world()
+	var vs := w3.visitors
+	vs.visit = {"day": w3.forest.day_number(), "who": "nina", "kind": "chat", "done": false, "line": 0}
+	vs.finish_chat()
+	_check(vs.closeness.nina == vs.POINTS_CHAT, "ふだんは話すと +1")
+	w3.kitchen.stock.jam = 1
+	w3.kitchen.eat("jam")
+	vs.visit = {"day": w3.forest.day_number(), "who": "fyodor", "kind": "chat", "done": false, "line": 0}
+	vs.finish_chat()
+	_check(vs.closeness.fyodor == vs.POINTS_CHAT + Kitchen.MEAL_POINTS, "甘いものを食べた日は話すと +2")
+
 func _test_eat() -> void:
 	print("食べる")
 	var w := _world()
@@ -221,7 +290,6 @@ func _test_eat() -> void:
 	k.ate_day = w.forest.day_number() - 1
 	_check(not k.ate_today() and k.ever_ate() and k.eaten_today().is_empty(), "次の日は食べていないことになる")
 	_check(k.eat("sauce") == "eaten" and k.eaten_today() == ["sauce"], "次の日は、前の日と同じものも食べられる")
-	_check(Kitchen.MEAL_SPEED > 1.0, "食べた日は速く歩ける")
 	var k2 := Kitchen.new()
 	k2.forest = w.forest
 	k2.from_save(k.to_save())

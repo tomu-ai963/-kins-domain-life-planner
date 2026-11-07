@@ -37,6 +37,8 @@ var seeds := {}    # 野菜ごとの種の数(1 つで 1 区画ぶん)
 var produce := {}  # 野菜ごとの収穫物(kg)。市場で売る
 var last_harvest_kg := 0  # 直前の収穫の量(文言用)
 var last_harvest_spoiled := false  # 直前の収穫が傷んでいたか(文言用)
+var last_meal_extra := 0  # 直前の収穫のうち、食べたもので増えた量(文言用)
+var harvest_rate := Callable()  # () -> float。GameWorld が Kitchen.harvest_rate を設定する(台所は畑を持つので、互いに持つと解放されない)
 var last_frost := {}      # 今日の確認で霜で枯れた区画の数 {kind: 数}(知らせる用・保存しない)
 var tilled_day := ""      # 最後に区画を耕した日(YYYY-MM-DD)
 var tilled_count := 0     # その日に耕した区画の数
@@ -158,6 +160,10 @@ func harvest_at(pos: Vector2) -> String:
 	last_harvest_kg = int(CROPS[c.kind].yield_kg)
 	if last_harvest_spoiled:
 		last_harvest_kg = ceili(last_harvest_kg * SPOILED_YIELD)
+	var before_meal := last_harvest_kg
+	if harvest_rate.is_valid():
+		last_harvest_kg = ceili(last_harvest_kg * float(harvest_rate.call()))
+	last_meal_extra = last_harvest_kg - before_meal
 	produce[c.kind] += last_harvest_kg
 	crops.erase(c)
 	_commit()

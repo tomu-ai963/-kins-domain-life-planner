@@ -16,21 +16,33 @@ signal dirty    # セーブに入る状態が変わった
 const LOG_FIRES := 10  # 丸太 1 本を割ってできる薪(回分)
 const SPLIT_FIRES := 2 # 1 回割るとできる薪(回分)。丸太 1 本を 5 回割る
 const MAX_FIREWOOD := 40  # 積んでおける薪(回分)。小屋の壁際に積める量
-const MEAL_SPEED := 1.15  # 食べた日の歩く速さの倍率(仮の数字)。食べた数では重ならない
 const MEAL_KINDS := 3     # 1 日に食べられる数(とむ決定: 同じものは 1 つまで、種類が違えば 3 つまで)
+# 食べたものの効果(とむの選択: 4 系統)。その日のあいだ効く。同じ系統は重ならないので、4 つのうち 3 つを選ぶ形になる。数字は仮
+const MEALS := {
+	"strength": {"name": "力がつく", "short": "速く歩ける"},
+	"sweet": {"name": "甘い", "short": "親しくなりやすい"},
+	"pickle": {"name": "漬物", "short": "収穫が増える"},
+	"warm": {"name": "温まる", "short": "薪割りと雪かきが楽"},
+}
+const MEAL_ORDER := ["strength", "sweet", "pickle", "warm"]  # 画面に並べる順番
+const MEAL_SPEED := 1.15     # 力がつく: 歩く速さの倍率
+const MEAL_POINTS := 1       # 甘い: 親しくなるたびに足す点
+const MEAL_HARVEST := 1.2    # 漬物: 畑と果樹の収穫の倍率
+const MEAL_SPLIT := 2        # 温まる: 1 回で割れる量の倍率(丸太 1 本からできる薪の量は変わらない)
+const MEAL_SHOVEL_SPEED := 0.8  # 温まる: 雪かきしながら歩く速さの倍率(ふだんは Snow.SHOVEL_SPEED)
 
-# input: 材料 / amount: 1 回に使う量(リンゴは個、野菜は kg) / output: できる数 / days: できるまでの暦の日数
+# input: 材料 / amount: 1 回に使う量(リンゴは個、野菜は kg) / output: できる数 / days: できるまでの暦の日数 / meal: 食べたときの効果の系統
 const RECIPES := {
-	"jam": {"name": "リンゴジャム", "input": "apple", "amount": 10, "output": 4, "unit": "瓶", "days": 1},
-	"sauce": {"name": "トマトソース", "input": "tomato", "amount": 10, "output": 5, "unit": "瓶", "days": 1},
-	"pickles": {"name": "きゅうりの塩漬け", "input": "cucumber", "amount": 6, "output": 10, "unit": "瓶", "days": 3},
-	"garlic_pickle": {"name": "ニンニクの酢漬け", "input": "garlic", "amount": 2, "output": 4, "unit": "瓶", "days": 3},
-	"pirozhki": {"name": "ピロシキ", "input": "potato", "amount": 4, "output": 20, "unit": "個", "days": 1},
-	"cherry_jam": {"name": "サクランボジャム", "input": "cherry", "amount": 3, "output": 4, "unit": "瓶", "days": 1},
-	"plum_jam": {"name": "スモモジャム", "input": "plum", "amount": 5, "output": 4, "unit": "瓶", "days": 1},
-	"pear_compote": {"name": "ナシのコンポート", "input": "pear", "amount": 15, "output": 4, "unit": "瓶", "days": 1},
-	"pryanik": {"name": "ピャーニク", "input": "honey", "amount": 1, "output": 10, "unit": "個", "days": 1},  # ロシアの蜂蜜菓子
-	"sbiten": {"name": "スビーテン", "input": "honey", "amount": 2, "output": 8, "unit": "瓶", "days": 3},  # ロシアの蜂蜜の温かい飲み物
+	"jam": {"name": "リンゴジャム", "input": "apple", "amount": 10, "output": 4, "unit": "瓶", "days": 1, "meal": "sweet"},
+	"sauce": {"name": "トマトソース", "input": "tomato", "amount": 10, "output": 5, "unit": "瓶", "days": 1, "meal": "warm"},
+	"pickles": {"name": "きゅうりの塩漬け", "input": "cucumber", "amount": 6, "output": 10, "unit": "瓶", "days": 3, "meal": "pickle"},
+	"garlic_pickle": {"name": "ニンニクの酢漬け", "input": "garlic", "amount": 2, "output": 4, "unit": "瓶", "days": 3, "meal": "pickle"},
+	"pirozhki": {"name": "ピロシキ", "input": "potato", "amount": 4, "output": 20, "unit": "個", "days": 1, "meal": "strength"},
+	"cherry_jam": {"name": "サクランボジャム", "input": "cherry", "amount": 3, "output": 4, "unit": "瓶", "days": 1, "meal": "sweet"},
+	"plum_jam": {"name": "スモモジャム", "input": "plum", "amount": 5, "output": 4, "unit": "瓶", "days": 1, "meal": "sweet"},
+	"pear_compote": {"name": "ナシのコンポート", "input": "pear", "amount": 15, "output": 4, "unit": "瓶", "days": 1, "meal": "sweet"},
+	"pryanik": {"name": "ピャーニク", "input": "honey", "amount": 1, "output": 10, "unit": "個", "days": 1, "meal": "strength"},  # ロシアの蜂蜜菓子
+	"sbiten": {"name": "スビーテン", "input": "honey", "amount": 2, "output": 8, "unit": "瓶", "days": 3, "meal": "warm"},  # ロシアの蜂蜜の温かい飲み物
 }
 
 var forest: Forest  # GameWorld が設定する(リンゴの持ち物は Forest にある)
@@ -122,6 +134,21 @@ func has_food() -> bool:
 func eaten_today() -> Array:
 	return ate_foods if ate_today() else []
 
+# その系統の効果が今日効いているか
+func has_effect(meal: String) -> bool:
+	for id in eaten_today():
+		if RECIPES[id].meal == meal:
+			return true
+	return false
+
+# 今日効いている効果の系統(MEAL_ORDER の順)
+func active_effects() -> Array:
+	return MEAL_ORDER.filter(func(m): return has_effect(m))
+
+# 畑と果樹の収穫の倍率(Garden と Forest が読む)
+func harvest_rate() -> float:
+	return MEAL_HARVEST if has_effect("pickle") else 1.0
+
 # 保存食を 1 つ食べる。結果: eaten / same(今日もう食べた) / full(今日はもう 3 つ食べた) / none(持っていない) / unknown
 func eat(id: String) -> String:
 	if not RECIPES.has(id):
@@ -157,9 +184,10 @@ func split() -> String:
 		cabin.materials.log -= 1
 		cabin.clamp_own_logs()
 		log_left = LOG_FIRES
-	var n: int = mini(SPLIT_FIRES, MAX_FIREWOOD - firewood)
+	var step: int = SPLIT_FIRES * (MEAL_SPLIT if has_effect("warm") else 1)
+	var n: int = mini(mini(step, log_left), MAX_FIREWOOD - firewood)
 	firewood += n
-	log_left = maxi(log_left - SPLIT_FIRES, 0)
+	log_left -= n
 	_commit()
 	return "split"
 

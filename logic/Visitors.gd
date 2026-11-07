@@ -81,6 +81,8 @@ func level_of(person: String) -> int:
 
 func _gain(person: String, points: int) -> void:
 	var before := level_of(person)
+	if kitchen != null and kitchen.has_effect("sweet"):  # 甘いものを食べた日は親しくなりやすい
+		points += kitchen.MEAL_POINTS
 	closeness[person] = int(closeness.get(person, 0)) + points
 	if level_of(person) > before:
 		last_level_up = person

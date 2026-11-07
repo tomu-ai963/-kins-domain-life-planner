@@ -38,7 +38,7 @@ const GUIDE_TEXTS := {
 	"split": "小屋の東の薪割り台で H を押すと、丸太を割れる。\n料理には薪がいる。丸太1本で10回分。",
 	"stove": "ストーブの前で H を押すと、収穫物を保存食にできる。\n生より高く、冬と春はもっと高く売れる。薪を1回分使う。",
 	"bed": "ベッドのそばで H を押すと、横になって日記を見る。\n明日の予定が分かる。寝ても時間は進まない。",
-	"table": "腰掛けのそばで H を押すと、座って保存食を食べられる。\n食べた日は少し速く歩ける。同じものは1日1つまで。",
+	"table": "腰掛けのそばで H を押すと、座って保存食を食べられる。\n食べたもので、その日の調子が変わる(1日3種類まで)。",
 	"hive_make": "自分の木を伐った丸太で、巣箱を作れる(J・丸太2本)。\n3日かけてくり抜く。市場の丸太は使えない。",
 	"hive_bees": "巣箱に蜂が入るのを待とう(春と夏)。\nフョードルさんが来たら、分けてもらうこともできる。",
 	"honey": "はちみつが採れる。巣箱のそばで J を押す。\n市場で売れて、ストーブで料理にも使える。採っても蜂はいなくならない。",
@@ -160,13 +160,14 @@ func update_shovel(delta: float, holding: bool) -> void:
 	if shoveling and _shovel_wait <= 0.0 and s.clear_at(pos) == "cleared":
 		_shovel_wait = SHOVEL_GAP
 		_act("shovel")
+	var k := world.kitchen
 	var speed := 1.0
 	if shoveling:
-		speed = s.SHOVEL_SPEED
+		speed = k.MEAL_SHOVEL_SPEED if k.has_effect("warm") else s.SHOVEL_SPEED
 	elif s.is_cleared(pos):
 		speed = s.PATH_SPEED
-	if world.kitchen.ate_today():
-		speed *= world.kitchen.MEAL_SPEED
+	if k.has_effect("strength"):
+		speed *= k.MEAL_SPEED
 	$Player.speed_scale = speed
 
 func _check_new_day() -> void:
@@ -603,6 +604,8 @@ func _fruit_message(result: String) -> String:
 	match result:
 		"harvested":
 			var extra: String = "剪定で +%d%s。" % [f.last_harvest_extra, fruit.unit] if f.last_harvest_extra > 0 else ""
+			if f.last_meal_extra > 0:
+				extra += "漬物で +%d%s。" % [f.last_meal_extra, fruit.unit]
 			return "%sを%d%s収穫した(%s市場で1%s %d₽で売れる)" % [fruit_name, f.last_harvest_count, fruit.unit, extra, fruit.unit, world.market.SELL_PRICES[item]]
 		"not_season":
 			var seasons := PackedStringArray()
@@ -807,7 +810,8 @@ func _split_wood() -> void:
 	match k.split():
 		"split":
 			_act("chop", world.cabin.chop_pos())
-			$HUD.show_message("薪を割った(薪 %d回分)" % k.firewood)
+			var warm := "。体が温まって、いつもの倍割れる" if k.has_effect("warm") else ""
+			$HUD.show_message("薪を割った(薪 %d回分)%s" % [k.firewood, warm])
 		"no_log":
 			$HUD.show_message("割る丸太がない(市場で買うか、育った木を Z で伐る)", 5.0)
 		"full":
@@ -905,7 +909,10 @@ func table_rows() -> Array:
 		if n > 0:
 			var r: Dictionary = k.RECIPES[id]
 			var verb := "今日は食べた" if id in k.eaten_today() else "食べる"
-			rows.append({"id": "eat_" + id, "text": "%s: %s(%d%s。市場で1%s %d₽)" % [verb, r.name, n, r.unit, r.unit, world.market.sell_price(id)], "column": 0})
+			var effect: String = k.MEALS[r.meal].short
+			if verb == "食べる" and k.has_effect(r.meal):
+				effect = "もう効いている"
+			rows.append({"id": "eat_" + id, "text": "%s: %s %d%s → %s(1%s %d₽)" % [verb, r.name, n, r.unit, effect, r.unit, world.market.sell_price(id)], "column": 0})
 	if rows.is_empty():
 		rows.append({"id": "no_food", "text": "テーブルに保存食がない(ストーブで作る)", "column": 0})
 	rows.append({"id": "close", "text": "立つ(H / Esc)", "column": 1})
@@ -915,11 +922,15 @@ func _table_action(id: String) -> void:
 	if not id.begins_with("eat_"):
 		return
 	var k := world.kitchen
-	match k.eat(id.trim_prefix("eat_")):
+	var food := id.trim_prefix("eat_")
+	var was_active: bool = k.RECIPES.has(food) and k.has_effect(k.RECIPES[food].meal)
+	match k.eat(food):
 		"eaten":
 			if $Player.has_method("eat_motion"):
 				$Player.eat_motion()
-			$HUD.show_message("%sを食べた。今日は少し速く歩ける" % k.RECIPES[k.last_eaten].name, 5.0)
+			var meal: Dictionary = k.MEALS[k.RECIPES[food].meal]
+			var note: String = "同じ「%s」の効果はもう効いている" % meal.name if was_active else "「%s」で今日は%s" % [meal.name, meal.short]
+			$HUD.show_message("%sを食べた。%s" % [k.RECIPES[food].name, note], 5.0)
 		"same":
 			$HUD.show_message("%sは今日もう食べた(同じものは1日1つまで)" % k.RECIPES[id.trim_prefix("eat_")].name)
 		"full":
@@ -947,7 +958,15 @@ func kitchen_line() -> String:
 # HUD に出す、食事の 1 行。今日まだ食べていなければ ""
 func meal_line() -> String:
 	var k := world.kitchen
-	return "食事: 今日は %d/%d種類 食べた(少し速く歩ける)" % [k.eaten_today().size(), k.MEAL_KINDS] if k.ate_today() else ""
+	return "食事(%d/%d種類): %s" % [k.eaten_today().size(), k.MEAL_KINDS, _effects_text()] if not k.eaten_today().is_empty() else ""
+
+# 今日効いている効果の文言。例: 「速く歩ける・収穫が増える」
+func _effects_text() -> String:
+	var k := world.kitchen
+	var parts := PackedStringArray()
+	for m in k.active_effects():
+		parts.append(k.MEALS[m].short)
+	return "・".join(parts)
 
 # HUD に出す、家具のそばでの案内。そばにいなければ ""
 func furniture_line() -> String:
@@ -1263,8 +1282,9 @@ func shop_header() -> String:
 		return visitor_text()
 	if _panel == "table":
 		var k := world.kitchen
-		var note := "同じものは1日1つ、%d種類まで" % k.MEAL_KINDS
-		return "今日は %d/%d種類 食べた(%s)" % [k.eaten_today().size(), k.MEAL_KINDS, note] if k.ate_today() else "食べると今日は少し速く歩ける(%s)" % note
+		if k.eaten_today().is_empty():
+			return "食べたもので調子が変わる(同じものは1日1つ、%d種類まで)" % k.MEAL_KINDS
+		return "今日は %d/%d種類 食べた: %s" % [k.eaten_today().size(), k.MEAL_KINDS, _effects_text()]
 	if _panel == "kitchen":
 		return "薪: %d回分   丸太: %d本(丸太1本で%d回分)" % [world.kitchen.firewood, int(world.cabin.materials.log), world.kitchen.LOG_FIRES]
 	return "所持金: %s₽" % $HUD._money_text(world.market.money)
@@ -1439,6 +1459,8 @@ func _harvest() -> void:
 		var kind: String = c.kind
 		_act("pick", c.pos, kind)
 		var spoiled := "傷んでいて半分だけ。" if g.last_harvest_spoiled else ""
+		if g.last_meal_extra > 0:
+			spoiled += "漬物で +%dkg。" % g.last_meal_extra
 		$HUD.show_message("%sを%dkg収穫した(%s市場で1kg %d₽で売れる)" % [g.CROPS[kind].name, g.last_harvest_kg, spoiled, world.market.SELL_PRICES[kind]])
 		return
 	if crop == "preview":

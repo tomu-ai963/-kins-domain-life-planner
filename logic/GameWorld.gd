@@ -72,6 +72,8 @@ func _init() -> void:
 	kitchen.garden = garden
 	kitchen.cabin = cabin
 	kitchen.bees = bees
+	forest.harvest_rate = kitchen.harvest_rate
+	garden.harvest_rate = kitchen.harvest_rate
 	wildlife.forest = forest
 	wildlife.land = land
 	wildlife.garden = garden

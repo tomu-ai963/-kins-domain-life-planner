@@ -322,6 +322,8 @@ static func fruit_yield(species: String, age: float) -> int:
 var last_harvest_count := 0  # 直前の収穫で採れた量(文言用)
 var last_harvest_item := ""  # 直前に収穫した果物、または収穫できなかった果樹(文言用)
 var last_harvest_extra := 0  # 直前の収穫のうち、剪定で増えた量(文言用)
+var last_meal_extra := 0     # 直前の収穫のうち、食べたもので増えた量(文言用)
+var harvest_rate := Callable()  # () -> float。GameWorld が Kitchen.harvest_rate を設定する(台所は森を持つので、互いに持つと解放されない)
 var last_prune_item := ""    # 直前に剪定した、または剪定できなかった果樹(文言用)
 
 # 実をつける年になったリンゴの本数(季節は見ない)
@@ -375,6 +377,10 @@ func harvest_nearest(pos: Vector2, max_dist: float) -> String:
 	var base := fruit_yield(tree.species, real_age_years(tree))
 	last_harvest_extra = ceili(base * PRUNE_BONUS) - base if is_pruned(tree) else 0
 	last_harvest_count = base + last_harvest_extra
+	var before_meal := last_harvest_count
+	if harvest_rate.is_valid():
+		last_harvest_count = ceili(last_harvest_count * float(harvest_rate.call()))
+	last_meal_extra = last_harvest_count - before_meal
 	produce[tree.species] = int(produce.get(tree.species, 0)) + last_harvest_count
 	_commit()
 	return "harvested"
