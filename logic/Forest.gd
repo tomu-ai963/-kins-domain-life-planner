@@ -32,6 +32,8 @@ const FRUITS := {
 const FRUIT_ORDER := ["apple", "cherry", "plum", "pear"]  # 果樹を選ぶ順番(キーの 2)
 const SAPLING_ONLY := ["cherry", "plum", "pear"]  # 接ぎ木の苗木から育てる(現実でも、種からだと親と同じ実にならない)
 const GERMINATION_YEARS := 1.0  # 種から芽が出るまで(= 1 日)
+# 剪定: 葉の落ちた冬に果樹の枝を切ると、次の収穫が増える(現実でも果樹の剪定は冬の仕事)。1 本につきひと冬 1 回
+const PRUNE_BONUS := 1.25  # 剪定した木の収穫の倍率(仮の数字)
 
 # ── 毎日の理由 ──────────────────────────────────────────────
 # 水やり: 1 本につき 1 日 1 回、樹齢にボーナスが付く(収穫などの判定にも効く)
@@ -96,7 +98,8 @@ const SPECIES := {
 }
 
 # [{pos: Vector2(m), species, form: "seed"/"sapling"/""(移行前の木), planted_at: int,
-#   start_age: float(苗木の樹齢), sprouts: bool(種が芽を出すか), last_harvest, last_watered, bonus_years}]
+#   start_age: float(苗木の樹齢), sprouts: bool(種が芽を出すか), last_harvest, last_watered, bonus_years,
+#   pruned_year: int(剪定が効く収穫の年。0 = まだ)}]
 var trees := []
 var seeds := INITIAL_SEEDS.duplicate()        # 樹種ごとの種の所持数
 var saplings := INITIAL_SAPLINGS.duplicate()  # 樹種ごとの苗木の所持数
@@ -150,7 +153,7 @@ func add_tree(pos: Vector2, species: String, form := "seed") -> bool:
 	trees.append({
 		"pos": pos, "species": species, "form": form, "planted_at": now,
 		"start_age": start_age, "sprouts": sprouts,
-		"last_harvest": "", "last_watered": "", "bonus_years": 0.0,
+		"last_harvest": "", "last_watered": "", "bonus_years": 0.0, "pruned_year": 0,
 	})
 	# 雨の日は一日中降っている扱い。あとから植えた木も水やり済みにする
 	if is_raining():
@@ -318,6 +321,8 @@ static func fruit_yield(species: String, age: float) -> int:
 
 var last_harvest_count := 0  # 直前の収穫で採れた量(文言用)
 var last_harvest_item := ""  # 直前に収穫した果物、または収穫できなかった果樹(文言用)
+var last_harvest_extra := 0  # 直前の収穫のうち、剪定で増えた量(文言用)
+var last_prune_item := ""    # 直前に剪定した、または剪定できなかった果樹(文言用)
 
 # 実をつける年になったリンゴの本数(季節は見ない)
 func fruiting_apples() -> int:
@@ -367,10 +372,51 @@ func harvest_nearest(pos: Vector2, max_dist: float) -> String:
 	if tree.last_harvest == today():
 		return "done"
 	tree.last_harvest = today()
-	last_harvest_count = fruit_yield(tree.species, real_age_years(tree))
+	var base := fruit_yield(tree.species, real_age_years(tree))
+	last_harvest_extra = ceili(base * PRUNE_BONUS) - base if is_pruned(tree) else 0
+	last_harvest_count = base + last_harvest_extra
 	produce[tree.species] = int(produce.get(tree.species, 0)) + last_harvest_count
 	_commit()
 	return "harvested"
+
+# 12 月の剪定は翌年の収穫に、1〜2 月の剪定はその年の収穫に効く。その日の剪定が効く収穫の年
+static func harvest_year_of(date: String) -> int:
+	var year := int(date.substr(0, 4))
+	return year + 1 if int(date.substr(5, 2)) == 12 else year
+
+# この冬(と、次の収穫まで)剪定が効いているか
+func is_pruned(tree: Dictionary) -> bool:
+	return int(tree.get("pruned_year", 0)) == harvest_year_of(today())
+
+# 実をつける年になった果樹か
+func _is_bearing(tree: Dictionary) -> bool:
+	return FRUITS.has(tree.species) and is_established(tree) and real_age_years(tree) >= float(FRUITS[tree.species].age)
+
+# まだ剪定していない、実をつける年になった果樹の本数(日記とヒント用)
+func prunable_count() -> int:
+	return trees.filter(func(t): return _is_bearing(t) and not is_pruned(t)).size()
+
+func pruned_count() -> int:
+	return trees.filter(func(t): return _is_bearing(t) and is_pruned(t)).size()
+
+# 足元の果樹を剪定する。結果: pruned / none / preview / not_season / young / done
+func prune_nearest(pos: Vector2, max_dist: float) -> String:
+	var best := nearest_fruit_index(pos, max_dist)
+	if best < 0:
+		return "none"
+	if time_offset_years > 0.0:
+		return "preview"
+	var tree: Dictionary = trees[best]
+	last_prune_item = tree.species
+	if season != "winter":
+		return "not_season"
+	if not _is_bearing(tree):
+		return "young"
+	if is_pruned(tree):
+		return "done"
+	tree.pruned_year = harvest_year_of(today())
+	_commit()
+	return "pruned"
 
 func today() -> String:
 	return Time.get_date_string_from_system()  # 現地時間の YYYY-MM-DD
@@ -456,6 +502,7 @@ func to_save() -> Dictionary:
 			"start_age": t.start_age, "sprouts": t.sprouts,
 			"last_harvest": t.last_harvest,
 			"last_watered": t.last_watered, "bonus_years": t.bonus_years,
+			"pruned_year": int(t.get("pruned_year", 0)),
 		})
 	for p in pickups:
 		data.pickups.append({"x": p.pos.x, "y": p.pos.y, "species": p.species, "amount": p.amount})
@@ -493,6 +540,7 @@ func from_save(data: Dictionary) -> void:
 				"last_harvest": str(t.get("last_harvest", "")),
 				"last_watered": str(t.get("last_watered", "")),
 				"bonus_years": float(t.get("bonus_years", 0.0)),
+				"pruned_year": int(t.get("pruned_year", 0)),
 			})
 	pickups.clear()
 	for p in data.get("pickups", []):

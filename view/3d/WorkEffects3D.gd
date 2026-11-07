@@ -14,6 +14,8 @@ const WATER := Color(0.40, 0.70, 1.0)
 const DIRT := Color(0.36, 0.25, 0.15)
 const WOOD := Color(0.86, 0.68, 0.44)
 const LEAF := Color(0.32, 0.60, 0.24)
+const TWIG := Color(0.38, 0.26, 0.16)
+const GRAIN := Color(0.93, 0.80, 0.42)
 
 var figure: Node3D  # じょうろの注ぎ口の位置を聞く(PlayerFigure3D)
 var _mats := {}
@@ -47,6 +49,10 @@ func play(kind: String, spot: Vector3, item := "") -> void:
 			_scatter(_item_color(item), spot + Vector3(0, 0.25, 0), 5, 0.14, 0.5, 2.6)
 		"pick_high":
 			_scatter(_item_color(item), spot + Vector3(0, 2.2, 0), 4, 0.14, 0.4, 0.0)
+		"prune":  # 切った枝が落ちる
+			_scatter(TWIG, spot + Vector3(0, 2.0, 0), 7, 0.07, 0.7, 0.2)
+		"feed":  # 手から台の上へ種をまく
+			_scatter(GRAIN, spot + Vector3(0, 1.25, 0), 7, 0.05, 0.35, 0.8)
 
 func _item_color(item: String) -> Color:
 	if GardenView.LOOKS.has(item):

@@ -15,6 +15,7 @@ const Wildlife = preload("res://logic/Wildlife.gd")
 const Visitors = preload("res://logic/Visitors.gd")
 const Guide = preload("res://logic/Guide.gd")
 const Bees = preload("res://logic/Bees.gd")
+const Feeders = preload("res://logic/Feeders.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 const DayClock = preload("res://logic/DayClock.gd")
@@ -25,6 +26,7 @@ const OLD_PX_PER_M := 40.0
 const BACKUP_DIR := "user://backups"  # セーブの控えの置き場所
 const BACKUP_PREFIX := "kins_domain_save_"
 const BACKUP_KEEP := 7           # 控えを残す日数
+const PRUNE_FIRES := 1           # 剪定 1 本で切った枝からできる薪(回分。仮の数字)
 
 var forest := Forest.new()
 var land := Land.new()
@@ -37,6 +39,7 @@ var wildlife := Wildlife.new()
 var visitors := Visitors.new()
 var guide := Guide.new()
 var bees := Bees.new()
+var feeders := Feeders.new()
 var quests := Quests.new()
 var market := Market.new()
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
@@ -85,6 +88,14 @@ func _init() -> void:
 	market.bees = bees
 	wildlife.bees = bees
 	guide.bees = bees
+	feeders.forest = forest
+	feeders.land = land
+	feeders.cabin = cabin
+	feeders.bees = bees
+	bees.taken_nearby = feeders.covers
+	wildlife.feeders = feeders
+	visitors.feeders = feeders
+	guide.feeders = feeders
 	guide.forest = forest
 	guide.land = land
 	guide.garden = garden
@@ -104,15 +115,25 @@ func _init() -> void:
 	visitors.dirty.connect(save_game)
 	guide.dirty.connect(save_game)
 	bees.dirty.connect(save_game)
+	feeders.dirty.connect(save_game)
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
-# 結果: Garden.toggle_plot の結果か cabin
+# 結果: Garden.toggle_plot の結果か cabin / hive / feeder
 func toggle_plot(pos: Vector2) -> String:
 	if land.plot_at(pos) == null and cabin.blocks_plot(land.plot_center(pos)):
 		return "cabin"
 	if land.plot_at(pos) == null and bees.blocks_plot(land.plot_center(pos), land.PLOT_SIZE * 0.5):
 		return "hive"
+	if land.plot_at(pos) == null and feeders.blocks_plot(land.plot_center(pos), land.PLOT_SIZE * 0.5):
+		return "feeder"
 	return garden.toggle_plot(pos)
+
+# X: 足元の果樹を剪定する。切った枝は薪になる。結果は Forest.prune_nearest
+func prune(pos: Vector2, max_dist: float) -> String:
+	var result: String = forest.prune_nearest(pos, max_dist)
+	if result == "pruned":
+		kitchen.add_firewood(PRUNE_FIRES)
+	return result
 
 # P: 池がなければ足元を池の場所に決める。あれば今日の分を掘る
 # 結果: placed / outside / cabin(場所を決めるとき)、Pond.dig の結果(掘るとき)
@@ -123,6 +144,8 @@ func pond_action(pos: Vector2) -> String:
 		return "cabin"
 	if bees.covers(pos, land.POND_RADIUS + bees.CLEARANCE):
 		return "hive"
+	if feeders.covers(pos, land.POND_RADIUS + bees.CLEARANCE):
+		return "feeder"
 	return land.toggle_pond(pos)
 
 # 日付が変わっていたら、その日の発見を起こして id を返す(Forest.check_new_day)。
@@ -175,6 +198,7 @@ func save_game() -> void:
 	data["visitors"] = visitors.to_save()
 	data["guide"] = guide.to_save()
 	data["bees"] = bees.to_save()
+	data["feeders"] = feeders.to_save()
 	data["sound_level"] = sound_level
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
@@ -241,6 +265,10 @@ func load_game() -> void:
 	var bd = data.get("bees", {})
 	if typeof(bd) != TYPE_DICTIONARY:
 		bd = {}
+	# 餌台の記録がないセーブは、餌台なしから
+	var fd = data.get("feeders", {})
+	if typeof(fd) != TYPE_DICTIONARY:
+		fd = {}
 	# Godot 3 版(2026-11 より前)のセーブは座標が px。読むときに m に直す
 	if data.get("unit", "px") != SAVE_UNIT:
 		_px_to_m(data, ld)
@@ -254,6 +282,7 @@ func load_game() -> void:
 	visitors.from_save(vd)
 	guide.from_save(gud)
 	bees.from_save(bd)
+	feeders.from_save(fd)
 	sound_level = clampi(int(data.get("sound_level", 3)), 0, 3)
 	quests.from_save(qd)
 	market.from_save(md)

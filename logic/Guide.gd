@@ -25,7 +25,7 @@ const MIN_PLOTS_FOR_CABIN := 4  # 畑に慣れてから小屋を案内する
 const HINTS := [
 	"walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell", "stuck", "broke",
 	"apple", "visitor", "pond_rain", "pond_water", "cabin_site", "cabin_logs",
-	"cabin_inside", "stove", "bed", "hive_make", "hive_bees", "honey", "winter", "creatures",
+	"cabin_inside", "stove", "bed", "hive_make", "hive_bees", "honey", "winter", "prune", "feeder", "feed", "creatures",
 ]
 # お知らせのヒント(やることではなく、知らせるだけ)
 const NOTICES := ["apple", "visitor", "pond_rain", "pond_water", "bed", "winter", "creatures"]
@@ -40,6 +40,7 @@ var kitchen: Kitchen
 var visitors: Visitors
 var wildlife: Wildlife
 var bees = null          # GameWorld が設定する
+var feeders = null       # GameWorld が設定する
 var has_people := false  # 訪問者の姿があるか(3D だけ Main が true にする)
 
 var seen := []           # 出し終えたヒントの id
@@ -176,6 +177,12 @@ func _wants(id: String) -> bool:
 			return bees.ready_count() > 0
 		"winter":
 			return forest.season == "winter"
+		"prune":
+			return forest.season == "winter" and forest.prunable_count() > 0
+		"feeder":
+			return feeders.can_feed_now() and int(cabin.materials.log) >= feeders.LOG_COST
+		"feed":
+			return feeders.can_feed_now() and not feeders.feeders.is_empty()
 		"creatures":
 			return has_people and not wildlife.seen.is_empty()
 	return false
@@ -210,7 +217,13 @@ func _is_done(id: String) -> bool:
 		"cabin_inside":
 			return _was_inside
 		"stove":
-			return not kitchen.is_empty() or kitchen.firewood > 0
+			return kitchen.cooked
+		"prune":
+			return forest.pruned_count() > 0
+		"feeder":
+			return not feeders.feeders.is_empty()
+		"feed":
+			return feeders.ever_fed()
 		"visitor":
 			return not visitors.is_here()
 		"hive_make":

@@ -16,12 +16,14 @@ const ACTIONS := {
 	"build": {"seconds": 0.8, "hit": 0.3, "tool": "hammer"},
 	"pick": {"seconds": 0.6, "hit": 0.28, "tool": ""},
 	"pick_high": {"seconds": 0.6, "hit": 0.2, "tool": ""},
+	"prune": {"seconds": 0.9, "hit": 0.35, "tool": "shears"},
+	"feed": {"seconds": 0.7, "hit": 0.3, "tool": ""},
 	"plant": {"seconds": 0.6, "hit": 0.3, "tool": ""},
 	"pull": {"seconds": 0.6, "hit": 0.35, "tool": ""},
 	"wave": {"seconds": 1.1, "hit": 0.0, "tool": ""},
 }
 # 道具を持つ角度(手に対する x 回転)。腕を振り下ろしたときに道具の先が前の低いところへ来るように
-const TOOL_ANGLES := {"can": -1.25, "hoe": -1.0, "axe": -1.3, "hammer": -1.0}
+const TOOL_ANGLES := {"can": -1.25, "hoe": -1.0, "axe": -1.3, "hammer": -1.0, "shears": -1.4}
 const POUR_TILT := 0.55   # じょうろを傾ける角度(rad)
 const CAN_ARM := 1.25     # じょうろを持つ腕の角度(rad)
 const STEEL := Color(0.55, 0.57, 0.60)
@@ -147,6 +149,13 @@ func _apply_action(delta: float) -> void:
 			_arm_l.rotation.x = lerpf(_arm_l.rotation.x, 2.7, e)
 			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.7, e)
 			_upper.rotation.x = lerpf(_upper.rotation.x, 0.08, e)
+		"prune":  # 枝へ手を伸ばして、はさみで何度か切る
+			_arm_l.rotation.x = lerpf(_arm_l.rotation.x, 2.3, e)
+			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.5 + 0.22 * sin(t * TAU * 3.0), e)
+			_upper.rotation.x = lerpf(_upper.rotation.x, 0.06, e)
+		"feed":  # 台の高さへ手を伸ばして、種をまく
+			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 1.55 + 0.25 * sin(t * TAU * 2.0), e)
+			_arm_l.rotation.x = lerpf(_arm_l.rotation.x, 1.1, e)
 		"wave":  # 右手を上げて振る
 			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.8, e)
 			_arm_r.get_parent().rotation.z = ARM_SPREAD + e * (0.5 + 0.35 * sin(t * TAU * 3.0))
@@ -187,6 +196,11 @@ func _build_tools() -> void:
 	var hammer := _tool("hammer")
 	_box(hammer, handle, Vector3(0, 0, -0.14), Vector3(0.03, 0.03, 0.34))
 	_box(hammer, steel, Vector3(0, -0.02, -0.3), Vector3(0.06, 0.15, 0.06))
+	var shears := _tool("shears")
+	_box(shears, handle, Vector3(-0.025, 0, -0.08), Vector3(0.025, 0.025, 0.2))
+	_box(shears, handle, Vector3(0.025, 0, -0.08), Vector3(0.025, 0.025, 0.2))
+	_box(shears, steel, Vector3(-0.012, 0, -0.27), Vector3(0.025, 0.03, 0.2))
+	_box(shears, steel, Vector3(0.012, 0, -0.27), Vector3(0.025, 0.03, 0.2))
 	_show_tool("")
 
 func _tool(tool_name: String) -> Node3D:

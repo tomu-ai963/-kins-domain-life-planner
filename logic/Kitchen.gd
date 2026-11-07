@@ -37,6 +37,7 @@ var bees: Bees      # GameWorld が設定する(はちみつの持ち物は Bees
 var pot := {}       # 鍋の中身 {recipe, start_day: int}。空なら {}
 var stock := {}     # できた保存食の数 {recipe: 数}
 var firewood := 0   # 割ってある薪(回分)
+var cooked := false # 一度でも仕込んだか(ヒント用。薪は剪定の枝でも増えるので、薪では分からない)
 var last_split := false  # 直前の仕込みで丸太を割ったか(文言用)
 var last_collected := {} # 直前に受け取った {recipe, count}(文言用)
 
@@ -96,10 +97,16 @@ func start(id: String) -> String:
 		cabin.clamp_own_logs()
 		firewood += LOG_FIRES
 	firewood -= 1
+	cooked = true
 	_pile(r.input)[r.input] -= int(r.amount)
 	pot = {"recipe": id, "start_day": forest.day_number()}
 	_commit()
 	return "started"
+
+# 剪定で切った枝を薪にする
+func add_firewood(n: int) -> void:
+	firewood += n
+	_commit()
 
 # できたものを受け取る。結果: collected / empty / cooking
 func collect() -> String:
@@ -117,7 +124,7 @@ func collect() -> String:
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
-	return {"pot": pot, "stock": stock, "firewood": firewood}
+	return {"pot": pot, "stock": stock, "firewood": firewood, "cooked": cooked}
 
 func from_save(d: Dictionary) -> void:
 	firewood = int(d.get("firewood", 0))
@@ -130,4 +137,6 @@ func from_save(d: Dictionary) -> void:
 	var p = d.get("pot", {})
 	if typeof(p) == TYPE_DICTIONARY and RECIPES.has(str(p.get("recipe", ""))):
 		pot = {"recipe": str(p.recipe), "start_day": int(p.get("start_day", 0))}
+	# 記録がないセーブは、薪があれば(当時は仕込まないと薪にならなかった)仕込んだことがある
+	cooked = bool(d.get("cooked", firewood > 0 or not pot.is_empty()))
 	changed.emit()

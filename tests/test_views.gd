@@ -39,6 +39,7 @@ func _process(_delta: float) -> bool:
 			_test_hud()
 			_test_plot_limit()
 			_test_toon()
+			_test_winter_work()
 		10:
 			_test_3d_cabin_collision()  # 当たり判定が物理サーバーに入るのを待ってから
 			_prepare_visitor_collision()
@@ -46,6 +47,7 @@ func _process(_delta: float) -> bool:
 		11:
 			_test_visitor_collision()
 			_test_hive_collision()
+			_test_feeder_collision()
 			_test_tree_collision()
 			_test_market_collision()
 			_wait_until = Time.get_ticks_msec() + 200
@@ -888,7 +890,7 @@ func _test_sound_view() -> void:
 	_check(audio.last_played == "", "止まっているときは足音がしない")
 
 	# 作業音: 道具が当たるときに鳴る
-	for kind in ["water", "dig", "chop", "build", "pick", "pick_high", "plant", "pull"]:
+	for kind in ["water", "dig", "chop", "build", "pick", "pick_high", "plant", "pull", "prune", "feed"]:
 		audio.last_played = ""
 		player.act(kind, Vector2(-47, -44))
 		_check(audio.last_played == "", "%s: 押した瞬間にはまだ鳴らない" % kind)
@@ -1200,6 +1202,162 @@ func _test_hive_view() -> void:
 	_check(visitor._obstacles().any(func(r): return r.has_point(hive_at)), "訪問者は巣箱を回り込む")
 	# 当たり判定(物理サーバーに入るのを待って _test_hive_collision で確かめる)
 	_check(view.get_child(0).get_node("HiveBody") is StaticBody3D, "巣箱に当たり判定がある")
+
+const FEEDER_SPOT := Vector2(40, -40)  # ほかのテストの物から離れた場所
+
+# 冬の作業: 餌台の見た目・鳥・剪定の動きと枝の束・キー操作
+func _test_winter_work() -> void:
+	print("冬の作業")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var player: CharacterBody3D = main.get_node("Player")
+	var figure = player.get_node("Figure") if player.has_node("Figure") else player._figure
+	var view = main.get_node("Feeders")
+	var wildlife_view = main.get_node("Wildlife")
+	var trees_view = main.get_node("Trees")
+	var f = w.forest
+	var keep_season: String = f.season
+	var keep_seeds: int = f.seeds.birch
+	var keep_logs: int = w.cabin.materials.log
+	var keep_pos: Vector3 = player.global_position
+	var press := func(code: int) -> void:
+		var e := InputEventKey.new()
+		e.keycode = code
+		e.pressed = true
+		main._unhandled_input(e)
+	f.set_season("winter")
+	w.cabin.materials.log = 3
+	f.seeds.birch = 10
+	player.global_position = Vector3(FEEDER_SPOT.x, 0, FEEDER_SPOT.y)
+	_check(main.feeder_line() == "", "餌台がなければ行が出ない")
+	press.call(KEY_L)
+	_check(w.feeders.feeders.size() == 1 and hud._message.contains("餌台を立てた"), "L で餌台を立てる")
+	_check(figure.current_action() == "build", "立てるときは金づちの動き")
+	_check(view.get_child_count() == 1 and view.get_child(0).get_node("FeederBody") is StaticBody3D, "餌台が見えて、当たり判定がある")
+	_check(view.get_child(0).find_children("FeederGrain*", "", true, false).is_empty(), "はじめは台に種がない")
+	var feeder_at: Vector2 = w.feeders.feeders[0].pos
+	_check(main.feeder_line().contains("餌がない"), "そばで案内が出る")
+	figure._process(10.0)
+	press.call(KEY_L)
+	_check(hud._message.contains("種を置いた") and figure.current_action() == "feed", "L で種を置く動きをする")
+	_check(view.get_child(0).find_children("FeederGrain*", "", true, false).size() == view.GRAINS, "台の上に種が見える")
+	_check(main.feeder_line().contains("今日は"), "案内が変わる")
+	figure._process(10.0)
+	press.call(KEY_L)
+	_check(hud._message.contains("今日はもう"), "今日はもう置けない")
+	player._effect_tween.custom_step(10.0)
+
+	# 鳥: 昼でも夜でもいるようにして、姿を確かめる(暗さは時計で決まる)
+	wildlife_view._spawn("tit")
+	wildlife_view._spawn("bullfinch")
+	var birds: Array = wildlife_view._animals.filter(func(a): return a.id == "tit" or a.id == "bullfinch")
+	_check(birds.size() >= 2 and birds.all(func(a): return a.home == feeder_at), "鳥は餌台を住みかにする")
+	player.global_position = Vector3(feeder_at.x + 20, 0, feeder_at.y)  # 離れる
+	var bird: Dictionary = birds[0]
+	wildlife_view._walk(bird, 0.01, player.ground_pos())
+	_check(bird.node.position.y >= w.feeders.TABLE_H - 0.01 and bird.pos.distance_to(feeder_at) < view.TABLE_SIZE * 0.5, "鳥は台の上にとまる(高さ %.2f)" % bird.node.position.y)
+	_check(birds[0].slot != birds[1].slot and birds[0].pos.distance_to(birds[1].pos) > 0.15, "鳥は台の上で重ならない(%.2fm 離れている)" % birds[0].pos.distance_to(birds[1].pos))
+	var near_player: Vector2 = feeder_at + Vector2(1.5, 0)
+	wildlife_view._walk(bird, 0.01, near_player)
+	_check(bird.mode == "flee", "近づくと飛び立つ")
+	for _i in range(200):
+		wildlife_view._walk(bird, 0.05, near_player)
+		if bird.mode != "flee":
+			break
+	_check(bird.pos.distance_to(feeder_at) > 3.0 and bird.node.position.y < 0.5, "離れたところの地面に下りる")
+	bird.wait = 0.0
+	var far_player: Vector2 = feeder_at + Vector2(30, 0)
+	wildlife_view._walk(bird, 0.01, far_player)
+	_check(bird.mode == "walk", "しばらくすると戻ってくる")
+	wildlife_view._walk(bird, 0.2, far_player)
+	var start_dist: float = bird.pos.distance_to(feeder_at)
+	_check(not bird.wings.is_empty() and bird.node.position.y > 0.1, "飛んで戻る")
+	for _i in range(200):
+		wildlife_view._walk(bird, 0.05, far_player)
+		if bird.mode != "walk":
+			break
+	_check(bird.pos.distance_to(feeder_at) < start_dist and bird.node.position.y >= w.feeders.TABLE_H - 0.01, "台の上に戻る")
+	for id in ["tit", "bullfinch"]:
+		_check(wildlife_view.DISPLAY_SCALE.has(id) and wildlife_view.MOVES.has(id), "%s の形と動きがある" % id)
+
+	# 餌台の近くには物を置けない
+	player.global_position = Vector3(feeder_at.x + 0.5, 0, feeder_at.y)
+	main._on_plant_tree(main.player_pos())
+	_check(hud._message.contains("餌台の近くには"), "餌台の近くには木を植えられない")
+	var visitor = main.get_node("Visitor")
+	_check(visitor._obstacles().any(func(r): return r.has_point(feeder_at)), "訪問者は餌台を回り込む")
+
+	# 餌が切れると種が消える
+	w.feeders.feeders[0].fed_day = f.day_number() - 2
+	view._timer = view.CHECK_SECONDS
+	view._process(0.0)
+	_check(view.get_child(0).find_children("FeederGrain*", "", true, false).is_empty(), "餌が切れると台の種が消える")
+	_check(main.world.feeders.hungry_count() == 1, "餌の切れた餌台を数える")
+	w.feeders.feeders[0].fed_day = f.day_number()
+	view._rebuild()
+
+	# 剪定: X で動いて、枝の束が見えて、木が小さくまとまる
+	var at := Vector2(40, -32)
+	var keep_apples: int = f.produce.apple
+	f.trees.append({"pos": at, "species": "apple", "form": "sapling", "planted_at": f._now(), "start_age": 30.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0, "pruned_year": 0})
+	f.changed.emit()
+	var tree: Dictionary = f.trees[-1]
+	player.global_position = Vector3(at.x + 1.0, 0, at.y)
+	_check(main.prune_line().contains("X で剪定できる"), "果樹のそばで案内が出る")
+	_check(main.diary_text().contains("剪定できる果樹が"), "日記に剪定が出る")
+	w.feeders.feeders[0].fed_day = f.day_number() - 2
+	_check(main.diary_text().contains("餌台の餌が切れている"), "日記に餌切れが出る")
+	w.feeders.feeders[0].fed_day = f.day_number()
+	_check(not main.diary_text().contains("餌台の餌が切れている"), "餌があれば日記に出ない")
+	var item: Dictionary = trees_view._items[-1]
+	var wide: float = item.crown.scale.x
+	_check(trees_view.find_children("PrunedBranches*", "", true, false).is_empty(), "はじめは枝の束がない")
+	var wood: int = w.kitchen.firewood
+	figure._process(10.0)
+	main.get_node("Audio").last_played = ""
+	press.call(KEY_X)
+	_check(f.is_pruned(tree) and hud._message.contains("剪定した") and w.kitchen.firewood == wood + w.PRUNE_FIRES, "X で剪定して、薪が増える")
+	_check(figure.current_action() == "prune" and figure.current_tool() == "shears", "はさみを持って切る動きをする")
+	_check(main.prune_line().contains("剪定した"), "案内が変わる")
+	var pruned_item: Dictionary = trees_view._items[-1]
+	_check(pruned_item.crown.scale.x < wide, "切ると枝の広がりが小さくなる")
+	_check(trees_view.find_children("PrunedBranches*", "", true, false).size() == 1, "切った枝が根元に束ねてある")
+	player._effect_tween.custom_step(10.0)
+	_check(main.get_node("Audio").last_played == "pick", "はさみの音が鳴る")
+	figure._process(10.0)
+	press.call(KEY_X)
+	_check(hud._message.contains("もう剪定した"), "ひと冬に 1 回")
+	f.set_season("autumn")
+	_check(main.prune_line() == "", "秋は剪定の案内が出ない")
+	_check(trees_view.find_children("PrunedBranches*", "", true, false).is_empty(), "枝の束は冬のあいだだけ")
+	var fruits_item: Dictionary = trees_view._items[-1]
+	_check(fruits_item.fruits.size() == trees_view.PRUNED_FRUITS, "剪定した木は実がたくさん見える")
+	player.global_position = Vector3(at.x + 1.0, 0, at.y)
+	press.call(KEY_E)
+	_check(hud._message.contains("剪定で +"), "収穫の文言で剪定の分が分かる")
+	figure._process(10.0)
+
+	# 片づけ(餌台は当たり判定を確かめるまで残す。餌はなくして、鳥も帰す)
+	f.trees.erase(tree)
+	f.seeds.birch = keep_seeds
+	f.produce.apple = keep_apples
+	w.cabin.materials.log = keep_logs
+	w.kitchen.firewood = 0
+	w.feeders.feeders[0].fed_day = -1
+	view._rebuild()
+	for id in ["tit", "bullfinch"]:
+		while wildlife_view.count(id) > 0:
+			wildlife_view._remove_one(id)
+	f.set_season(keep_season)
+	f.changed.emit()
+	player.global_position = keep_pos
+
+func _test_feeder_collision() -> void:
+	var player: CharacterBody3D = main.get_node("Player")
+	var at: Vector2 = main.world.feeders.feeders[0].pos
+	var south := Transform3D(Basis.IDENTITY, Vector3(at.x, 0, at.y + 2.0))
+	_check(player.test_move(south, Vector3(0, 0, -2.0)), "餌台は通り抜けられない")
+	_check(not player.test_move(south, Vector3(1.5, 0, 0)), "餌台の横は歩ける")
 
 func _test_hive_collision() -> void:
 	var player: CharacterBody3D = main.get_node("Player")

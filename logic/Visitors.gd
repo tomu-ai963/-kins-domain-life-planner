@@ -49,6 +49,7 @@ var seedlings: Seedlings
 var market: Market
 var kitchen = null      # GameWorld が設定する(鍋の中身を見る)
 var bees = null         # GameWorld が設定する(空の巣箱を見る)
+var feeders = null      # GameWorld が設定する(姿が餌台を回り込む)
 
 var visit := {}         # 今日の訪問 {day, who, kind: request/chat/help/bees, item, amount, reward: {...}, done: bool, line: int}。来ない日は who がない
 var last_reward := {}   # 直前にもらったお礼(文言用)

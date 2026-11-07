@@ -272,6 +272,12 @@ func _status_lines() -> PackedStringArray:
 	var beside: String = _main.pond_beside_line()
 	if beside != "":
 		lines.append(beside)
+	var feeder: String = _main.feeder_line()
+	if feeder != "":
+		lines.append(feeder)
+	var prune: String = _main.prune_line()
+	if prune != "":
+		lines.append(prune)
 	lines.append("Tab:%s  F1:%s" % ["持ち物を閉じる" if inventory_open else "持ち物", "操作を閉じる" if help_open else "操作"])
 	return lines
 
@@ -297,6 +303,7 @@ func _help_lines() -> PackedStringArray:
 	return PackedStringArray([
 		"─ 操作 ─",
 		"J:丸太の巣箱を作る/くり抜く/はちみつを採る  M:音量(大/中/小/消す)",
+		"L:鳥の餌台を立てる/白樺の種を置く(秋と冬)  X:果樹を剪定する(冬)",
 		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者と話す",
 		"[1]白樺 [2]果樹(押すたびに リンゴ/サクランボ/スモモ/ナシ) [3]シベリア杉 [V]種/苗木",
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク [9]トマト",

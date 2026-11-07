@@ -63,6 +63,9 @@ const FALL_FADE := 0.4      # 倒れたあと小さくなって消えるまで�
 const TRUNK_BODY_MIN := 0.1   # 幹の当たり判定の半径の下限(m)
 const TRUNK_BODY_EXTRA := 0.05  # 見た目の幹より少し太くする(めり込んで見えないように)
 const TRUNK_BODY_HEIGHT := 3.0
+const PRUNED_CROWN := 0.86   # 剪定した冬の枝の広がり(切り詰めて、少し小さくまとまる)
+const PRUNED_FRUITS := 7     # 剪定した木に見える実の数(ふだんは 5)
+const BRUSH_STICKS := 4      # 根元に束ねた、切った枝の本数
 
 var forest: Forest
 var last_fall: Tween  # 直前に倒れた木の動き(テスト用)
@@ -75,6 +78,7 @@ var _shapes := {}  # "樹種_種類" → {trunk, crown, anchors, bare}
 var _sphere_mesh := _sphere(0.5, 32)
 var _fruit_mesh := _sphere(0.5, 8)
 var _sprout_mesh := TreeShapes.sprout()
+var _stick_mesh := BoxMesh.new()
 var _sapling_mat := Look.mat(Color(0.20, 0.65, 0.20))
 var _mound_mat := Look.mat(Color(0.36, 0.25, 0.15))  # 種をまいた土の盛り上がり
 var _fruit_mats := {}  # 樹種ごとの実の材質
@@ -184,7 +188,8 @@ func _rebuild() -> void:
 		var k: Dictionary = KINDS[tree.species]
 		var h: int = absi(hash(tree.pos))
 		var shape := _shape(tree.species, h % TreeShapes.VARIANTS)
-		var item := {"tree": tree, "fruits": [], "hash": h, "anchors": shape.anchors}
+		var pruned: bool = forest.is_pruned(tree)
+		var item := {"tree": tree, "fruits": [], "hash": h, "anchors": shape.anchors, "pruned_bare": pruned and is_bare(tree.species)}
 		item.trunk = Look.mesh_node(shape.trunk, _material(tree.species + "_trunk", k.trunk))
 		if is_bare(tree.species):
 			item.crown_mesh = shape.bare
@@ -205,10 +210,13 @@ func _rebuild() -> void:
 		if forest.shows_fruit(tree):
 			if not _fruit_mats.has(tree.species):
 				_fruit_mats[tree.species] = Look.mat(FRUIT_LOOKS[tree.species].color)
-			for i in range(5):
+			for i in range(PRUNED_FRUITS if pruned else 5):
 				var fr := Look.mesh_node(_fruit_mesh, _fruit_mats[tree.species])
 				item.fruits.append(fr)
 				add_child(fr)
+		# 剪定した冬のあいだは、切った枝が根元に束ねてある
+		if item.pruned_bare:
+			add_child(_brush(tree, h))
 		# 今日水をあげた木は、根元に水色の輪(どの木が済んだか分かるように)
 		if forest.watered_today(tree):
 			item.ring = Look.ring(tree.pos, 0.6, 0.12, _water_mat)
@@ -216,6 +224,22 @@ func _rebuild() -> void:
 		item.trunk_body = _trunk_shape(tree.pos)
 		_items.append(item)
 	_layout()
+
+# 切った枝の束(カメラの側、幹の南に置く)
+func _brush(tree: Dictionary, h: int) -> Node3D:
+	var key: String = tree.species + "_brush"
+	if not _mats.has(key):
+		_mats[key] = Look.mat(KINDS[tree.species].twig.lightened(0.15))
+	var brush := Node3D.new()
+	brush.name = "PrunedBranches"
+	brush.position = Look.at(tree.pos + Vector2(0.15, 0.65))
+	brush.rotation.y = deg_to_rad(float((h >> 4) % 40) - 20.0)
+	for i in range(BRUSH_STICKS):
+		var spread: float = (i - (BRUSH_STICKS - 1) * 0.5) * 0.06
+		var stick := Look.mesh_node(_stick_mesh, _mats[key], Vector3(spread, 0.05 + (i % 2) * 0.04, 0), Vector3(0.035, 0.035, 0.85))
+		stick.rotation.y = spread * 2.5
+		brush.add_child(stick)
+	return brush
 
 # 幹の当たり判定を 1 本ぶん作る。太さは _layout が決める
 func _trunk_shape(pos: Vector2) -> CollisionShape3D:
@@ -271,6 +295,8 @@ func _layout() -> void:
 		else:
 			item.crown.position = base + Vector3(0, crown_y, 0)
 		item.crown.scale = Vector3(2.0 * r, crown_h, 2.0 * r)
+		if item.pruned_bare:
+			item.crown.scale *= PRUNED_CROWN
 		_place_fruits(item, r)
 
 # 実は葉のかたまりの表面に付ける(浮いたり埋もれたりしないように、形が持っている場所を使う)

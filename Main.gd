@@ -40,6 +40,9 @@ const GUIDE_TEXTS := {
 	"hive_bees": "巣箱に蜂が入るのを待とう(春と夏)。\nフョードルさんが来たら、分けてもらうこともできる。",
 	"honey": "はちみつが採れる。巣箱のそばで J を押す。\n市場で売れて、ストーブで料理にも使える。採っても蜂はいなくならない。",
 	"winter": "冬は地面が凍って、苗木を植えられない(白樺の種だけはまける)。\n小屋の窓辺なら、冬でも苗が育つ。",
+	"prune": "冬は果樹のそばで X を押すと剪定できる。\n次の収穫が増えて、切った枝は薪になる。",
+	"feeder": "L を押すと、丸太1本で鳥の餌台を立てられる。\n秋と冬に白樺の種を置くと、鳥が集まる。",
+	"feed": "餌台のそばで L を押すと、白樺の種を3粒置ける。\n餌は翌日まで残る。近づきすぎると鳥は逃げる。",
 	"creatures": "見かけた生き物は、Tab の持ち物で見られる。\n木や畑が増えると、来る生き物も増える。",
 }
 
@@ -107,6 +110,7 @@ func _setup_3d_only() -> void:
 	$Wildlife.setup(world.wildlife, $Player)
 	$Visitor.setup(world.visitors, $Player)
 	$Hives.setup(world.bees)
+	$Feeders.setup(world.feeders)
 	world.guide.has_people = true
 	$Audio.setup(world, $Player)
 	$Player.work_sound.connect($Audio.play)
@@ -206,6 +210,83 @@ func hive_line() -> String:
 			return "巣箱: はちみつ %dkg 採れる(J)" % floori(float(near.comb))
 		return "巣箱: 蜂がいる・はちみつをためている"
 	return "巣箱: %d箱・蜂 %d箱・採れる %d箱" % [b.hives.size(), b.occupied_count(), b.ready_count()]
+
+# ── 冬の作業(餌台と剪定) ─────────────────────────────────────
+# L: 足元に餌台を立てる / 白樺の種を置く
+func _feeder_action() -> void:
+	var fd := world.feeders
+	var pos := player_pos()
+	var front = pos + $Player.facing() * HIVE_FRONT if $Player.has_method("facing") else null
+	match fd.act(pos, front):
+		"placed":
+			_act("build", fd.last_fed.pos)
+			$HUD.show_message("鳥の餌台を立てた(丸太 -%d本)。L で白樺の種を%d粒置くと鳥が来る(秋と冬)" % [fd.LOG_COST, fd.FEED_SEEDS], 6.0)
+		"fed":
+			_act("feed", fd.last_fed.pos)
+			$HUD.show_message("餌台に白樺の種を置いた(-%d粒)。少し離れて待つと鳥が来る(餌は翌日まで残る)" % fd.FEED_SEEDS, 6.0)
+		"full":
+			$HUD.show_message("今日はもう餌を置いた(翌日まで残る)")
+		"not_season":
+			$HUD.show_message("餌を置くのは秋と冬(ほかの季節は、鳥は自分で餌を見つけられる)", 5.0)
+		"no_seed":
+			$HUD.show_message("白樺の種が%d粒いる(今 %d粒。白樺の根元に落ちるのを拾うか、市場で買える)" % [fd.FEED_SEEDS, world.forest.seeds.birch], 5.0)
+		"no_wood":
+			$HUD.show_message("丸太が%d本いる(市場で買うか、育った木を Z で伐る)" % fd.LOG_COST)
+		"too_many":
+			$HUD.show_message("餌台は%dつまで(種を置くときは、餌台のそばで L)" % fd.MAX_FEEDERS, 5.0)
+		"blocked":
+			$HUD.show_message("ここには立てられない(区画・小屋・池・木・巣箱のそばや、土地の端は空ける)", 5.0)
+
+# HUD に出す、餌台のそばの 1 行。そばにいなければ ""
+func feeder_line() -> String:
+	var fd := world.feeders
+	var near: Dictionary = fd.feeder_near(player_pos())
+	if near.is_empty():
+		return ""
+	if not fd.can_feed_now():
+		return "餌台(餌を置くのは秋と冬)"
+	if fd.fed_today(near):
+		return "餌台: 今日は餌を置いた"
+	if fd.is_fed(near):
+		return "餌台: 餌が残っている(L で足す・白樺の種 %d粒)" % fd.FEED_SEEDS
+	return "餌台: 餌がない(L で白樺の種を %d粒置く)" % fd.FEED_SEEDS
+
+# X: 足元の果樹を剪定する
+func _prune() -> void:
+	var f := world.forest
+	var pos := player_pos()
+	var result: String = world.prune(pos, REACH)
+	var fruit_name: String = f.SPECIES[f.last_prune_item].name if f.last_prune_item != "" else ""
+	match result:
+		"pruned":
+			_act("prune", f.trees[f.nearest_fruit_index(pos, REACH)].pos)
+			$HUD.show_message("%sを剪定した。次の収穫が増える。切った枝は薪にした(薪 +%d回分)" % [fruit_name, world.PRUNE_FIRES], 6.0)
+		"none":
+			$HUD.show_message("近くに果樹がない(剪定できるのはリンゴ・サクランボ・スモモ・ナシ)")
+		"preview":
+			$HUD.show_message("未来のプレビュー中は剪定できない")
+		"not_season":
+			$HUD.show_message("剪定は、葉の落ちた冬にする")
+		"young":
+			$HUD.show_message("%sはまだ若いので、切らなくてよい(実りはじめてから)" % fruit_name)
+		"done":
+			$HUD.show_message("%sはこの冬もう剪定した" % fruit_name)
+
+# HUD に出す、果樹のそばの 1 行(冬だけ)。そばにいなければ ""
+func prune_line() -> String:
+	var f := world.forest
+	if f.season != "winter" or f.time_offset_years > 0.0:
+		return ""
+	var i: int = f.nearest_fruit_index(player_pos(), REACH)
+	if i < 0:
+		return ""
+	var tree: Dictionary = f.trees[i]
+	var fruit_name: String = f.SPECIES[tree.species].name
+	if f.is_pruned(tree):
+		return "%s: この冬は剪定した(次の収穫が増える)" % fruit_name
+	if f.real_age_years(tree) < float(f.FRUITS[tree.species].age) or not f.is_established(tree):
+		return ""
+	return "%s: X で剪定できる" % fruit_name
 
 # HUD に出す、今のヒント。なければ ""
 func hint_text() -> String:
@@ -415,7 +496,8 @@ func _fruit_message(result: String) -> String:
 	var fruit_name: String = f.SPECIES[item].name
 	match result:
 		"harvested":
-			return "%sを%d%s収穫した(市場で1%s %d₽で売れる)" % [fruit_name, f.last_harvest_count, fruit.unit, fruit.unit, world.market.SELL_PRICES[item]]
+			var extra: String = "剪定で +%d%s。" % [f.last_harvest_extra, fruit.unit] if f.last_harvest_extra > 0 else ""
+			return "%sを%d%s収穫した(%s市場で1%s %d₽で売れる)" % [fruit_name, f.last_harvest_count, fruit.unit, extra, fruit.unit, world.market.SELL_PRICES[item]]
 		"not_season":
 			var seasons := PackedStringArray()
 			for s in fruit.seasons:
@@ -460,6 +542,7 @@ const PLOT_MESSAGES := {
 	"has_crop": "野菜が育っている区画は戻せない(Z で抜くか、E で収穫してから)",
 	"cabin": "小屋にかかる場所には作れない",
 	"hive": "巣箱にかかる場所には作れない",
+	"feeder": "餌台にかかる場所には作れない",
 	"limit": "新しく耕せるのは1日%d区画まで(続きは明日)",
 }
 const POND_MESSAGES := {
@@ -467,6 +550,7 @@ const POND_MESSAGES := {
 	"outside": "土地の外には掘れない",
 	"cabin": "小屋にかかる場所には掘れない",
 	"hive": "巣箱にかかる場所には掘れない",
+	"feeder": "餌台にかかる場所には掘れない",
 	"dug": "池を掘った(続きは明日)",
 	"finished": "池を掘り終えた。あとは雨で水がたまる",
 	"far": "池はひとつまで(今の池の近くで P を押すと掘る)",
@@ -532,6 +616,9 @@ func _on_plant_tree(pos: Vector2) -> void:
 	if world.bees.covers(pos, world.bees.CLEARANCE):
 		$HUD.show_message("巣箱の近くには植えられない")
 		return
+	if world.feeders.covers(pos, world.bees.CLEARANCE):
+		$HUD.show_message("餌台の近くには植えられない")
+		return
 	if selected_form == "seed" and selected_species in world.forest.SAPLING_ONLY:
 		$HUD.show_message("%sは苗木から育てる(V で苗木に切り替える。市場で買える)" % world.forest.SPECIES[selected_species].name, 5.0)
 		return
@@ -567,6 +654,9 @@ func _cabin_action() -> void:
 	if c.site == null:
 		if world.bees.hives.any(func(h): return c.rect_at(pos.round()).grow(world.bees.CLEARANCE).has_point(h.pos)):
 			$HUD.show_message("巣箱にかかる場所には建てられない")
+			return
+		if world.feeders.feeders.any(func(f): return c.rect_at(pos.round()).grow(world.bees.CLEARANCE).has_point(f.pos)):
+			$HUD.show_message("餌台にかかる場所には建てられない")
 			return
 		$HUD.show_message(CABIN_PLACE_MESSAGES[c.place(pos)], 5.0)
 		return
@@ -739,6 +829,10 @@ func diary_text() -> String:
 		todo.append("%sの頼みごとがまだ" % world.visitors.CAST[world.visitors.who()].name)
 	if world.bees.ready_count() > 0:
 		todo.append("はちみつが採れる巣箱が %d ある" % world.bees.ready_count())
+	if world.feeders.hungry_count() > 0:
+		todo.append("餌台の餌が切れている")
+	if f.season == "winter" and f.prunable_count() > 0:
+		todo.append("剪定できる果樹が %d本 ある" % f.prunable_count())
 	lines.append("今日")
 	lines.append_array(_bullets(todo, "やり残したことはない"))
 	lines.append("")
@@ -1259,6 +1353,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			world.guide.dismiss()
 		KEY_J:
 			_bee_action()
+		KEY_L:
+			_feeder_action()
+		KEY_X:
+			_prune()
 		KEY_M:
 			_next_sound_level()
 		KEY_F:

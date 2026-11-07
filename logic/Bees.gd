@@ -32,8 +32,9 @@ var forest: Forest  # GameWorld が設定する
 var land: Land
 var garden: Garden
 var cabin: Cabin
+var taken_nearby := Callable()  # (pos, radius) -> bool。GameWorld が餌台の covers を設定する(餌台は巣箱を持つので、互いに持つと解放されない)
 
-var hives := []          # [{pos: Vector2, days_done: int, last_worked, hollowed_day: int(-1 = まだ), occupied: bool, comb: float}]
+var hives := []        # [{pos: Vector2, days_done: int, last_worked, hollowed_day: int(-1 = まだ), occupied: bool, comb: float}]
 var stock := {"honey": 0}  # 採ったはちみつ(kg)。市場で売る
 var last_checked_day := 0  # はちみつと蜂の入りを数え終えた日
 var last_arrivals := 0     # 今日の確認で自然に蜂が入った巣箱の数(知らせる用・保存しない)
@@ -114,7 +115,7 @@ func is_blocked(pos: Vector2) -> bool:
 	for h in hives:
 		if h.pos.distance_to(pos) < HIVE_GAP:
 			return true
-	return false
+	return taken_nearby.is_valid() and taken_nearby.call(pos, HIVE_GAP)
 
 # その場所に巣箱がかかるか(radius は調べる範囲)。区画や木を置くときに見る
 func covers(pos: Vector2, radius := 0.6) -> bool:

@@ -139,6 +139,9 @@ func _obstacles() -> Array:
 	if visitors.bees != null:
 		for h in visitors.bees.hives:
 			list.append(Rect2(h.pos - Vector2.ONE * TREE_MARGIN, Vector2.ONE * TREE_MARGIN * 2.0))
+	if visitors.feeders != null:
+		for f in visitors.feeders.feeders:
+			list.append(Rect2(f.pos - Vector2.ONE * TREE_MARGIN, Vector2.ONE * TREE_MARGIN * 2.0))
 	var pond = visitors.garden.land.pond
 	if pond != null:
 		var r: float = visitors.garden.land.POND_RADIUS + OBSTACLE_MARGIN

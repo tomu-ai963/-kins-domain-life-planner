@@ -32,7 +32,11 @@ const SPECIES := {
 	"hare": {"name": "ノウサギ", "seasons": ALL_YEAR, "time": "dusk", "fair": false},
 	"hedgehog": {"name": "ハリネズミ", "seasons": WARM, "time": "night", "fair": false},
 	"migrant": {"name": "渡り鳥", "seasons": ALL_YEAR, "time": "any", "fair": false},
+	"tit": {"name": "シジュウカラ", "seasons": ["autumn", "winter"], "time": "day", "fair": false},
+	"bullfinch": {"name": "ウソ", "seasons": ["winter"], "time": "day", "fair": false},
 }
+const TITS_PER_FEEDER := 2       # 餌のある餌台 1 つに来るシジュウカラ(秋と冬)
+const BULLFINCHES_PER_FEEDER := 1  # 餌のある餌台 1 つに来るウソ(冬だけ。雪の上で赤い胸が映える冬の鳥)
 const MIGRANT_FLOCK := 7     # 渡り鳥の群れの数(発見の日だけ来る)
 const MIGRANT_NEAR := 9.0    # 渡り鳥は、足元からこの距離に降りる
 
@@ -42,6 +46,7 @@ var garden: Garden
 var cabin: Cabin
 var clock: DayClock
 var bees = null      # GameWorld が設定する(巣箱の上には行かない)
+var feeders = null   # GameWorld が設定する(餌があると鳥が来る)
 
 var seen := []       # 一度でも来た生き物の id
 
@@ -94,6 +99,10 @@ func _wanted(id: String) -> int:
 			return mini(2, 1 + int(plots / 40.0)) if plots >= 4 or trees[0] >= 10 else 0
 		"migrant":  # 渡り鳥の発見の日だけ
 			return MIGRANT_FLOCK if today_event == "birds" else 0
+		"tit":  # 餌台に餌があるあいだだけ
+			return TITS_PER_FEEDER * feeders.fed_count() if feeders != null else 0
+		"bullfinch":
+			return BULLFINCHES_PER_FEEDER * feeders.fed_count() if feeders != null else 0
 	return 0
 
 # 今いる生き物の数 {id: 数}。いないものは入らない
@@ -133,6 +142,8 @@ func is_free(pos: Vector2) -> bool:
 		return false
 	if bees != null and bees.covers(pos):
 		return false
+	if feeders != null and feeders.covers(pos):
+		return false
 	return land.pond == null or pos.distance_to(land.pond) > land.POND_RADIUS
 
 # その生き物の住みか。木のそば・畑・区画など。near は足元(渡り鳥は足元の近くに降りる)
@@ -155,6 +166,10 @@ func home_for(id: String, rng: RandomNumberGenerator, near: Vector2) -> Vector2:
 			# 土地の内側へ少し離れたところ。足元が中心なら東へ
 			var inward: Vector2 = -near.normalized() if near.length() > 1.0 else Vector2.RIGHT
 			return near + inward * MIGRANT_NEAR
+		"tit", "bullfinch":  # 餌のある餌台
+			var fed: Array = feeders.feeders.filter(func(f): return feeders.is_fed(f)) if feeders != null else []
+			if not fed.is_empty():
+				return fed[rng.randi_range(0, fed.size() - 1)].pos
 	return near
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
