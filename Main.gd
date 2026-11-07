@@ -356,6 +356,38 @@ const VISITOR_CHATS := {
 		"小屋の窓辺なら、冬でも苗が育つそうですね。\n春が楽しみだ。",
 	],
 }
+# 親しくなると増える言葉。[顔なじみ, 親しい, 家族のよう] の順で、その段階から加わる
+const VISITOR_CHATS_CLOSE := {
+	"nina": [
+		["このあいだの畑、よく育ってたね。\n手をかけてるのが分かるよ。", "うちの畑はね、母の代からなの。\n土は急には良くならないから。"],
+		["疲れた顔をしてる。\n無理しないで、ちゃんと食べるんだよ。", "あなたが来てから、この辺りが明るくなった気がする。\n本当よ。"],
+		["もう、うちの子みたいなものだね。\n困ったら、まず私に言いなさい。", "春になったら、一緒に種をまこうか。\n二人だと早いよ。"],
+	],
+	"fyodor": [
+		["蜂はね、人の顔を覚えるそうだ。\n本当かどうかは分からんがね。", "土地を見れば、持ち主が分かるものさ。\nいい土地になってきた。"],
+		["若いころは、わしも木を植えて回ったよ。\n今じゃ見上げるほどだ。", "杉は急がない木だ。\n孫の代のために植えるようなものさ。"],
+		["あんたになら、蜂のことを全部教えてもいいな。\nゆっくり、少しずつな。", "わしの巣箱も、いつかあんたに任せたいものだ。\nまあ、まだ当分は元気だがね。"],
+	],
+	"tanya": [
+		["今日ね、学校で土地の絵を描いたんだ。\nここの木も描いたよ!", "お母さんがね、ここに来るなら遅くなるなって。\nでも、まだ大丈夫!"],
+		["ねえ、木の名前を教えて。\n全部覚えるから!", "大きくなったら、私もこんな土地を持つんだ。\nその時は手伝ってね。"],
+		["ここにいると、うちにいるみたい。\nまた来ていい?", "秘密だよ。\nここの池のそばが、いちばん好きな場所なんだ。"],
+	],
+	"pavel": [
+		["この道を通るのが楽しみになりました。\n土地が変わっていくのが見えるので。", "配達先で、こちらの話をよく聞かれますよ。\n評判がいいんです。"],
+		["実は私も、小さな畑を持ちたいと思っていまして。\nいつか相談に乗ってください。", "仕事の合間に寄るのが、いい息抜きなんです。\nお邪魔でなければ。"],
+		["遠くの町の話をしましょうか。\nでも、やはりここがいちばん落ち着きます。", "何かあれば、いつでも声をかけてください。\n荷物より先に駆けつけますよ。"],
+	],
+}
+# 贈り物を持ってきたときの言葉
+const VISITOR_GIFTS := {
+	"nina": "うちの分が余ったから、%sを持ってきたの。\nもらってくれる?",
+	"fyodor": "今年の蜜だ。%s持っていきなさい。\n遠慮はいらんよ。",
+	"tanya": "お母さんと作ったの!\n%sあげるね!",
+	"pavel": "配達の帰りに、%sを分けてもらいました。\nよろしければ使ってください。",
+}
+# 親しさの段階が上がったときの言葉(段階 1〜3)
+const VISITOR_LEVEL_UP := ["", "%sと顔なじみになった", "%sと親しくなった", "%sと家族のような仲になった"]
 const VISITOR_REQUESTS := {
 	"nina": "%sを%s分けてもらえない?\nお礼に%sをあげる。",
 	"fyodor": "%sを%s譲ってくれないか。\nお礼に%sを持ってきたんだ。",
@@ -385,7 +417,36 @@ func reward_text(r: Dictionary) -> String:
 			return "%s %dつ" % [world.garden.CROPS[r.kind].seed_name, r.count]
 		"seedling":
 			return "%sの苗 %d鉢" % [world.garden.CROPS[r.kind].name, r.count]
+		"item":
+			return _amount_text(r.item, r.count)
+		"firewood":
+			return "薪 %d回分" % r.count
 	return "%s₽" % $HUD._money_text(int(r.amount))
+
+# 話すだけの日に出る言葉。親しくなった段階までの言葉が加わる
+func visitor_chat_lines(who: String) -> Array:
+	var lines: Array = VISITOR_CHATS[who].duplicate()
+	var level: int = world.visitors.level_of(who)
+	for i in range(level):
+		lines.append_array(VISITOR_CHATS_CLOSE[who][i])
+	return lines
+
+# 親しさの段階が上がっていたら、その知らせ(1 回だけ)。なければ ""
+func _take_level_up() -> String:
+	var v := world.visitors
+	if v.last_level_up == "":
+		return ""
+	var who: String = v.last_level_up
+	v.last_level_up = ""
+	return VISITOR_LEVEL_UP[v.level_of(who)] % v.CAST[who].name
+
+# HUD の持ち物に出す、近所の人との親しさ
+func neighbors_line() -> String:
+	var v := world.visitors
+	var parts := PackedStringArray()
+	for who in v.ORDER:
+		parts.append("%s %s" % [v.CAST[who].name, v.LEVEL_NAMES[v.level_of(who)]])
+	return _rows(parts, 2)
 
 # 訪問者の言葉
 func visitor_text() -> String:
@@ -396,10 +457,12 @@ func visitor_text() -> String:
 	if v.has_help():
 		var winter: bool = v.visit.reward.type == "money"
 		return VISITOR_HELP[who][1 if winter else 0] % reward_text(v.visit.reward)
+	if v.has_gift():
+		return VISITOR_GIFTS[who] % reward_text(v.visit.reward)
 	if v.has_request():
 		var item: String = v.visit.item
 		return VISITOR_REQUESTS[who] % [produce_name(item), "%d%s" % [v.visit.amount, produce_unit(item)], reward_text(v.visit.reward)]
-	var lines: Array = VISITOR_CHATS[who]
+	var lines: Array = visitor_chat_lines(who)
 	var line: String = lines[int(v.visit.line) % lines.size()]
 	if line == "{tomorrow}":
 		var rainy: bool = world.tomorrow_rain()
@@ -426,7 +489,7 @@ func visitor_rows() -> Array:
 	if v.has_bees():
 		rows.append({"id": "receive_bees", "text": "ありがとう(巣箱に入れてもらう)", "column": 0})
 		rows.append({"id": "close", "text": "今はいい(C / Esc)", "column": 0})
-	elif v.has_help():
+	elif v.has_help() or v.has_gift():
 		rows.append({"id": "receive", "text": "ありがとう(%sをもらう)" % reward_text(v.visit.reward), "column": 0})
 		rows.append({"id": "close", "text": "今はいい(C / Esc)", "column": 0})
 	elif v.has_request():
@@ -446,27 +509,32 @@ func _visitor_action(id: String) -> void:
 		return
 	if id == "receive_bees":
 		if v.receive_bees() == "received":
-			$HUD.show_message("フョードルさんが巣箱に蜂を入れてくれた。はちみつがたまるのを待とう", 6.0)
+			$HUD.show_message(_with_level_up("フョードルさんが巣箱に蜂を入れてくれた。はちみつがたまるのを待とう"), 6.0)
 		_close_shop()
 		return
 	if id == "receive":
 		var person: String = v.CAST[who].name
 		if v.receive_help() == "received":
 			_sfx("coin")
-			$HUD.show_message("%sから%sをもらった" % [person, reward_text(v.last_reward)], 6.0)
+			$HUD.show_message(_with_level_up("%sから%sをもらった" % [person, reward_text(v.last_reward)]), 6.0)
 			_close_shop()
 			_act("pick", $Visitor.ground_pos(), "radish")
 		return
 	var item: String = v.visit.item
 	if v.give() == "given":
 		_sfx("coin")
-		$HUD.show_message("%s(%sをもらった)" % [VISITOR_THANKS[who], reward_text(v.last_reward)], 6.0)
+		$HUD.show_message(_with_level_up("%s(%sをもらった)" % [VISITOR_THANKS[who], reward_text(v.last_reward)]), 6.0)
 		_close_shop()
 		_act("pick", $Visitor.ground_pos(), item)
 		return
 	var need: int = int(v.visit.amount) - world.market.count_of(item)
 	var ripe := "。畑に収穫できるものがある" if world.garden.crops.any(func(c): return c.kind == item and world.garden.is_ripe(c)) else ""
 	$HUD.show_message("%sがあと%d%s足りない%s" % [produce_name(item), need, produce_unit(item), ripe], 5.0)
+
+# 文言のあとに、親しくなった知らせを足す
+func _with_level_up(text: String) -> String:
+	var up := _take_level_up()
+	return text if up == "" else "%s\n%s" % [text, up]
 
 # HUD に出す、訪問者の 1 行。いなければ ""
 func visitor_line() -> String:
@@ -477,7 +545,7 @@ func visitor_line() -> String:
 	var errand := "話がしたいらしい"
 	if v.has_request():
 		errand = "頼みごとがあるらしい"
-	elif v.has_help():
+	elif v.has_help() or v.has_gift():
 		errand = "渡したいものがあるらしい"
 	elif v.has_bees():
 		errand = "蜂を分けてくれるらしい"
@@ -1183,7 +1251,8 @@ func good_name(g: Dictionary) -> String:
 # 右の画面の見出し
 func shop_title() -> String:
 	if _panel == "visitor":
-		return world.visitors.CAST[world.visitors.who()].name
+		var v := world.visitors
+		return "%s(%s)" % [v.CAST[v.who()].name, v.LEVEL_NAMES[v.level_of(v.who())]]
 	if _panel == "table":
 		return "腰掛け(クリックか 矢印キー + Enter で選ぶ)"
 	return "ストーブ(クリックか 矢印キー + Enter で選ぶ)" if _panel == "kitchen" else "市場(クリックか 矢印キー + Enter で選ぶ)"
@@ -1270,6 +1339,9 @@ func _close_shop() -> void:
 		$Player.stand_up()
 	if was_chat:
 		world.visitors.finish_chat()  # 話し終えると帰っていく
+		var up := _take_level_up()
+		if up != "":
+			$HUD.show_message(up, 6.0)
 	_panel = "market"
 
 func _on_shop_action(id: String) -> void:

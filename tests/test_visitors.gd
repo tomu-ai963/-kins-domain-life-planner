@@ -26,6 +26,9 @@ func _initialize() -> void:
 	_test_chat()
 	_test_stable_within_day()
 	_test_save()
+	_test_closeness()
+	_test_gifts()
+	_test_closeness_save()
 	_remove_save()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -60,6 +63,134 @@ func _request_day(w: GameWorld) -> int:
 			if v.kind == "request":
 				return d
 	return -1
+
+func _visit_now(w: GameWorld, who: String, kind: String, extra := {}) -> void:
+	var v := {"day": w.forest.day_number(), "who": who, "kind": kind, "done": false, "line": 0}
+	v.merge(extra)
+	w.visitors.visit = v
+
+func _test_closeness() -> void:
+	print("親しさ")
+	var w := _world()
+	var vs := w.visitors
+	for id in Visitors.CAST:
+		_check(vs.level_of(id) == 0, "%s は顔見知りから" % id)
+	_check(Visitors.LEVELS.size() == Visitors.LEVEL_NAMES.size() and Visitors.LEVELS.size() == Visitors.GIFT_CHANCE.size(), "段階の数がそろっている")
+	# 話すと +1
+	_visit_now(w, "nina", "chat")
+	vs.finish_chat()
+	_check(vs.closeness.nina == Visitors.POINTS_CHAT and vs.level_of("nina") == 0 and vs.last_level_up == "", "話すと少し親しくなる")
+	vs.finish_chat()
+	_check(vs.closeness.nina == Visitors.POINTS_CHAT, "二重に増えない")
+	_check(vs.closeness.pavel == 0, "ほかの人は変わらない")
+	# 頼みごとに応えると +3
+	w.garden.produce.tomato = 5
+	_visit_now(w, "nina", "request", {"item": "tomato", "amount": 5, "reward": {"type": "money", "amount": 260}})
+	_check(vs.give() == "given" and vs.closeness.nina == Visitors.POINTS_CHAT + Visitors.POINTS_REQUEST, "頼みごとに応えると、もっと親しくなる")
+	_check(vs.level_of("nina") == 1 and vs.last_level_up == "nina", "段階が上がると覚える")
+	# 足りないときは増えない
+	vs.last_level_up = ""
+	w.garden.produce.tomato = 1
+	_visit_now(w, "fyodor", "request", {"item": "tomato", "amount": 5, "reward": {"type": "money", "amount": 260}})
+	_check(vs.give() == "short" and vs.closeness.fyodor == 0, "渡せなければ増えない")
+	# 断っても減らない(頼みごとは finish_chat では帰らない)
+	var before: int = vs.closeness.nina
+	_visit_now(w, "nina", "request", {"item": "tomato", "amount": 5, "reward": {"type": "money", "amount": 260}})
+	vs.finish_chat()
+	_check(vs.closeness.nina == before and vs.is_here(), "断っても減らない")
+	# 蜂を分けてもらうと +2
+	var w2 := _world("spring")
+	w2.bees.hives.append({"pos": Vector2(20, 20), "days_done": 3, "last_worked": "", "hollowed_day": 0, "occupied": false, "comb": 0.0})
+	_visit_now(w2, "fyodor", "bees")
+	_check(w2.visitors.receive_bees() == "received" and w2.visitors.closeness.fyodor == Visitors.POINTS_BEES, "蜂を分けてもらうと親しくなる")
+	# 段階の境目
+	for i in range(Visitors.LEVELS.size()):
+		vs.closeness.tanya = Visitors.LEVELS[i]
+		_check(vs.level_of("tanya") == i, "%d 点で段階 %d" % [Visitors.LEVELS[i], i])
+	vs.closeness.tanya = Visitors.LEVELS[-1] + 100
+	_check(vs.level_of("tanya") == Visitors.LEVELS.size() - 1, "いちばん上で止まる")
+	# 頼みごとに応え続けたときの日数: 同じ人は 10 日に 1 回
+	var visits_to_top: int = ceili(float(Visitors.LEVELS[-1]) / Visitors.POINTS_REQUEST)
+	_check(visits_to_top * 10 == 50, "応え続けると、家族のようまで 50 日")
+
+func _test_gifts() -> void:
+	print("贈り物")
+	var w := _world()
+	var vs := w.visitors
+	# 渡せるものがない日ばかりで数える(渡せるものがあると頼みごとになるので)
+	var count_gifts := func(level: int) -> Array:
+		for id in Visitors.CAST:
+			vs.closeness[id] = Visitors.LEVELS[level]
+		var gifts := 0
+		var chats := 0
+		w.market.money = 100000  # 手詰まりにしない
+		for d in range(20000, 22000):
+			if not Visitors.is_visit_day(d):
+				continue
+			var v: Dictionary = vs._generate(d)
+			if v.kind == "gift":
+				gifts += 1
+			elif v.kind == "chat":
+				chats += 1
+		return [gifts, chats]
+	var none: Array = count_gifts.call(0)
+	_check(none[0] == 0 and none[1] > 0, "顔見知りのうちは贈り物を持ってこない")
+	var some: Array = count_gifts.call(1)
+	var many: Array = count_gifts.call(3)
+	var some_rate: float = float(some[0]) / (some[0] + some[1])
+	var many_rate: float = float(many[0]) / (many[0] + many[1])
+	_check(some_rate > 0.05 and some_rate < 0.3, "顔なじみは、ときどき持ってくる(%.0f%%)" % (some_rate * 100.0))
+	_check(many_rate > some_rate and many_rate < 0.5, "親しいほど多い(%.0f%%)" % (many_rate * 100.0))
+	# 中身と受け取り
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var seed_gift: Dictionary = vs._gift_reward("nina", rng)
+	_check(seed_gift.type == "crop_seed" and "autumn" in Garden.CROPS[seed_gift.kind].seasons, "ニーナさんは今まける種をくれる")
+	w.forest.season = "winter"
+	_check(vs._gift_reward("nina", rng) == {"type": "item", "item": "pickles", "count": 2}, "冬のニーナさんは塩漬け")
+	w.forest.season = "autumn"
+	var cases := {
+		"fyodor": func(): return int(w.bees.stock.honey) == 1,
+		"tanya": func(): return int(w.kitchen.stock.pirozhki) == 3,
+		"pavel": func(): return w.kitchen.firewood == 2,
+	}
+	for person in cases:
+		vs.closeness[person] = 0
+		_visit_now(w, person, "gift", {"reward": vs._gift_reward(person, rng)})
+		_check(vs.has_gift() and not vs.has_request(), "%s は贈り物を持っている" % person)
+		_check(vs.receive_help() == "received" and cases[person].call(), "%s の贈り物を受け取れる" % person)
+		_check(not vs.is_here() and vs.closeness[person] == Visitors.POINTS_CHAT, "%s は帰っていき、少し親しくなる" % person)
+	_check(vs.receive_help() == "none", "二重に受け取れない")
+	# 断ってもいい
+	_visit_now(w, "pavel", "gift", {"reward": {"type": "firewood", "count": 2}})
+	vs.finish_chat()
+	_check(vs.has_gift() and w.kitchen.firewood == 2, "受け取らなければ増えない")
+	# 手詰まりのときは、贈り物より先に助けてくれる
+	var w2 := _world()
+	w2.market.money = 0
+	w2.visitors.closeness.nina = Visitors.LEVELS[-1]
+	var helped := true
+	for d in range(20000, 20100):
+		if Visitors.is_visit_day(d) and w2.visitors._generate(d).kind != "help":
+			helped = false
+	_check(helped, "手詰まりなら、親しくても分けてくれる形のまま")
+
+func _test_closeness_save() -> void:
+	print("親しさのセーブ")
+	var w := _world()
+	w.visitors.closeness.tanya = 9
+	_visit_now(w, "tanya", "gift", {"reward": {"type": "item", "item": "pirozhki", "count": 3}})
+	w.save_game()
+	var w2 := GameWorld.new()
+	w2.save_path = TEST_SAVE
+	w2.load_game()
+	_check(w2.visitors.closeness.tanya == 9 and w2.visitors.level_of("tanya") == 2, "親しさが残る")
+	_check(w2.visitors.closeness.nina == 0, "ほかの人も読める")
+	var plain := Visitors.new()
+	plain.from_save({"closeness": {"nina": 4, "gone": 9}})
+	_check(plain.closeness.nina == 4 and not plain.closeness.has("gone") and plain.closeness.pavel == 0, "知らない人の記録は無視する")
+	plain.from_save({})
+	_check(plain.closeness.nina == 0, "記録がないセーブは、みんな顔見知りから")
 
 func _test_schedule() -> void:
 	print("来る日")

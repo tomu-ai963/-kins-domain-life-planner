@@ -589,6 +589,7 @@ func _test_3d_cabin_collision() -> void:
 	_test_work_motions()
 	_test_wildlife_view()
 	_test_visitor_view()
+	_test_closeness_view()
 	_test_hint_panel()
 	_test_hive_view()
 	_test_fruit_view()
@@ -1620,6 +1621,89 @@ func _test_table_view() -> void:
 	player.global_position = keep_pos
 	view._process(0.0)
 
+# 親しさ: 見出しと持ち物に出て、言葉が増え、贈り物をくれて、上がると知らせる
+func _test_closeness_view() -> void:
+	print("近所の人との親しさ")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var player: CharacterBody3D = main.get_node("Player")
+	var vs = w.visitors
+	var keep_visit: Dictionary = vs.visit.duplicate(true)
+	var today: int = w.forest.day_number()
+	var keep_close: Dictionary = vs.closeness.duplicate()
+	var open := func(kind: String, extra := {}) -> void:
+		var v := {"day": today, "who": "nina", "kind": kind, "done": false, "line": 0}
+		v.merge(extra)
+		vs.visit = v
+		vs.changed.emit()
+		main._panel = "visitor"
+		player.set_physics_process(false)
+		hud.open_shop()
+	for id in vs.closeness:
+		vs.closeness[id] = 0
+	open.call("chat")
+	_check(main.shop_title() == "ニーナさん(顔見知り)", "見出しに親しさが出る")
+	_check(main.visitor_chat_lines("nina").size() == main.VISITOR_CHATS.nina.size(), "顔見知りの言葉はそのまま")
+	_check(main.neighbors_line().contains("ニーナさん 顔見知り") and main.neighbors_line().contains("パーヴェルさん 顔見知り"), "持ち物に全員の親しさが出る")
+	hud.close_shop()
+	hud.inventory_open = true
+	_check(hud.status_text().contains("近所の人:"), "Tab で見られる")
+	hud.inventory_open = false
+	hud.open_shop()
+	# 段階が上がると言葉が増える。どの人のどの段階にも言葉がある
+	for who in vs.CAST:
+		var base: int = main.VISITOR_CHATS[who].size()
+		_check(main.VISITOR_CHATS_CLOSE[who].size() == vs.LEVELS.size() - 1, "%s の段階ごとの言葉がある" % who)
+		for level in range(1, vs.LEVELS.size()):
+			vs.closeness[who] = vs.LEVELS[level]
+			_check(main.visitor_chat_lines(who).size() == base + level * 2, "%s は段階 %d で言葉が増える" % [who, level])
+			for line in main.VISITOR_CHATS_CLOSE[who][level - 1]:
+				_check(line.contains("\n"), "2 行で読める: %s" % line.substr(0, 8))
+		vs.closeness[who] = 0
+	vs.closeness.nina = vs.LEVELS[1]
+	vs.visit.line = main.VISITOR_CHATS.nina.size()  # 増えた言葉の 1 つ目
+	_check(main.visitor_text() == main.VISITOR_CHATS_CLOSE.nina[0][0], "増えた言葉を話す")
+	vs.closeness.nina = vs.LEVELS[1] - 1
+	# 話し終えると、段階が上がったことを知らせる
+	vs.visit.line = 0
+	main._close_shop()
+	_check(vs.closeness.nina == vs.LEVELS[1] and hud._message.contains("顔なじみになった"), "親しくなると知らせる")
+	_check(vs.last_level_up == "", "知らせは 1 回だけ")
+	# 頼みごとに応えて上がると、お礼の文言に足す
+	w.garden.produce.tomato = 5
+	vs.closeness.nina = vs.LEVELS[2] - 1
+	open.call("request", {"item": "tomato", "amount": 5, "reward": {"type": "money", "amount": 260}})
+	main._on_shop_action("give")
+	_check(hud._message.contains("260₽をもらった") and hud._message.contains("親しくなった"), "お礼といっしょに知らせる")
+	# 贈り物
+	var gift := {"type": "item", "item": "pickles", "count": 2}
+	var keep_pickles: int = w.kitchen.stock.pickles
+	open.call("gift", {"reward": gift})
+	_check(main.visitor_text().contains("きゅうりの塩漬け 2瓶"), "贈り物の中身を話す")
+	_check(main.visitor_line().contains("ニーナさん"), "HUD に来ていることが出る")
+	_check(main.visitor_rows().any(func(r): return r.id == "receive" and r.text.contains("塩漬け 2瓶")), "受け取る行が出る")
+	var view = main.get_node("Visitor")
+	view._state = "wait"
+	view._show_mark()
+	var marked: Material = view._mark.get_child(0).material_override
+	_check(marked == view._request_mat, "贈り物があると橙の印")
+	main._on_shop_action("receive")
+	_check(w.kitchen.stock.pickles == keep_pickles + 2 and hud._message.contains("もらった") and not vs.is_here(), "受け取ると増えて帰っていく")
+	w.kitchen.stock.pickles = keep_pickles
+	# 薪の贈り物の文言
+	_check(main.reward_text({"type": "firewood", "count": 2}) == "薪 2回分", "薪の文言")
+	_check(main.reward_text({"type": "item", "item": "honey", "count": 1}) == "はちみつ 1kg", "はちみつの文言")
+	# 片づけ
+	for id in keep_close:
+		vs.closeness[id] = keep_close[id]
+	vs.last_level_up = ""
+	vs.visit = keep_visit
+	vs.changed.emit()
+	if hud.is_shop_open():
+		main._close_shop()
+	player.set_physics_process(true)
+	main._panel = "market"
+
 # 市場のページ: どのページも画面に収まり、全部の品にたどり着ける
 func _test_market_pages() -> void:
 	print("市場のページ")
@@ -1812,7 +1896,7 @@ func _test_visitor_view() -> void:
 	press.call(KEY_C)
 	_check(hud.is_shop_open() and main._panel == "visitor" and not player.is_physics_processing(), "C で話す画面が開き、歩かなくなる")
 	_check(figure.current_action() == "wave", "話しかけると手を振る")
-	_check(main.shop_title() == "ニーナさん", "見出しが名前になる")
+	_check(main.shop_title().begins_with("ニーナさん"), "見出しが名前になる")
 	var text: String = main.shop_header()
 	_check(text.contains("トマト") and text.contains("5kg") and text.contains("260₽"), "何を頼むかが分かる: %s" % text)
 	_check(not hud.status_text().contains("─ 持ち物 ─"), "話す画面には持ち物を重ねない")
@@ -1846,7 +1930,7 @@ func _test_visitor_view() -> void:
 	_check(view._mark.get_child(0).material_override == view._chat_mat, "話すだけの日は白い印")
 	_check(view._figure.get_node("Hips/Upper/Head").get_child_count() > 2, "帽子などが付いている")
 	press.call(KEY_C)
-	_check(main.shop_title() == "パーヴェルさん" and main.shop_header().contains("明日は"), "パーヴェルさんは明日の空模様を話す: %s" % main.shop_header())
+	_check(main.shop_title().begins_with("パーヴェルさん") and main.shop_header().contains("明日は"), "パーヴェルさんは明日の空模様を話す: %s" % main.shop_header())
 	_check(main.visitor_rows().any(func(r): return r.id == "chat_end"), "別れの行が出る")
 	main._on_shop_action("chat_end")
 	_check(not hud.is_shop_open() and not vs.is_here(), "話し終えると用が済む")

@@ -7,6 +7,8 @@ extends RefCounted
 # 収入の手段が尽きているとき(is_stuck)だけは、種を少し分けてくれる(冬はまける種がないのでお金)。
 # フョードルさん(養蜂家)は、空の巣箱があれば蜂を分けてくれる(kind = bees)。
 # 今日の中身は最初に決めた時点で保存する(収穫や売買で中身が変わらないように)。
+# 親しさ: 人ごとに、話すと +1、蜂を分けてもらうと +2、頼みごとに応えると +3。断っても減らない。
+# 親しくなるほど話す言葉が増え(Main)、話すだけの日にときどき贈り物を持ってくる(kind = gift)。
 # 文言は Main、見た目は view/ が決める
 const Forest = preload("res://logic/Forest.gd")
 const Garden = preload("res://logic/Garden.gd")
@@ -43,6 +45,14 @@ const ASK := {
 }
 const BEEKEEPER := "fyodor"  # 蜂を分けてくれる人
 
+# 親しさ。LEVELS[n] 以上で段階 n。同じ人は 10 日に 1 回来るので、頼みごとに応え続けると 顔なじみ 10 日・親しい 30 日・家族のよう 50 日(仮の数字)
+const LEVELS := [0, 3, 8, 15]
+const LEVEL_NAMES := ["顔見知り", "顔なじみ", "親しい", "家族のよう"]
+const POINTS_CHAT := 1
+const POINTS_BEES := 2
+const POINTS_REQUEST := 3
+const GIFT_CHANCE := [0.0, 0.15, 0.25, 0.35]  # 話すだけの日に贈り物を持ってくる割合(段階ごと。仮の数字)
+
 var forest: Forest      # GameWorld が設定する
 var garden: Garden
 var seedlings: Seedlings
@@ -53,6 +63,27 @@ var feeders = null      # GameWorld が設定する(姿が餌台を回り込む)
 
 var visit := {}         # 今日の訪問 {day, who, kind: request/chat/help/bees, item, amount, reward: {...}, done: bool, line: int}。来ない日は who がない
 var last_reward := {}   # 直前にもらったお礼(文言用)
+var closeness := {}     # 人ごとの親しさの点数 {who: 点}
+var last_level_up := "" # 直前に親しさの段階が上がった人(文言用。読むと Main が消す)
+
+func _init() -> void:
+	for id in CAST:
+		closeness[id] = 0
+
+# 親しさの段階(0〜3)
+func level_of(person: String) -> int:
+	var points: int = int(closeness.get(person, 0))
+	var level := 0
+	for i in range(LEVELS.size()):
+		if points >= int(LEVELS[i]):
+			level = i
+	return level
+
+func _gain(person: String, points: int) -> void:
+	var before := level_of(person)
+	closeness[person] = int(closeness.get(person, 0)) + points
+	if level_of(person) > before:
+		last_level_up = person
 
 static func is_visit_day(day: int) -> bool:
 	return (day % VISIT_CYCLE) in VISIT_DAYS
@@ -141,17 +172,40 @@ func receive_bees() -> String:
 	if not bees.add_colony():
 		return "no_hive"
 	visit.done = true
+	_gain(who(), POINTS_BEES)
 	dirty.emit()
 	changed.emit()
 	return "received"
 
-# 分けてくれるものを受け取る。結果: received / none
+func has_gift() -> bool:
+	return is_here() and visit.kind == "gift"
+
+# 贈り物の中身。人ごとに決まっている。ニーナさんは今まける種(冬は塩漬け)
+func _gift_reward(person: String, rng: RandomNumberGenerator) -> Dictionary:
+	match person:
+		"nina":
+			var sowable := []
+			for kind in Garden.CROPS:
+				var crop: Dictionary = Garden.CROPS[kind]
+				if forest.season in crop.seasons and not crop.get("seedling_only", false):
+					sowable.append(kind)
+			if sowable.is_empty():
+				return {"type": "item", "item": "pickles", "count": 2}
+			return {"type": "crop_seed", "kind": sowable[rng.randi_range(0, sowable.size() - 1)], "count": 2}
+		"fyodor":
+			return {"type": "item", "item": "honey", "count": 1}
+		"tanya":
+			return {"type": "item", "item": "pirozhki", "count": 3}
+	return {"type": "firewood", "count": 2}
+
+# 分けてくれるもの(手詰まりのとき)や贈り物を受け取る。結果: received / none
 func receive_help() -> String:
-	if not has_help():
+	if not has_help() and not has_gift():
 		return "none"
 	_receive(visit.reward)
 	last_reward = visit.reward
 	visit.done = true
+	_gain(who(), POINTS_CHAT)
 	market.changed.emit()
 	forest.changed.emit()
 	dirty.emit()
@@ -173,6 +227,10 @@ func _generate(day: int) -> Dictionary:
 		return v
 	var item: String = _choose_item(who)
 	if item == "" or rng.randf() < CHAT_CHANCE:
+		var chance: float = GIFT_CHANCE[level_of(who)]
+		if chance > 0.0 and rng.randf() < chance:
+			v.kind = "gift"
+			v.reward = _gift_reward(who, rng)
 		return v
 	var amount: int = mini(int(ASK[item]), available(item))
 	v.kind = "request"
@@ -239,6 +297,7 @@ func give() -> String:
 	_receive(visit.reward)
 	last_reward = visit.reward
 	visit.done = true
+	_gain(who(), POINTS_REQUEST)
 	market.changed.emit()
 	forest.changed.emit()
 	dirty.emit()
@@ -253,20 +312,31 @@ func _receive(r: Dictionary) -> void:
 			garden.seeds[r.kind] = int(garden.seeds[r.kind]) + int(r.count)
 		"seedling":
 			seedlings.ready[r.kind] = int(seedlings.ready[r.kind]) + int(r.count)
+		"item":
+			var pile: Dictionary = market.pile_of(r.item)
+			var key: String = market.key_of(r.item)
+			pile[key] = int(pile.get(key, 0)) + int(r.count)
+		"firewood":
+			kitchen.add_firewood(int(r.count))
 
 # 話し終えた(話すだけの日)。帰っていく
 func finish_chat() -> void:
 	if is_here() and visit.kind == "chat":
 		visit.done = true
+		_gain(who(), POINTS_CHAT)
 		dirty.emit()
 		changed.emit()
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
-	return {"visit": visit}
+	return {"visit": visit, "closeness": closeness}
 
 func from_save(d: Dictionary) -> void:
 	visit = {}
+	# 親しさの記録がないセーブは、みんな顔見知りから
+	var saved = d.get("closeness", {})
+	for id in CAST:
+		closeness[id] = int(saved.get(id, 0)) if typeof(saved) == TYPE_DICTIONARY else 0
 	var v = d.get("visit", {})
 	if typeof(v) != TYPE_DICTIONARY or not v.has("day"):
 		return
