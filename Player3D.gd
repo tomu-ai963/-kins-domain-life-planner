@@ -40,6 +40,7 @@ const WORK_REACH := 1.0      # 作業で物が飛ぶ場所は、体からこの�
 @onready var _lantern_light: OmniLight3D = $LanternLight
 
 var speed_scale := 1.0    # 歩く速さの倍率(雪かき。Main が毎フレーム決める)
+var move_input := Vector2.ZERO  # タッチのスティックの傾き(長さ 0〜1。上 = 北 = -y)
 var _cam_dist := 28.0
 var shadow_light: DirectionalLight3D  # Main が太陽を渡す
 var _indoors := false
@@ -74,6 +75,8 @@ func _physics_process(delta: float) -> void:
 	if Input.is_key_pressed(KEY_LEFT)  or Input.is_key_pressed(KEY_A): dir.x -= 1
 	if Input.is_key_pressed(KEY_RIGHT) or Input.is_key_pressed(KEY_D): dir.x += 1
 	dir = dir.normalized()
+	if dir == Vector3.ZERO:
+		dir = Vector3(move_input.x, 0.0, move_input.y)  # タッチのスティック。傾きで速さが変わる
 	velocity = dir * SPEED * speed_scale
 	move_and_slide()
 	position.x = clampf(position.x, -WALK_LIMIT, WALK_LIMIT)
@@ -193,11 +196,12 @@ func _move_pose(offset: Vector3, basis_to: Basis, seconds: float) -> void:
 	_pose.tween_property(_body, "position", offset, seconds)
 	_pose.tween_property(_body, "quaternion", basis_to.get_rotation_quaternion(), seconds)
 
-func _zoom(factor: float) -> void:
+func zoom(factor: float) -> void:
 	if _indoors:
 		_indoor_dist = clampf(_indoor_dist * factor, CAM_DIST_MIN, INDOOR_CAM_MAX)
 	else:
 		_cam_dist = clampf(_cam_dist * factor, CAM_DIST_MIN, CAM_DIST_MAX)
+	update_shadow_distance()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey \
@@ -207,10 +211,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		plant_tree.emit(ground_pos())
 	elif event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_zoom(0.85)
+			zoom(0.85)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_zoom(1.0 / 0.85)
-		update_shadow_distance()
+			zoom(1.0 / 0.85)
 
 func update_shadow_distance() -> void:
 	if shadow_light != null:

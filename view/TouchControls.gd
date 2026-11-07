@@ -1,0 +1,345 @@
+extends CanvasLayer
+
+# ── タッチ操作 ───────────────────────────────────────────────
+# 左: 触った場所に出るスティックで歩く。右下: よく使う作業のボタン。ほかの操作はメニューに並べる。
+# ボタンはキーの入力を送るだけで、何が起きるかは Main が決める(キーボードと同じ処理を通る)。
+# ヒントが「H で〜」と書いても分かるよう、ボタンにはキーの名前も出す。
+# Godot の Button は最初の指にしか反応せず、歩きながら押せないので、指ごとの当たり判定をここで持つ。
+# タッチ画面のときだけ出し、物理キーを押すと消す(PC 版の見た目と操作は変えない)
+const STICK_RADIUS := 56.0
+const STICK_DEADZONE := 0.12  # スティックの半径に対する割合。これより動かしても歩かない
+const STICK_AREA := 0.4       # 画面の左からこの割合までを触ると、スティックが出る
+const STICK_REST_INSET := 92.0  # 触っていないときにスティックの目印を出す場所(左下の角から)
+const MIN_VIEW_HEIGHT := 400  # 画面の高さをこれ以上の論理サイズで扱う(スマホで文字が小さくなりすぎないように)
+const MAX_3D_HEIGHT := 720.0  # 3D はこの高さまでで描く(高解像度のスマホでも重くしない。文字はくっきりしたまま)
+const ZOOM_STEP := 0.85       # ホイール 1 目盛りと同じ
+const PAD_SIZE := Vector2(72, 56)
+const MENU_PAD_SIZE := Vector2(112, 52)
+const GAP := 6.0
+const MARGIN := 8.0
+
+# メニューの並び。[id, 文字, キー, キーの名前, 押したあともメニューを開いておくか]
+const MENU := [
+	[
+		["plot", "菜園", KEY_F, "F", false], ["pond", "池", KEY_P, "P", false], ["hive", "巣箱", KEY_J, "J", false],
+		["feeder", "餌台", KEY_L, "L", false], ["prune", "剪定", KEY_X, "X", false], ["talk_menu", "話す", KEY_C, "C", false],
+		["market_menu", "市場", KEY_B, "B", false],
+	],
+	[
+		["birch", "白樺", KEY_1, "1", true], ["fruit", "果樹", KEY_2, "2", true], ["cedar", "シベリア杉", KEY_3, "3", true],
+		["form", "種/苗木", KEY_V, "V", true],
+	],
+	[
+		["radish", "ラディッシュ", KEY_4, "4", true], ["carrot", "にんじん", KEY_5, "5", true], ["cucumber", "きゅうり", KEY_6, "6", true],
+		["potato", "じゃがいも", KEY_7, "7", true], ["garlic", "ニンニク", KEY_8, "8", true], ["tomato", "トマト", KEY_9, "9", true],
+	],
+	[
+		["items", "持ち物", KEY_TAB, "Tab", false], ["help", "操作", KEY_F1, "F1", false], ["sound", "音量", KEY_M, "M", true],
+		["year1", "+1年", KEY_T, "T", true], ["year10", "+10年", KEY_G, "G", true], ["hour1", "+1時間", KEY_N, "N", true],
+		["now", "今に戻す", KEY_R, "R", true],
+	],
+]
+
+var active := false
+var menu_open := false
+var _main: Node
+var _player: Node
+var _hud: Node
+var _canvas: Control
+var _held := {}            # 指の番号 → 押しているボタン
+var _stick_finger := -1    # スティックを動かしている指。いなければ -1
+var _stick_origin := Vector2.ZERO
+var _stick_pos := Vector2.ZERO
+var _pad_style := StyleBoxFlat.new()
+var _on_style := StyleBoxFlat.new()
+var _down_style := StyleBoxFlat.new()
+
+func setup(main: Node, player: Node, hud: Node) -> void:
+	_main = main
+	_player = player
+	_hud = hud
+	layer = 5  # 日記(HUD)より手前。日記を閉じるボタンを出すので
+	_canvas = Control.new()
+	_canvas.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_canvas.draw.connect(_draw_controls)
+	add_child(_canvas)
+	_pad_style = _style(Color(0.08, 0.10, 0.08, 0.62), Color(1, 1, 1, 0.30))
+	_on_style = _style(Color(0.20, 0.30, 0.18, 0.92), Color(0.96, 0.84, 0.46))
+	_down_style = _style(Color(0.96, 0.84, 0.46, 0.75), Color(0.96, 0.84, 0.46))
+	get_window().size_changed.connect(_apply_scale)
+	set_active(DisplayServer.is_touchscreen_available())
+
+static func _style(fill: Color, border: Color) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = fill
+	s.border_color = border
+	s.set_border_width_all(2)
+	s.set_corner_radius_all(10)
+	return s
+
+func set_active(on: bool) -> void:
+	active = on
+	_canvas.visible = on
+	_hud.touch_mode = on
+	if not on:
+		release_all()
+		menu_open = false
+	_apply_scale()
+
+# タッチのときは画面を拡大して文字を読める大きさにする。スマホの GPU に合わせて、3D は上限の高さまでで描き、
+# 縁のなめらかさ(MSAA)と影の柔らかさを落として軽くする。PC に戻ったらプロジェクトの設定に戻す
+func _apply_scale() -> void:
+	var win := get_window()
+	if not active:
+		win.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+		win.scaling_3d_scale = 1.0
+		win.msaa_3d = ProjectSettings.get_setting("rendering/anti_aliasing/quality/msaa_3d")
+		RenderingServer.directional_soft_shadow_filter_set_quality(ProjectSettings.get_setting("rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality"))
+		return
+	win.msaa_3d = Viewport.MSAA_DISABLED
+	RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+	var short_side: int = mini(win.size.x, win.size.y)
+	var side := maxi(MIN_VIEW_HEIGHT, roundi(short_side / DisplayServer.screen_get_scale()))
+	win.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+	win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+	win.content_scale_size = Vector2i(side, side)
+	win.scaling_3d_scale = minf(1.0, MAX_3D_HEIGHT / maxf(short_side, 1.0))
+
+func is_portrait(view: Vector2) -> bool:
+	return view.y > view.x
+
+# ── 今出すボタン ─────────────────────────────────────────────
+func _view() -> Vector2:
+	return get_viewport().get_visible_rect().size
+
+# 開いている画面と近くにあるものに合わせて、今出すボタンを返す
+func pads(view: Vector2) -> Array:
+	if not active or is_portrait(view) or _hud.is_shop_open():  # 市場などの画面には閉じるボタンがある
+		return []
+	if _hud.is_diary_open():
+		var size := Vector2(160, 56)
+		return [_pad("wake", "起きる", KEY_H, "H", Rect2(Vector2((view.x - size.x) * 0.5, view.y - size.y - 24.0), size))]
+	return _menu_pads(view) if menu_open else _main_pads(view)
+
+func _pad(id: String, text: String, key: int, key_text: String, rect: Rect2, keep := false, hold := false) -> Dictionary:
+	return {"id": id, "text": text, "key": key, "key_text": key_text, "rect": rect, "keep": keep, "hold": hold, "on": _is_selected(id)}
+
+func _main_pads(view: Vector2) -> Array:
+	var c := func(col: int, row: int) -> Rect2:  # 右下から数えた場所
+		return Rect2(view - Vector2(MARGIN, MARGIN) - PAD_SIZE - Vector2(col, row) * (PAD_SIZE + Vector2(GAP, GAP)), PAD_SIZE)
+	var list := [
+		_pad("plant", "植える", KEY_SPACE, "Space", c.call(0, 0)),
+		_pad("harvest", "収穫", KEY_E, "E", c.call(1, 0)),
+		_pad("remove", "抜く", KEY_Z, "Z", c.call(2, 0)),
+		_pad("menu", "メニュー", KEY_NONE, "", c.call(0, 1)),
+		_pad("water", "水やり", KEY_Q, "Q", c.call(1, 1)),
+		_pad("cabin", _cabin_text(), KEY_H, "H", c.call(2, 1)),
+		_pad("zoom_out", "引く", KEY_NONE, "", c.call(0, 3)),
+		_pad("zoom_in", "寄る", KEY_NONE, "", c.call(1, 3)),
+	]
+	if _main.hint_text() != "":
+		list.append(_pad("hint", "ヒント", KEY_K, "K で閉じる", c.call(2, 3)))
+	# 近くにあるものや季節で増えるボタンは、よく使う列の上に右から並べる
+	var col := 0
+	if _main.world.market.is_near(_main.player_pos()):
+		list.append(_pad("market", "市場", KEY_B, "B", c.call(col, 2)))
+		col += 1
+	if _main.visitor_line() != "":
+		list.append(_pad("talk", "話す", KEY_C, "C", c.call(col, 2)))
+		col += 1
+	if _main.world.snow.can_clear_now():
+		list.append(_pad("shovel", "雪かき", KEY_U, "U", c.call(col, 2), false, true))
+	return list
+
+func _cabin_text() -> String:
+	return "使う" if _main.furniture_line() != "" else "小屋"
+
+func _menu_pads(view: Vector2) -> Array:
+	var list := []
+	var columns: int = MENU[0].size()
+	# 幅の狭いスマホでは、画面に収まるようにボタンの幅を縮める
+	var pad_size := Vector2(minf(MENU_PAD_SIZE.x, (view.x - MARGIN * 2.0 - GAP * (columns - 1)) / columns), MENU_PAD_SIZE.y)
+	var step := pad_size + Vector2(GAP, GAP)
+	var width: float = columns * step.x - GAP
+	var left: float = (view.x - width) * 0.5
+	var top: float = view.y - MARGIN - MENU.size() * step.y + GAP
+	for r in range(MENU.size()):
+		for i in range(MENU[r].size()):
+			var m: Array = MENU[r][i]
+			var rect := Rect2(Vector2(left, top) + Vector2(i, r) * step, pad_size)
+			list.append(_pad(m[0], _menu_text(m[0], m[1]), m[2], m[3], rect, m[4]))
+	# 2 行目の右の空きに閉じるボタン
+	var close_rect := Rect2(Vector2(left, top) + Vector2(columns - 1, 1) * step, pad_size)
+	list.append(_pad("menu_close", "閉じる", KEY_NONE, "", close_rect))
+	return list
+
+func _menu_text(id: String, text: String) -> String:
+	if id == "form":
+		return "苗木で植える" if _main.selected_form == "sapling" else "種で植える"
+	return text
+
+# メニューで今選ばれているものは色を変える
+func _is_selected(id: String) -> bool:
+	match id:
+		"birch", "cedar":
+			return _main.selected_species == id
+		"fruit":
+			return _main.selected_species != "birch" and _main.selected_species != "cedar"
+		"radish", "carrot", "cucumber", "potato", "garlic", "tomato":
+			return _main.selected_crop == id
+	return false
+
+func _pad_at(pos: Vector2) -> Dictionary:
+	for p in pads(_view()):
+		if p.rect.has_point(pos):
+			return p
+	return {}
+
+# ── 指の動き ─────────────────────────────────────────────────
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		# 自分で送ったキーは device が DEVICE_ID_EMULATION。物理キーが押されたら PC として遊んでいる
+		if active and event.pressed and event.device != InputEvent.DEVICE_ID_EMULATION:
+			set_active(false)
+	elif event is InputEventScreenTouch:
+		if touch(event.index, event.position, event.pressed):
+			get_viewport().set_input_as_handled()
+	elif event is InputEventScreenDrag:
+		if drag(event.index, event.position):
+			get_viewport().set_input_as_handled()
+
+# 指が触れた / 離れた。この操作で受け取ったら true(後ろの画面には渡さない)
+func touch(finger: int, pos: Vector2, pressed: bool) -> bool:
+	if not pressed:
+		return _lift(finger)
+	if not active:
+		set_active(true)
+	var pad := _pad_at(pos)
+	if not pad.is_empty():
+		_held[finger] = pad
+		_press(pad)
+		return true
+	var view := _view()
+	if _can_walk(view) and _stick_finger < 0 and pos.x < view.x * STICK_AREA:
+		_stick_finger = finger
+		_stick_origin = pos
+		_stick_pos = pos
+		return true
+	return false
+
+func _can_walk(view: Vector2) -> bool:
+	return active and not menu_open and not is_portrait(view) and not _hud.is_shop_open() and not _hud.is_diary_open()
+
+func drag(finger: int, pos: Vector2) -> bool:
+	if finger != _stick_finger:
+		return _held.has(finger)
+	# 半径より外へ動かしたら、スティックの中心もついてくる(逆へ向き直しやすいように)
+	var offset := pos - _stick_origin
+	if offset.length() > STICK_RADIUS:
+		_stick_origin = pos - offset.normalized() * STICK_RADIUS
+	_stick_pos = pos
+	_player.move_input = stick_value()
+	return true
+
+# スティックの傾き(長さ 0〜1)。上 = 北 = -y
+func stick_value() -> Vector2:
+	if _stick_finger < 0:
+		return Vector2.ZERO
+	var v := (_stick_pos - _stick_origin) / STICK_RADIUS
+	var length := v.length()
+	if length < STICK_DEADZONE:
+		return Vector2.ZERO
+	return v.normalized() * minf(1.0, (length - STICK_DEADZONE) / (1.0 - STICK_DEADZONE))
+
+func _lift(finger: int) -> bool:
+	if finger == _stick_finger:
+		_stick_finger = -1
+		_player.move_input = Vector2.ZERO
+		return true
+	if not _held.has(finger):
+		return false
+	var pad: Dictionary = _held[finger]
+	_held.erase(finger)
+	if pad.hold:
+		_send_key(pad.key, false)
+	return true
+
+# 指が離れたことを受け取れないとき(別のアプリへ移ったなど)に、押しっぱなしにしない
+func release_all() -> void:
+	for finger in _held.keys():
+		_lift(finger)
+	if _stick_finger >= 0:
+		_lift(_stick_finger)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		release_all()
+
+func _press(pad: Dictionary) -> void:
+	match pad.id:
+		"menu":
+			menu_open = true
+			if _stick_finger >= 0:
+				_lift(_stick_finger)  # メニューを開いているあいだは歩かない
+		"menu_close":
+			menu_open = false
+		"zoom_in":
+			_player.zoom(ZOOM_STEP)
+		"zoom_out":
+			_player.zoom(1.0 / ZOOM_STEP)
+		_:
+			if menu_open and not pad.keep:
+				menu_open = false
+			_send_key(pad.key, true)
+			if not pad.hold:
+				_send_key(pad.key, false)
+
+func _send_key(key: int, pressed: bool) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = key as Key
+	ev.physical_keycode = key as Key
+	ev.pressed = pressed
+	ev.device = InputEvent.DEVICE_ID_EMULATION
+	Input.parse_input_event(ev)
+
+# ── 描く ─────────────────────────────────────────────────────
+func _process(_delta: float) -> void:
+	if active:
+		_canvas.queue_redraw()
+
+func _draw_controls() -> void:
+	var view := _view()
+	var font: Font = _canvas.get_theme_default_font()
+	if is_portrait(view):
+		_canvas.draw_rect(Rect2(Vector2.ZERO, view), Color(0.03, 0.03, 0.07, 0.9))
+		_canvas.draw_string(font, Vector2(0, view.y * 0.5), "スマホを横向きにしてください", HORIZONTAL_ALIGNMENT_CENTER, view.x, 18)
+		return
+	if menu_open:
+		var box := Rect2(0, view.y - MARGIN - MENU.size() * (MENU_PAD_SIZE.y + GAP) - GAP, view.x, view.y)
+		_canvas.draw_rect(box, Color(0, 0, 0, 0.45))
+	var held_ids := []
+	for pad in _held.values():
+		held_ids.append(pad.id)
+	for p in pads(view):
+		_draw_pad(p, font, p.id in held_ids)
+	if _can_walk(view):
+		_draw_stick(view)
+
+func _draw_pad(p: Dictionary, font: Font, down: bool) -> void:
+	var style := _down_style if down else (_on_style if p.on else _pad_style)
+	_canvas.draw_style_box(style, p.rect)
+	var has_key: bool = p.key_text != ""
+	var mid: float = p.rect.position.y + p.rect.size.y * (0.44 if has_key else 0.58)
+	_canvas.draw_string(font, Vector2(p.rect.position.x, mid), p.text, HORIZONTAL_ALIGNMENT_CENTER, p.rect.size.x, 14)
+	if has_key:
+		var key_y: float = p.rect.position.y + p.rect.size.y - 8.0
+		_canvas.draw_string(font, Vector2(p.rect.position.x, key_y), p.key_text, HORIZONTAL_ALIGNMENT_CENTER, p.rect.size.x, 11, Color(1, 1, 1, 0.65))
+
+func _draw_stick(view: Vector2) -> void:
+	var touching := _stick_finger >= 0
+	var center := _stick_origin if touching else Vector2(STICK_REST_INSET, view.y - STICK_REST_INSET)
+	_canvas.draw_circle(center, STICK_RADIUS, Color(0.08, 0.10, 0.08, 0.40 if touching else 0.22))
+	_canvas.draw_arc(center, STICK_RADIUS, 0.0, TAU, 48, Color(1, 1, 1, 0.45 if touching else 0.25), 2.0, true)
+	var knob := _stick_pos if touching else center
+	_canvas.draw_circle(knob, 24.0, Color(1, 1, 1, 0.55 if touching else 0.25))

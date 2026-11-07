@@ -10,6 +10,9 @@ extends CanvasLayer
 const Forest = preload("res://logic/Forest.gd")
 const MESSAGE_SECONDS := 3.0
 const DIARY_FADE_SECONDS := 0.6
+const TOUCH_ROW_HEIGHT := 38.0    # タッチのときの市場の行の高さ
+const SHOP_HEADER_HEIGHT := 70.0  # 市場の画面の見出しと余白
+const SHOP_ROW_GAP := 4.0         # 行のあいだ(VBoxContainer の既定)
 
 signal shop_action(id)  # 市場の画面のボタン(品の id / "sell_<収穫物>" / "close")
 
@@ -26,6 +29,7 @@ var _message_panel: PanelContainer
 var _message_label: Label
 var inventory_open := false  # Tab
 var help_open := false       # F1
+var touch_mode := false      # タッチ操作のとき(市場の画面のボタンを指で押せる大きさにする)
 var _shop: PanelContainer
 var _shop_columns := []  # 買う列と売る列(VBoxContainer)
 var _shop_money: Label
@@ -121,15 +125,28 @@ func refresh_shop() -> void:
 			b.queue_free()
 	_shop_title.text = _main.shop_title()
 	_shop_money.text = _main.shop_header()
-	for row in _main.visible_shop_rows():
+	var rows: Array = _main.visible_shop_rows()
+	var row_height := _touch_row_height(rows)
+	for row in rows:
 		var b := Button.new()
 		b.text = row.text
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.custom_minimum_size.y = row_height
 		b.pressed.connect(func(): shop_action.emit(row.id))
 		_shop_columns[row.column].add_child(b)
 	if is_shop_open():
 		var col: VBoxContainer = _shop_columns[focused_col]
 		col.get_child(mini(focused_row, col.get_child_count() - 1)).grab_focus()
+
+# タッチのときの行の高さ。指で押せる高さにしたいが、行が多い画面は画面に収まる高さにする
+func _touch_row_height(rows: Array) -> float:
+	if not touch_mode:
+		return 0.0
+	var counts := [0, 0]
+	for row in rows:
+		counts[row.column] += 1
+	var room: float = get_viewport().get_visible_rect().size.y - SHOP_HEADER_HEIGHT
+	return clampf(room / maxi(counts.max(), 1) - SHOP_ROW_GAP, 0.0, TOUCH_ROW_HEIGHT)
 
 # ── ヒント ────────────────────────────────────────────────
 func _build_hint() -> void:
@@ -215,6 +232,10 @@ func _process(delta: float) -> void:
 	_update_hint()
 	# 背景は文字の量に合わせる
 	_bg.size = _label.get_combined_minimum_size() + Vector2(12, 8)
+	# タッチの狭い画面では、市場の画面と左の文字が重なるので、開いているあいだは文字を隠す(所持金は市場の画面にも出る)
+	var hide_status: bool = touch_mode and is_shop_open()
+	_label.visible = not hide_status
+	_bg.visible = not hide_status
 
 # 左上に出す文字
 func status_text() -> String:

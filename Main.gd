@@ -130,6 +130,7 @@ func _setup_3d_only() -> void:
 	world.guide.has_people = true
 	$Audio.setup(world, $Player)
 	$Player.work_sound.connect($Audio.play)
+	$TouchControls.setup(self, $Player, $HUD)
 
 func _process(delta: float) -> void:
 	_guide_timer += delta
