@@ -3,7 +3,7 @@ extends CanvasLayer
 # ── タッチ操作 ───────────────────────────────────────────────
 # 左: 触った場所に出るスティックで歩く。右下: よく使う作業のボタン。ほかの操作はメニューに並べる。
 # ボタンはキーの入力を送るだけで、何が起きるかは Main が決める(キーボードと同じ処理を通る)。
-# ヒントが「H で〜」と書いても分かるよう、ボタンにはキーの名前も出す。
+# 文言はタッチのときボタンの名前に置き換わる(view/TouchText.gd)。
 # Godot の Button は最初の指にしか反応せず、歩きながら押せないので、指ごとの当たり判定をここで持つ。
 # タッチ画面のときだけ出し、物理キーを押すと消す(PC 版の見た目と操作は変えない)
 const STICK_RADIUS := 56.0
@@ -20,25 +20,25 @@ const MENU_PAD_SIZE := Vector2(112, 52)
 const GAP := 6.0
 const MARGIN := 8.0
 
-# メニューの並び。[id, 文字, キー, キーの名前, 押したあともメニューを開いておくか]
+# メニューの並び。[id, 文字, キー, 押したあともメニューを開いておくか]
 const MENU := [
 	[
-		["plot", "菜園", KEY_F, "F", false], ["pond", "池", KEY_P, "P", false], ["hive", "巣箱", KEY_J, "J", false],
-		["feeder", "餌台", KEY_L, "L", false], ["prune", "剪定", KEY_X, "X", false], ["talk_menu", "話す", KEY_C, "C", false],
-		["market_menu", "市場", KEY_B, "B", false],
+		["plot", "菜園", KEY_F, false], ["pond", "池", KEY_P, false], ["hive", "巣箱", KEY_J, false],
+		["feeder", "餌台", KEY_L, false], ["prune", "剪定", KEY_X, false], ["talk_menu", "話す", KEY_C, false],
+		["market_menu", "市場", KEY_B, false],
 	],
 	[
-		["birch", "白樺", KEY_1, "1", true], ["fruit", "果樹", KEY_2, "2", true], ["cedar", "シベリア杉", KEY_3, "3", true],
-		["form", "種/苗木", KEY_V, "V", true],
+		["birch", "白樺", KEY_1, true], ["fruit", "果樹", KEY_2, true], ["cedar", "シベリア杉", KEY_3, true],
+		["form", "種/苗木", KEY_V, true],
 	],
 	[
-		["radish", "ラディッシュ", KEY_4, "4", true], ["carrot", "にんじん", KEY_5, "5", true], ["cucumber", "きゅうり", KEY_6, "6", true],
-		["potato", "じゃがいも", KEY_7, "7", true], ["garlic", "ニンニク", KEY_8, "8", true], ["tomato", "トマト", KEY_9, "9", true],
+		["radish", "ラディッシュ", KEY_4, true], ["carrot", "にんじん", KEY_5, true], ["cucumber", "きゅうり", KEY_6, true],
+		["potato", "じゃがいも", KEY_7, true], ["garlic", "ニンニク", KEY_8, true], ["tomato", "トマト", KEY_9, true],
 	],
 	[
-		["items", "持ち物", KEY_TAB, "Tab", false], ["help", "操作", KEY_F1, "F1", false], ["sound", "音量", KEY_M, "M", true],
-		["year1", "+1年", KEY_T, "T", true], ["year10", "+10年", KEY_G, "G", true], ["hour1", "+1時間", KEY_N, "N", true],
-		["now", "今に戻す", KEY_R, "R", true],
+		["items", "持ち物", KEY_TAB, false], ["help", "操作", KEY_F1, false], ["sound", "音量", KEY_M, true],
+		["year1", "+1年", KEY_T, true], ["year10", "+10年", KEY_G, true], ["hour1", "+1時間", KEY_N, true],
+		["now", "今に戻す", KEY_R, true],
 	],
 ]
 
@@ -134,37 +134,37 @@ func pads(view: Vector2) -> Array:
 		return []
 	if _hud.is_diary_open():
 		var size := Vector2(160, 56)
-		return [_pad("wake", "起きる", KEY_H, "H", Rect2(Vector2((view.x - size.x) * 0.5, view.y - size.y - 24.0), size))]
+		return [_pad("wake", "起きる", KEY_H, Rect2(Vector2((view.x - size.x) * 0.5, view.y - size.y - 24.0), size))]
 	return _menu_pads(view) if menu_open else _main_pads(view)
 
-func _pad(id: String, text: String, key: int, key_text: String, rect: Rect2, keep := false, hold := false) -> Dictionary:
-	return {"id": id, "text": text, "key": key, "key_text": key_text, "rect": rect, "keep": keep, "hold": hold, "on": _is_selected(id)}
+func _pad(id: String, text: String, key: int, rect: Rect2, keep := false, hold := false, sub := "") -> Dictionary:
+	return {"id": id, "text": text, "sub": sub, "key": key, "rect": rect, "keep": keep, "hold": hold, "on": _is_selected(id)}
 
 func _main_pads(view: Vector2) -> Array:
 	var c := func(col: int, row: int) -> Rect2:  # 右下から数えた場所
 		return Rect2(view - Vector2(MARGIN, MARGIN) - PAD_SIZE - Vector2(col, row) * (PAD_SIZE + Vector2(GAP, GAP)), PAD_SIZE)
 	var list := [
-		_pad("plant", "植える", KEY_SPACE, "Space", c.call(0, 0)),
-		_pad("harvest", "収穫", KEY_E, "E", c.call(1, 0)),
-		_pad("remove", "抜く", KEY_Z, "Z", c.call(2, 0)),
-		_pad("menu", "メニュー", KEY_NONE, "", c.call(0, 1)),
-		_pad("water", "水やり", KEY_Q, "Q", c.call(1, 1)),
-		_pad("cabin", _cabin_text(), KEY_H, "H", c.call(2, 1)),
-		_pad("zoom_out", "引く", KEY_NONE, "", c.call(0, 3)),
-		_pad("zoom_in", "寄る", KEY_NONE, "", c.call(1, 3)),
+		_pad("plant", "植える", KEY_SPACE, c.call(0, 0)),
+		_pad("harvest", "収穫", KEY_E, c.call(1, 0)),
+		_pad("remove", "抜く", KEY_Z, c.call(2, 0)),
+		_pad("menu", "メニュー", KEY_NONE, c.call(0, 1)),
+		_pad("water", "水やり", KEY_Q, c.call(1, 1)),
+		_pad("cabin", _cabin_text(), KEY_H, c.call(2, 1)),
+		_pad("zoom_out", "引く", KEY_NONE, c.call(0, 3)),
+		_pad("zoom_in", "寄る", KEY_NONE, c.call(1, 3)),
 	]
 	if _main.hint_text() != "":
-		list.append(_pad("hint", "ヒント", KEY_K, "K で閉じる", c.call(2, 3)))
+		list.append(_pad("hint", "ヒント", KEY_K, c.call(2, 3), false, false, "閉じる"))
 	# 近くにあるものや季節で増えるボタンは、よく使う列の上に右から並べる
 	var col := 0
 	if _main.world.market.is_near(_main.player_pos()):
-		list.append(_pad("market", "市場", KEY_B, "B", c.call(col, 2)))
+		list.append(_pad("market", "市場", KEY_B, c.call(col, 2)))
 		col += 1
 	if _main.visitor_line() != "":
-		list.append(_pad("talk", "話す", KEY_C, "C", c.call(col, 2)))
+		list.append(_pad("talk", "話す", KEY_C, c.call(col, 2)))
 		col += 1
 	if _main.world.snow.can_clear_now():
-		list.append(_pad("shovel", "雪かき", KEY_U, "U", c.call(col, 2), false, true))
+		list.append(_pad("shovel", "雪かき", KEY_U, c.call(col, 2), false, true))
 	return list
 
 func _cabin_text() -> String:
@@ -183,10 +183,10 @@ func _menu_pads(view: Vector2) -> Array:
 		for i in range(MENU[r].size()):
 			var m: Array = MENU[r][i]
 			var rect := Rect2(Vector2(left, top) + Vector2(i, r) * step, pad_size)
-			list.append(_pad(m[0], _menu_text(m[0], m[1]), m[2], m[3], rect, m[4]))
+			list.append(_pad(m[0], _menu_text(m[0], m[1]), m[2], rect, m[3]))
 	# 2 行目の右の空きに閉じるボタン
 	var close_rect := Rect2(Vector2(left, top) + Vector2(columns - 1, 1) * step, pad_size)
-	list.append(_pad("menu_close", "閉じる", KEY_NONE, "", close_rect))
+	list.append(_pad("menu_close", "閉じる", KEY_NONE, close_rect))
 	return list
 
 func _menu_text(id: String, text: String) -> String:
@@ -364,12 +364,12 @@ func _draw_controls() -> void:
 func _draw_pad(p: Dictionary, font: Font, down: bool) -> void:
 	var style := _down_style if down else (_on_style if p.on else _pad_style)
 	_canvas.draw_style_box(style, p.rect)
-	var has_key: bool = p.key_text != ""
-	var mid: float = p.rect.position.y + p.rect.size.y * (0.44 if has_key else 0.58)
+	var has_sub: bool = p.sub != ""
+	var mid: float = p.rect.position.y + p.rect.size.y * (0.44 if has_sub else 0.58)
 	_canvas.draw_string(font, Vector2(p.rect.position.x, mid), p.text, HORIZONTAL_ALIGNMENT_CENTER, p.rect.size.x, 14)
-	if has_key:
-		var key_y: float = p.rect.position.y + p.rect.size.y - 8.0
-		_canvas.draw_string(font, Vector2(p.rect.position.x, key_y), p.key_text, HORIZONTAL_ALIGNMENT_CENTER, p.rect.size.x, 11, Color(1, 1, 1, 0.65))
+	if has_sub:
+		var sub_y: float = p.rect.position.y + p.rect.size.y - 10.0
+		_canvas.draw_string(font, Vector2(p.rect.position.x, sub_y), p.sub, HORIZONTAL_ALIGNMENT_CENTER, p.rect.size.x, 12, Color(1, 1, 1, 0.75))
 
 func _draw_stick(view: Vector2) -> void:
 	var touching := _stick_finger >= 0

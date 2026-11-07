@@ -4,6 +4,7 @@ extends SceneTree
 # 実行: Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/test_touch.gd
 # 標準出力に結果を出し、失敗があれば終了コード 1 で終わる
 
+const TouchText = preload("res://view/TouchText.gd")
 const TEST_SAVE := "user://test_touch.json"
 const VIEW := Vector2(866, 400)
 
@@ -61,6 +62,12 @@ func _run() -> void:
 	player = main.get_node("Player")
 	hud = main.get_node("HUD")
 	_test_hidden_on_pc()
+	_test_wording()
+	_check(hud.status_text().contains("Tab:持ち物"), "PC ではキーの言い方のまま")
+	tc.set_active(true)
+	await _frames()
+	await _test_wording_on_screen()
+	tc.set_active(false)
 	tc.set_active(true)
 	await _frames()
 	_check(main.get_node("Sun").directional_shadow_mode == DirectionalLight3D.SHADOW_ORTHOGONAL, "タッチでは太陽の影を分割しない(特に重いので)")
@@ -85,6 +92,69 @@ func _test_hidden_on_pc() -> void:
 	_check(not tc.active and tc.pads(VIEW).is_empty(), "タッチ画面がなければボタンを出さない")
 	_check(root.content_scale_mode == Window.CONTENT_SCALE_MODE_DISABLED, "画面の拡大もしない")
 	_check(not hud.touch_mode, "市場の行の高さも変えない")
+
+# キーボードの言い方がボタンの名前に変わる
+func _test_wording() -> void:
+	print("タッチの文言")
+	var cases := {
+		"WASD か矢印キーで歩ける。\nホイールでカメラを寄せたり引いたりできる。": "左のスティックで歩ける。\n「寄る」「引く」でカメラを動かせる。",
+		"小屋: H で足元に場所を決める": "小屋: 「小屋」で足元に場所を決める",
+		"ストーブの前(H で料理)": "ストーブの前(「使う」で料理)",
+		"薪がない(小屋の東の薪割り台で、H で丸太を割る)": "薪がない(小屋の東の薪割り台で、「使う」で丸太を割る)",
+		"区画の上で SPACE を押すと種をまく。": "区画の上で「植える」を押すと種をまく。",
+		"F で足元に畑の区画を作れる。": "メニューの「菜園」で足元に畑の区画を作れる。",
+		"U を押したまま歩くと、雪をどかせる。": "「雪かき」を押したまま歩くと、雪をどかせる。",
+		"閉じる(B / Esc)": "閉じる",
+		"市場(クリックか 矢印キー + Enter で選ぶ)": "市場(押して選ぶ)",
+		"H / Esc / Enter で起きる": "「起きる」を押す",
+		"[1][2][3] で木を選び、[V] で種と苗木を切り替える。": "メニューで木を選び、メニューで種と苗木を切り替える。",
+		"苗にできるのはトマト [9] と きゅうり [6]": "苗にできるのはトマト と きゅうり",
+		"見かけた生き物は、Tab の持ち物で見られる。": "見かけた生き物は、メニューの持ち物で見られる。",
+		"1本 × 15₽(E で売る)": "1本 × 15₽(「収穫」で売る)",
+	}
+	for raw in cases:
+		_check(TouchText.convert(raw) == cases[raw], "%s → %s" % [raw.replace("\n", " "), TouchText.convert(raw).replace("\n", " ")])
+	_check(TouchText.convert("OK で進む 10m を歩く") == "OK で進む 10m を歩く", "キーの名前でない英数字は変えない")
+	# ゲームのすべての文字列で、キーボードの言い方が残らない
+	var leftover := PackedStringArray()
+	var strings := RegEx.create_from_string("\"((?:[^\"\\\\]|\\\\.)*)\"")
+	var keyboard := RegEx.create_from_string("WASD|矢印|ホイール|クリック|Enter|Esc|Tab|F1|SPACE|\\[[0-9A-Z]\\]|(?<![A-Za-z0-9])[A-Z] (で|を)")
+	for path in ["res://Main.gd", "res://HUD.gd"]:
+		for line in FileAccess.get_file_as_string(path).split("\n"):
+			if line.strip_edges().begins_with("#") or line.contains("func _help_lines") or line.contains("Tab:%s"):
+				continue
+			for m in strings.search_all(line):
+				var shown: String = TouchText.convert(m.get_string(1).replace("\\n", "\n"))
+				if keyboard.search(shown) != null and not _is_pc_help(m.get_string(1)):
+					leftover.append(shown)
+	_check(leftover.is_empty(), "全部の文字列でキーボードの言い方が残らない(残り %d: %s)" % [leftover.size(), " / ".join(leftover.slice(0, 5))])
+
+# PC の操作説明(F1)の行。タッチでは別の説明を出すので対象外
+func _is_pc_help(text: String) -> bool:
+	for line in hud._help_lines():
+		if line == text:
+			return true
+	return false
+
+# 実際に画面の文字が置き換わる
+func _test_wording_on_screen() -> void:
+	_check(hud.status_text().contains("持ち物と操作はメニューから") and not hud.status_text().contains("Tab:"), "左上の文字がタッチの言い方になる")
+	_check(hud.status_text().contains("「小屋」で足元に"), "左上の案内がボタンの名前になる")
+	hud.help_open = true
+	_check(hud.status_text().contains("左のスティック") and not hud.status_text().contains("WASD"), "操作説明がタッチのものになる")
+	hud.help_open = false
+	hud.show_message("もう一度 Z で伐る")
+	_check(hud._message_label.text == "もう一度「抜く」で伐る", "メッセージがボタンの名前になる")
+	await create_timer(hud.TOUCH_STATUS_SECONDS + 0.1).timeout
+	_check(hud._hint_label.text == "" or hud._hint_label.text.contains("「ヒント」で閉じる"), "ヒントの閉じ方がボタンの名前になる")
+	hud._hint_label.text = "ヒント\n" + TouchText.convert("F で足元に畑の区画を作れる。お金はいらない。")
+	await process_frame
+	await process_frame
+	_check(hud._hint_label.autowrap_mode != TextServer.AUTOWRAP_OFF and hud._hint_label.size.x <= hud.TOUCH_HINT_WIDTH + 1.0, "長いヒントは折り返して幅を広げない(%.0f)" % hud._hint_label.size.x)
+	var names := []
+	for p in tc.pads(_view()):
+		names.append(p.sub)
+	_check(names.count("") >= names.size() - 1, "ボタンにキーの名前を出さない")
 
 # 左上の文字は間引いて更新するが、変わったら少し待つと出る
 func _test_status_refresh() -> void:

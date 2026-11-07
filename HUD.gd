@@ -8,9 +8,11 @@ extends CanvasLayer
 # 全体を覆う日記: ベッドで休むと、暗くなって出る。
 # 文言の中身は Main が決める(shop_rows・quest_line など)。ここは並べて出すだけ
 const Forest = preload("res://logic/Forest.gd")
+const TouchText = preload("res://view/TouchText.gd")
 const MESSAGE_SECONDS := 3.0
 const DIARY_FADE_SECONDS := 0.6
 const TOUCH_STATUS_SECONDS := 0.25  # タッチのときに左上の文字を更新する間隔
+const TOUCH_HINT_WIDTH := 280.0   # タッチのときのヒントの文字の幅
 const TOUCH_ROW_HEIGHT := 38.0    # タッチのときの市場の行の高さ
 const SHOP_HEADER_HEIGHT := 70.0  # 市場の画面の見出しと余白
 const SHOP_ROW_GAP := 4.0         # 行のあいだ(VBoxContainer の既定)
@@ -55,7 +57,7 @@ func setup(player: Node, trees: Forest, main: Node) -> void:
 func show_message(text: String, seconds: float = MESSAGE_SECONDS) -> void:
 	_message = text
 	_message_timer = seconds
-	_message_label.text = text
+	_message_label.text = _shown(text)
 	_message_panel.visible = true
 
 func is_message_visible() -> bool:
@@ -127,13 +129,13 @@ func refresh_shop() -> void:
 		for b in col.get_children():
 			col.remove_child(b)
 			b.queue_free()
-	_shop_title.text = _main.shop_title()
-	_shop_money.text = _main.shop_header()
+	_shop_title.text = _shown(_main.shop_title())
+	_shop_money.text = _shown(_main.shop_header())
 	var rows: Array = _main.visible_shop_rows()
 	var row_height := _touch_row_height(rows)
 	for row in rows:
 		var b := Button.new()
-		b.text = row.text
+		b.text = _shown(row.text)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.custom_minimum_size.y = row_height
 		b.pressed.connect(func(): shop_action.emit(row.id))
@@ -180,7 +182,10 @@ func _update_hint() -> void:
 	var show: bool = text != "" and not is_shop_open() and not is_diary_open()
 	_hint_panel.visible = show
 	if show:
-		_hint_label.text = "ヒント\n%s\n(K で閉じる)" % text
+		# タッチの狭い画面では、左の文字に重ならないよう幅を決めて折り返す
+		_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART if touch_mode else TextServer.AUTOWRAP_OFF
+		_hint_label.custom_minimum_size.x = TOUCH_HINT_WIDTH if touch_mode else 0.0
+		_hint_label.text = _shown("ヒント\n%s\n(K で閉じる)" % text)
 
 # ── 日記(ベッドで休む) ─────────────────────────────────────
 func _build_diary() -> void:
@@ -202,7 +207,7 @@ func is_diary_open() -> bool:
 
 # delay 秒たってから暗くなる(横になる動きを見せるため)
 func open_diary(text: String, delay := 0.0) -> void:
-	_diary_label.text = text
+	_diary_label.text = _shown(text)
 	_diary.visible = true
 	_diary.modulate.a = 0.0
 	if _diary_fade != null:
@@ -254,8 +259,8 @@ func status_text() -> String:
 	if (inventory_open or is_shop_open()) and not in_kitchen and not talking:
 		lines.append_array(_inventory_lines())
 	if help_open:
-		lines.append_array(_help_lines())
-	return "\n".join(lines)
+		lines.append_array(_touch_help_lines() if touch_mode else _help_lines())
+	return _shown("\n".join(lines))
 
 # いつも見たいこと
 func _status_lines() -> PackedStringArray:
@@ -310,7 +315,10 @@ func _status_lines() -> PackedStringArray:
 	var prune: String = _main.prune_line()
 	if prune != "":
 		lines.append(prune)
-	lines.append("Tab:%s  F1:%s" % ["持ち物を閉じる" if inventory_open else "持ち物", "操作を閉じる" if help_open else "操作"])
+	if touch_mode:
+		lines.append("持ち物と操作はメニューから")
+	else:
+		lines.append("Tab:%s  F1:%s" % ["持ち物を閉じる" if inventory_open else "持ち物", "操作を閉じる" if help_open else "操作"])
 	return lines
 
 # 持ち物(Tab)
@@ -329,6 +337,23 @@ func _inventory_lines() -> PackedStringArray:
 		"見かけた生き物: " + _main.creatures_line(),
 		"近所の人: " + _main.neighbors_line(),
 		"植えた木: %d本   いる場所: X %.0fm  Y %.0fm" % [_trees.trees.size(), pos.x, pos.y],
+	])
+
+# タッチのときは、キーの言い方をボタンの名前に置き換えて出す
+func _shown(text: String) -> String:
+	return TouchText.convert(text) if touch_mode else text
+
+# 操作説明(タッチ。メニューの「操作」)
+func _touch_help_lines() -> PackedStringArray:
+	return PackedStringArray([
+		"─ 操作 ─",
+		"左のスティック: 歩く  寄る/引く: カメラ",
+		"植える: 木を植える/区画にまく  水やり  収穫  抜く: 抜く/伐る",
+		"小屋: 場所を決める/作業/苗づくり  使う: 家具のそばで使う",
+		"市場・話す・雪かき: 使えるときだけボタンが出る(市場は南の境界の外)",
+		"メニュー: 菜園 池 巣箱 餌台 剪定",
+		"メニュー: 植える木と野菜を選ぶ  種/苗木  持ち物  音量",
+		"メニュー: +1年 +10年 +1時間 今に戻す(未来をプレビュー)",
 	])
 
 # 操作説明(F1)
