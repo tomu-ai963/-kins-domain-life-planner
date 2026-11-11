@@ -2059,7 +2059,7 @@ func _test_market_pages() -> void:
 	_check(hud._shop_columns[0].get_child(0).has_focus(), "続けて押せるように、フォーカスが残る")
 	# ほかの画面にページの行は出ない
 	main._panel = "kitchen"
-	_check(main.visible_shop_rows().size() == main.kitchen_rows().size(), "ストーブの画面はそのまま")
+	_check(main.kitchen_rows()[0].id == "page_cook" and main.visible_shop_rows().all(func(r): return not r.has("page") or r.page == main._cook_page), "ストーブの画面は料理のページで分ける")
 	main._panel = "market"
 	main._buy_page = 0
 	main._sell_page = 0

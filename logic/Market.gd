@@ -101,6 +101,10 @@ const SELL_PRICES := {
 	"cherry_jam": 80, "plum_jam": 90, "pear_compote": 120,
 	"pryanik": 40, "sbiten": 100,
 	"honey": 200,  # 1kg あたり。巣箱 1 つで 1 日 100〜140₽ ほどになる仮の数字
+	# 2026-11-11 に足した料理と保存食。材料を生で売るよりおよそ 2 倍(今までと同じ置き方)
+	"hoshigaki": 40, "marmalade": 60, "shikuwasa_juice": 35, "umeboshi": 50, "kuri_kanroni": 60, "dried_mango": 36, "papaya_pickle": 27,
+	"takuan": 30, "sauerkraut": 50, "hakusai_zuke": 38, "nasu_zuke": 44, "hoshiimo": 42, "goya_champuru": 50, "zunda": 32,
+	"pumpkin_soup": 60, "imoni": 53,
 }
 # 春の種の注文(2026-11-11 とむ決定): 冬のあいだ、春にまく野菜の種を安く注文でき、3 月 1 日(冬が終わった最初の確認)に届く
 const ORDER_RATE := 0.7        # 注文の値段の割合(店頭の 3 割引き。仮の数字)

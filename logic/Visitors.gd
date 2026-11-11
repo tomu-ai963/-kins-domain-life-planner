@@ -47,6 +47,8 @@ const ASK := {
 	"cabbage": 3, "hakusai": 3, "spinach": 2, "komatsuna": 2, "edamame": 2, "corn": 2, "onion": 5, "negi": 2,
 	"jam": 2, "sauce": 2, "pickles": 3, "garlic_pickle": 1, "pirozhki": 5, "honey": 1,
 	"pryanik": 5, "sbiten": 2,
+	"hoshigaki": 3, "marmalade": 1, "shikuwasa_juice": 2, "umeboshi": 1, "kuri_kanroni": 1, "dried_mango": 2, "papaya_pickle": 1,
+	"takuan": 2, "sauerkraut": 1, "hakusai_zuke": 1, "nasu_zuke": 1, "hoshiimo": 3, "goya_champuru": 2, "zunda": 3, "pumpkin_soup": 1, "imoni": 2,
 }
 const BEEKEEPER := "fyodor"  # 蜂を分けてくれる人
 const FIREWOOD := "firewood"   # 冬の頼みごとの薪(Kitchen.firewood。市場では売れない)

@@ -72,7 +72,9 @@ const BUY_PAGES := [
 ]
 const FURNITURE_NAMES := {"shelf": "保存食の棚", "rocking_chair": "揺り椅子", "rug": "じゅうたん", "lamp": "ランプ", "clock": "掛け時計"}
 # 売る列のページ。果物ははちみつも、実もの野菜は苗も。野菜の組は SELL_GROUPS(果樹と野菜が増えて 1 列 15 行を超えるため分けた)
-const SELL_PAGES := ["果物", "根菜といも", "実もの野菜と苗", "葉もの・豆・香味野菜", "保存食"]
+const SELL_PAGES := ["果物", "根菜といも", "実もの野菜と苗", "葉もの・豆・香味野菜", "果物とはちみつの保存食", "野菜の保存食"]
+# ストーブと腰掛けの画面のページ(料理が増えて 1 列 15 行を超えるため分けた。材料が果物かはちみつか、野菜か)
+const COOK_PAGES := ["果物とはちみつ", "野菜"]
 const SELL_GROUPS := {"root": 1, "imo": 1, "fruit": 2, "leaf": 3, "bean": 3, "aroma": 3}
 
 # 野菜の組を選ぶキー(押すたびに、その組のうちこの土地で育つ次の野菜。HUD の並びもこの順)
@@ -88,6 +90,7 @@ var _guide_timer := 0.0
 var _shovel_wait := 0.0
 var _buy_page := 0           # 市場の買う列の今のページ(閉じても覚えておく)
 var _sell_page := 0          # 市場の売る列の今のページ
+var _cook_page := 0          # ストーブと腰掛けの画面の今のページ(COOK_PAGES)
 
 func _ready() -> void:
 	# 本物のセーブのときだけ控えを取る(テストや確認用のセーブでは取らない)
@@ -1117,12 +1120,14 @@ func _amount_text(item: String, n: int) -> String:
 
 func kitchen_rows() -> Array:
 	var k := world.kitchen
-	var rows := []
+	var rows := [_cook_page_row("料理", func(p): return k.RECIPES.keys().filter(func(id): return _cook_page_of(id) == p and _recipe_shown(id)).size())]
 	for id in k.RECIPES:
+		if not _recipe_shown(id):
+			continue
 		var r: Dictionary = k.RECIPES[id]
 		rows.append({"id": "cook_" + id, "text": "仕込む: %s(%s → %d%s・%d日)持っている %d%s" % [
 			r.name, _amount_text(r.input, r.amount), r.output, r.unit, r.days, k.input_count(id), produce_unit(r.input),
-		], "column": 0})
+		], "column": 0, "page": _cook_page_of(id)})
 	var where: String = POT_NAMES[k.active]
 	if k.is_empty():
 		rows.append({"id": "pot_wait", "text": "%sは空いている" % where, "column": 1})
@@ -1136,7 +1141,9 @@ func kitchen_rows() -> Array:
 
 func _kitchen_action(id: String) -> void:
 	var k := world.kitchen
-	if id == "pot_collect":
+	if id == "page_cook":
+		_cook_page = (_cook_page + 1) % COOK_PAGES.size()
+	elif id == "pot_collect":
 		if k.collect() == "collected":
 			var made: Dictionary = k.last_collected
 			var r: Dictionary = k.RECIPES[made.recipe]
@@ -1207,6 +1214,9 @@ func _open_table() -> void:
 func table_rows() -> Array:
 	var k := world.kitchen
 	var rows := []
+	var held: Array = k.RECIPES.keys().filter(func(id): return produce_count(id) > 0)
+	if not held.is_empty():
+		rows.append(_cook_page_row("食べる", func(p): return held.filter(func(id): return _cook_page_of(id) == p).size()))
 	for id in k.RECIPES:
 		var n := produce_count(id)
 		if n > 0:
@@ -1215,13 +1225,17 @@ func table_rows() -> Array:
 			var effect: String = k.MEALS[r.meal].short
 			if verb == "食べる" and k.has_effect(r.meal):
 				effect = "もう効いている"
-			rows.append({"id": "eat_" + id, "text": "%s: %s %d%s → %s(1%s %d₽)" % [verb, r.name, n, r.unit, effect, r.unit, world.market.sell_price(id)], "column": 0})
+			rows.append({"id": "eat_" + id, "text": "%s: %s %d%s → %s(1%s %d₽)" % [verb, r.name, n, r.unit, effect, r.unit, world.market.sell_price(id)], "column": 0, "page": _cook_page_of(id)})
 	if rows.is_empty():
 		rows.append({"id": "no_food", "text": "テーブルに保存食がない(ストーブで作る)", "column": 0})
 	rows.append({"id": "close", "text": "立つ(H / Esc)", "column": 1})
 	return rows
 
 func _table_action(id: String) -> void:
+	if id == "page_cook":
+		_cook_page = (_cook_page + 1) % COOK_PAGES.size()
+		$HUD.refresh_shop()
+		return
 	if not id.begins_with("eat_"):
 		return
 	var k := world.kitchen
@@ -1713,7 +1727,7 @@ func _buy_page_of(g: Dictionary) -> int:
 
 func _sell_page_of(item: String) -> int:
 	if world.kitchen.RECIPES.has(item):
-		return SELL_PAGES.size() - 1
+		return SELL_PAGES.size() - (2 if world.kitchen.from_tree(item) else 1)
 	if world.forest.FRUITS.has(item) or item == "honey":
 		return 0
 	return SELL_GROUPS[world.garden.CROPS[item.trim_prefix("seedling_")].group]
@@ -1728,7 +1742,22 @@ func _held_kinds(page: int) -> int:
 
 # 右の画面に今出す行。市場は、今のページの品とページを送る行(ほかの画面は全部)
 func visible_shop_rows() -> Array:
-	return shop_rows().filter(func(r): return not r.has("page") or r.page == (_buy_page if r.column == 0 else _sell_page))
+	var left: int = _cook_page if _panel == "kitchen" or _panel == "table" else _buy_page
+	return shop_rows().filter(func(r): return not r.has("page") or r.page == (left if r.column == 0 else _sell_page))
+
+# ストーブと腰掛けの料理のページ
+func _cook_page_of(id: String) -> int:
+	return 0 if world.kitchen.from_tree(id) else 1
+
+# ストーブの画面に並べる料理: この土地で材料が採れるか、材料かできた品を持っている
+func _recipe_shown(id: String) -> bool:
+	var k := world.kitchen
+	return k.grows_here(id) or k.input_count(id) > 0 or int(k.stock[id]) > 0
+
+# ページの行(ストーブ・腰掛け)。count_of: そのページの数え方
+func _cook_page_row(verb: String, count_of: Callable) -> Dictionary:
+	var next: int = (_cook_page + 1) % COOK_PAGES.size()
+	return {"id": "page_cook", "text": "%s: %s(押すと次: %s %d種類)" % [verb, COOK_PAGES[_cook_page], COOK_PAGES[next], count_of.call(next)], "column": 0}
 
 func _toggle_shop() -> void:
 	if $HUD.is_shop_open():

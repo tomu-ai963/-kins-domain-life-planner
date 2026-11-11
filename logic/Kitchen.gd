@@ -44,6 +44,23 @@ const RECIPES := {
 	"pear_compote": {"name": "ナシのコンポート", "input": "pear", "amount": 15, "output": 4, "unit": "瓶", "days": 1, "meal": "sweet"},
 	"pryanik": {"name": "ピャーニク", "input": "honey", "amount": 1, "output": 10, "unit": "個", "days": 1, "meal": "strength"},  # ロシアの蜂蜜菓子
 	"sbiten": {"name": "スビーテン", "input": "honey", "amount": 2, "output": 8, "unit": "瓶", "days": 3, "meal": "warm"},  # ロシアの蜂蜜の温かい飲み物
+	# ── 県を選ぶようにして足した木と野菜の料理と保存食(2026-11-11 とむの要望)。干す・漬ける品は 3 日、煮る品は 1 日 ──
+	"hoshigaki": {"name": "干し柿", "input": "kaki", "amount": 10, "output": 10, "unit": "個", "days": 3, "meal": "sweet"},
+	"marmalade": {"name": "ミカンのマーマレード", "input": "mikan", "amount": 10, "output": 4, "unit": "瓶", "days": 1, "meal": "sweet"},
+	"shikuwasa_juice": {"name": "シークヮーサージュース", "input": "shikuwasa", "amount": 2, "output": 6, "unit": "瓶", "days": 1, "meal": "strength"},
+	"umeboshi": {"name": "梅干し", "input": "ume", "amount": 2, "output": 4, "unit": "瓶", "days": 3, "meal": "pickle"},
+	"kuri_kanroni": {"name": "栗の甘露煮", "input": "kuri", "amount": 2, "output": 4, "unit": "瓶", "days": 1, "meal": "sweet"},
+	"dried_mango": {"name": "ドライマンゴー", "input": "mango", "amount": 6, "output": 10, "unit": "袋", "days": 3, "meal": "sweet"},
+	"papaya_pickle": {"name": "パパイヤの漬物", "input": "papaya", "amount": 4, "output": 6, "unit": "瓶", "days": 3, "meal": "pickle"},  # 沖縄では青いパパイヤを野菜として食べる
+	"takuan": {"name": "たくあん", "input": "daikon", "amount": 10, "output": 10, "unit": "本", "days": 3, "meal": "pickle"},
+	"sauerkraut": {"name": "キャベツの塩漬け", "input": "cabbage", "amount": 10, "output": 8, "unit": "瓶", "days": 3, "meal": "pickle"},  # ロシアのクワシェナヤ・カプスタ
+	"hakusai_zuke": {"name": "白菜漬け", "input": "hakusai", "amount": 10, "output": 8, "unit": "瓶", "days": 3, "meal": "pickle"},
+	"nasu_zuke": {"name": "ナスの浅漬け", "input": "eggplant", "amount": 5, "output": 8, "unit": "瓶", "days": 1, "meal": "pickle"},
+	"hoshiimo": {"name": "干し芋", "input": "sweet_potato", "amount": 6, "output": 10, "unit": "袋", "days": 3, "meal": "strength"},
+	"goya_champuru": {"name": "ゴーヤチャンプルー", "input": "goya", "amount": 3, "output": 6, "unit": "皿", "days": 1, "meal": "strength"},
+	"zunda": {"name": "ずんだ餅", "input": "edamame", "amount": 2, "output": 10, "unit": "個", "days": 1, "meal": "sweet"},
+	"pumpkin_soup": {"name": "カボチャのスープ", "input": "pumpkin", "amount": 6, "output": 6, "unit": "瓶", "days": 1, "meal": "warm"},
+	"imoni": {"name": "芋煮", "input": "taro", "amount": 4, "output": 6, "unit": "皿", "days": 1, "meal": "warm"},
 }
 
 var forest: Forest  # GameWorld が設定する(リンゴの持ち物は Forest にある)
@@ -86,6 +103,18 @@ func _pile(input: String) -> Dictionary:
 	if input == "honey":
 		return bees.stock
 	return forest.produce if forest.produce.has(input) else garden.produce
+
+# 材料が果物かはちみつか(画面のページ分け用。違えば野菜)
+static func from_tree(id: String) -> bool:
+	var input: String = RECIPES[id].input
+	return input == "honey" or Forest.FRUITS.has(input)
+
+# この土地で材料が採れる料理か(はちみつはどこでも)
+func grows_here(id: String) -> bool:
+	var input: String = RECIPES[id].input
+	if input == "honey":
+		return true
+	return forest.grows_here(input) if Forest.FRUITS.has(input) else garden.grows_here(input)
 
 func input_count(id: String) -> int:
 	var input: String = RECIPES[id].input

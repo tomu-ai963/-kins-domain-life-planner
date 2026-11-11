@@ -63,6 +63,13 @@ const FOOD_COLORS := {
 	"garlic_pickle": Color(0.90, 0.86, 0.68), "pirozhki": Color(0.76, 0.54, 0.26),
 	"cherry_jam": Color(0.50, 0.06, 0.14), "plum_jam": Color(0.36, 0.14, 0.38), "pear_compote": Color(0.92, 0.84, 0.46),
 	"pryanik": Color(0.58, 0.34, 0.16), "sbiten": Color(0.78, 0.48, 0.10),
+	# 2026-11-11 に足した料理と保存食
+	"hoshigaki": Color(0.70, 0.36, 0.14), "marmalade": Color(0.94, 0.56, 0.12), "shikuwasa_juice": Color(0.66, 0.78, 0.30),
+	"umeboshi": Color(0.72, 0.16, 0.20), "kuri_kanroni": Color(0.94, 0.78, 0.28), "dried_mango": Color(0.96, 0.66, 0.20),
+	"papaya_pickle": Color(0.84, 0.86, 0.62), "takuan": Color(0.96, 0.84, 0.30), "sauerkraut": Color(0.84, 0.86, 0.62),
+	"hakusai_zuke": Color(0.88, 0.92, 0.74), "nasu_zuke": Color(0.36, 0.16, 0.40), "hoshiimo": Color(0.86, 0.62, 0.30),
+	"goya_champuru": Color(0.52, 0.70, 0.32), "zunda": Color(0.58, 0.76, 0.34), "pumpkin_soup": Color(0.94, 0.66, 0.20),
+	"imoni": Color(0.62, 0.48, 0.32),
 }
 
 var cabin: Cabin
@@ -440,7 +447,7 @@ func _food_on_table(room: Node3D) -> void:
 	var top: float = 0.745
 	var shown := 0
 	for id in Kitchen.RECIPES:
-		var flat: bool = Kitchen.RECIPES[id].unit == "個"
+		var flat: bool = Kitchen.RECIPES[id].unit != "瓶"  # 瓶でない品(個・袋・本・皿)は平たく
 		for _i in range(int(kitchen.stock[id])):
 			if shown >= JARS_SHOWN:
 				return
@@ -743,7 +750,7 @@ func _shelf(room: Node3D) -> void:
 				return
 			var by: float = boards[shown / SHELF_JARS]
 			var x: float = -size.x * 0.5 + 0.1 + (shown % SHELF_JARS) * (size.x - 0.2) / (SHELF_JARS - 1)
-			var flat: bool = Kitchen.RECIPES[id].unit == "個"
+			var flat: bool = Kitchen.RECIPES[id].unit != "瓶"  # 瓶でない品(個・袋・本・皿)は平たく
 			var h: float = 0.05 if flat else 0.13
 			_piece(shelf, _food_mat(id), Vector3(x, by + 0.02 + h * 0.5, 0), Vector3(0.11, h, 0.11)).name = "ShelfJar"
 			if not flat:

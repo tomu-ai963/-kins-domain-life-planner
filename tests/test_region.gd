@@ -40,6 +40,7 @@ func _initialize() -> void:
 	_test_picker_text()
 	_test_wildlife()
 	_test_crops()
+	_test_recipes()
 	_run_scene.call_deferred()
 
 func _check(cond: bool, label: String) -> void:
@@ -456,6 +457,42 @@ func _test_crops() -> void:
 	_check(left.has("hakusai") and left.has("spinach") and not left.has("daikon"), "霜に強いハクサイ・ホウレンソウは残り、ダイコンは枯れる(%s)" % str(left))
 	_check(tk.market.orderable().has("sweet_potato") and tk.market.orderable().has("corn") and not tk.market.orderable().has("hakusai"), "春の野菜を注文できる(秋のハクサイは除く)")
 
+func _test_recipes() -> void:
+	print("料理と保存食")
+	var Kitchen = load("res://logic/Kitchen.gd")
+	var Market = load("res://logic/Market.gd")
+	var Visitors = load("res://logic/Visitors.gd")
+	var Cabin3D = load("res://view/3d/CabinView3D.gd")
+	for id in Kitchen.RECIPES:
+		var r: Dictionary = Kitchen.RECIPES[id]
+		var input_ok: bool = r.input == "honey" or Forest.FRUITS.has(r.input) or Garden.CROPS.has(r.input)
+		var ok: bool = input_ok and Market.SELL_PRICES.has(id) and Cabin3D.FOOD_COLORS.has(id) and Visitors.ASK.has(id) and Kitchen.MEALS.has(r.meal) and int(r.days) in [1, 3]
+		_check(ok, "%s: 材料・買い取り値・瓶の色・頼みごと・効果がある" % r.name)
+		if r.input != "honey" and Kitchen.RECIPES.keys().find(id) > Kitchen.RECIPES.keys().find("sbiten"):  # 今回足した料理(ピロシキなど前からの品は値段を変えない)
+			var raw: float = float(r.amount) * float(Market.SELL_PRICES[r.input])
+			var made: float = float(r.output) * float(Market.SELL_PRICES[id])
+			_check(made >= raw * 1.5 and made <= raw * 2.5, "%s: 生で売るよりおよそ 2 倍(%d₽ → %d₽)" % [r.name, raw, made])
+	for sp in Forest.FRUIT_ORDER:
+		_check(Kitchen.RECIPES.values().any(func(r): return r.input == sp), "%s の料理がある" % Forest.SPECIES[sp].name)
+	var counts := {}
+	for id in Kitchen.RECIPES:
+		counts[Kitchen.RECIPES[id].meal] = int(counts.get(Kitchen.RECIPES[id].meal, 0)) + 1
+	_check(Kitchen.MEAL_ORDER.all(func(m): return int(counts.get(m, 0)) >= 3), "4 つの効果のどれにも 3 品以上(%s)" % str(counts))
+	var tk := _world("tokyo", "2026-11-11")
+	var k = tk.kitchen
+	_check(k.grows_here("hoshigaki") and k.grows_here("takuan") and k.grows_here("goya_champuru") and not k.grows_here("dried_mango") and not k.grows_here("jam"), "東京: 干し柿・たくあん・ゴーヤチャンプルーは作れて、ドライマンゴー・リンゴジャムは材料が採れない")
+	var ok2 := _world("okinawa", "2026-11-11")
+	_check(ok2.kitchen.grows_here("dried_mango") and ok2.kitchen.grows_here("papaya_pickle") and ok2.kitchen.grows_here("shikuwasa_juice") and not ok2.kitchen.grows_here("hoshigaki"), "沖縄: ドライマンゴー・パパイヤの漬物・シークヮーサージュース")
+	# 干し柿を仕込んで 3 日で受け取り、食べると「甘い」
+	tk.cabin.site = Vector2(20, 20)
+	tk.forest.produce.kaki = 10
+	k.firewood = 1
+	_check(k.start("hoshigaki") == "started" and int(tk.forest.produce.kaki) == 0, "カキ 10 個で干し柿を仕込める")
+	tk.time.shift_days(3)
+	_check(k.collect() == "collected" and int(k.stock.hoshigaki) == 10, "3 日で干し柿 10 個")
+	_check(k.eat("hoshigaki") == "eaten" and k.has_effect("sweet"), "干し柿を食べると「甘い」(親しくなりやすい)")
+	_check(tk.market.sell_all("hoshigaki") == 9 * 40, "干し柿は 1 個 40₽ で売れる(秋)")
+
 func Market_price(sp: String) -> int:
 	return int(load("res://logic/Market.gd").SELL_PRICES[sp])
 
@@ -561,6 +598,33 @@ func _run_scene() -> void:
 	_check(tallest <= 15, "東京の冬の市場は 1 列 15 行まで(%d 行)" % tallest)
 	_check(seen.has("order_daikon") and not seen.has("daikon_seed") and seen.has("cucumber_seed") and seen.has("order_cucumber"), "冬はダイコンは注文だけ、きゅうりは買えて注文もできる")
 	_check(seen.has("hakusai_seed") and not seen.has("order_hakusai"), "ハクサイ(秋にまく)は冬も店で買えて、注文はない")
+	# ストーブ・腰掛け・売る列: 全部の料理を持っていても、どのページも 15 行まで
+	var k = main.world.kitchen
+	for id in k.RECIPES:
+		k.stock[id] = 2
+		main.world.market.pile_of(k.RECIPES[id].input)[k.RECIPES[id].input] = 20
+	k.firewood = 5
+	var longest := 0
+	for panel in ["kitchen", "table"]:
+		main._panel = panel
+		for cp in main.COOK_PAGES.size():
+			main._cook_page = cp
+			longest = maxi(longest, main.visible_shop_rows().filter(func(r): return r.column == 0).size())
+	main._panel = "market"
+	for sp in main.SELL_PAGES.size():
+		main._sell_page = sp
+		longest = maxi(longest, main.visible_shop_rows().filter(func(r): return r.column == 1).size())
+	_check(longest <= 15, "料理を全部持っていても、ストーブ・腰掛け・売る列は 1 列 15 行まで(%d 行)" % longest)
+	main._panel = "kitchen"
+	main._cook_page = 0
+	var ids0: Array = main.visible_shop_rows().map(func(r): return r.id)
+	_check(ids0.has("cook_hoshigaki") and ids0.has("cook_jam") and not ids0.has("cook_takuan"), "ストーブの 1 ページ目は果物とはちみつ(材料を持っていれば、土地に育たない果物の料理も出る)")
+	main._on_shop_action("page_cook")
+	var ids1: Array = main.visible_shop_rows().map(func(r): return r.id)
+	_check(main._cook_page == 1 and ids1.has("cook_takuan") and ids1.has("cook_goya_champuru") and not ids1.has("cook_hoshigaki"), "押すと野菜の料理のページ")
+	main._on_shop_action("cook_takuan")
+	_check(k.pot.get("recipe", "") == "takuan", "たくあんを仕込める")
+	main._panel = "market"
 	var missing: Array = main.world.market.GOODS.filter(func(g): return main.world.market.sells(g) and not seen.has(g.id) and not seen.has("order_" + g.species)).map(func(g): return g.id)
 	_check(missing.is_empty(), "冬もどの品にもたどり着ける(足りない: %s)" % str(missing))
 	var weather = main.get_node("Weather")
