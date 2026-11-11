@@ -6,7 +6,11 @@ extends Node3D
 const Forest = preload("res://logic/Forest.gd")
 const Look = preload("res://view/3d/Look.gd")
 
-const COLORS := {"birch": Color(0.80, 0.70, 0.45), "cedar": Color(0.42, 0.26, 0.12)}
+const COLORS := {
+	"birch": Color(0.80, 0.70, 0.45), "cedar": Color(0.42, 0.26, 0.12),
+	"konara": Color(0.55, 0.36, 0.16), "gajumaru": Color(0.50, 0.20, 0.22),  # どんぐり / 小さな実
+	"sugi": Color(0.46, 0.30, 0.14), "ezomatsu": Color(0.40, 0.26, 0.14), "ryukyu_pine": Color(0.44, 0.28, 0.12),  # 球果
+}
 
 var forest: Forest
 var _markers := []

@@ -2,7 +2,8 @@ extends RefCounted
 
 # ── 現実の時計と太陽の位置(描画を持たない) ───────────────────────
 # ゲームのルールには使わない。光の見た目(view/3d/DayLightView3D.gd)と HUD の時計のためだけ。
-# 日の出・日の入りが窓の外と近くなるように、日本のまんなかあたりの緯度・経度と日付から太陽の位置を計算する。
+# 日の出・日の入りが窓の外と近くなるように、選んだ都道府県の県庁所在地の緯度・経度(Region)と日付から太陽の位置を計算する。
+# 県を選ぶ前は、日本のまんなかあたり(LATITUDE_DEG・LONGITUDE_DEG)。
 # 向きは ロジックの座標と同じ: x = 東、y = 上、z = 南(-z = 北)。大気の屈折は入れない(数分の差)
 const LATITUDE_DEG := 35.0
 const LONGITUDE_DEG := 137.0
@@ -19,6 +20,7 @@ const MONTH_START_DAY := [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
 var preview_hours := 0.0  # N で先へ送った時間(0〜24 未満)。保存しない
 var fixed_now := {}       # テスト用: 空でなければ現実の時計の代わりに使う {month, day, hour, minute, second}
 var time = null           # WorldTime(GameWorld が設定する)。なければ現実の時計
+var region = null         # Region(GameWorld が設定する)。太陽の位置を計算する緯度・経度
 
 func _now() -> Dictionary:
 	if not fixed_now.is_empty():
@@ -60,11 +62,17 @@ static func equation_of_time_min(doy: int) -> float:
 	var b := TAU * (doy - 81) / 364.0
 	return 9.87 * sin(2.0 * b) - 7.53 * cos(b) - 1.5 * sin(b)
 
-# 太陽のある方向(長さ 1)。hours は時計の時刻(時間の小数)
-static func to_sun(hours: float, doy: int) -> Vector3:
-	var solar := hours + equation_of_time_min(doy) / 60.0 + (LONGITUDE_DEG - CLOCK_MERIDIAN_DEG) / 15.0
+# この土地の太陽のある方向(長さ 1)
+func sun_dir(hours: float, doy: int) -> Vector3:
+	if region == null:
+		return to_sun(hours, doy)
+	return to_sun(hours, doy, region.latitude(), region.longitude())
+
+# 太陽のある方向(長さ 1)。hours は時計の時刻(時間の小数)。lat・lon は緯度・経度(度)
+static func to_sun(hours: float, doy: int, lat_deg := LATITUDE_DEG, lon_deg := LONGITUDE_DEG) -> Vector3:
+	var solar := hours + equation_of_time_min(doy) / 60.0 + (lon_deg - CLOCK_MERIDIAN_DEG) / 15.0
 	var hour_angle := deg_to_rad(15.0 * (solar - 12.0))
-	var lat := deg_to_rad(LATITUDE_DEG)
+	var lat := deg_to_rad(lat_deg)
 	var dec := deg_to_rad(declination_deg(doy))
 	var east := -cos(dec) * sin(hour_angle)
 	var north := cos(lat) * sin(dec) - sin(lat) * cos(dec) * cos(hour_angle)

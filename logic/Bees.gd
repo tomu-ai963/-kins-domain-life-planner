@@ -163,9 +163,14 @@ func occupied_count() -> int:
 
 # 明日採れるようになる巣箱の数(今採れるものも含む。日記用)
 func ready_tomorrow() -> int:
-	var rate: float = _rate_on(season_of(forest.day_number() + 1))
+	var rate: float = _rate_on(season_on(forest.day_number() + 1))
 	return hives.filter(func(h): return h.occupied and minf(float(h.comb) + rate, COMB_MAX) >= 1.0).size()
 
+# その日の、この土地の季節
+func season_on(day: int) -> String:
+	return forest.season_of_date(Forest.date_of_day(day))
+
+# 県を選ぶ前の(今までの)季節
 static func season_of(day: int) -> String:
 	var month := int(Forest.date_of_day(day).substr(5, 2))
 	if month >= 3 and month <= 5:
@@ -194,7 +199,7 @@ func catch_up() -> void:
 		return
 	var from: int = maxi(last_checked_day + 1, today - MAX_CATCH_UP_DAYS + 1)
 	for d in range(from, today + 1):
-		var season := season_of(d)
+		var season := season_on(d)
 		for i in range(hives.size()):
 			var h: Dictionary = hives[i]
 			if h.occupied:

@@ -36,8 +36,9 @@ static func cell_of(pos: Vector2) -> Vector2i:
 static func center_of(c: Vector2i) -> Vector2:
 	return (Vector2(c) + Vector2(0.5, 0.5)) * CELL
 
+# 雪をどかせるか(雪の積もる土地の冬だけ)
 func can_clear_now() -> bool:
-	return forest.season == "winter"
+	return forest.season == "winter" and forest.snowy_winter()
 
 func is_cleared(pos: Vector2) -> bool:
 	return can_clear_now() and cells.has(cell_of(pos))
@@ -66,8 +67,7 @@ func clear_at(pos: Vector2) -> String:
 # その日に道が埋まるか(雪の日か、冬でない日)
 func _buries_on(day: int) -> bool:
 	var date: String = Forest.date_of_day(day)
-	var month := int(date.substr(5, 2))
-	if month >= 3 and month <= 11:
+	if not forest.climate().is_snow_month(int(date.substr(5, 2))):
 		return true
 	return forest.roll_daily_event(date) == "rain"
 

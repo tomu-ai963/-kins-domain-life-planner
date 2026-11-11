@@ -41,7 +41,7 @@ const ORDER := ["nina", "fyodor", "tanya", "pavel"]  # 来る順番
 
 # 1 回に頼む量(リンゴは個、野菜は kg、保存食は瓶 / 個)
 const ASK := {
-	"apple": 5, "cherry": 1, "plum": 2, "pear": 4, "cherry_jam": 1, "plum_jam": 1, "pear_compote": 1,
+	"apple": 5, "cherry": 1, "plum": 2, "pear": 4, "kaki": 4, "mikan": 5, "shikuwasa": 1, "cherry_jam": 1, "plum_jam": 1, "pear_compote": 1,
 	"radish": 3, "carrot": 5, "cucumber": 5, "potato": 5, "garlic": 1, "tomato": 5,
 	"jam": 2, "sauce": 2, "pickles": 3, "garlic_pickle": 1, "pirozhki": 5, "honey": 1,
 	"pryanik": 5, "sbiten": 2,
@@ -157,7 +157,7 @@ func _help_reward() -> Dictionary:
 	var best_price := 999999
 	for kind in Garden.CROPS:
 		var crop: Dictionary = Garden.CROPS[kind]
-		if forest.season in crop.seasons and not crop.get("seedling_only", false):
+		if garden.can_sow_now(kind) and not crop.get("seedling_only", false):
 			var price: int = int(market.good(kind + "_seed").price)
 			if price < best_price:
 				best_price = price
@@ -197,7 +197,7 @@ func _gift_reward(person: String, rng: RandomNumberGenerator) -> Dictionary:
 			var sowable := []
 			for kind in Garden.CROPS:
 				var crop: Dictionary = Garden.CROPS[kind]
-				if forest.season in crop.seasons and not crop.get("seedling_only", false):
+				if garden.can_sow_now(kind) and not crop.get("seedling_only", false):
 					sowable.append(kind)
 			if sowable.is_empty():
 				return {"type": "item", "item": "pickles", "count": 2}
@@ -293,10 +293,11 @@ func _choose_reward(item: String, amount: int, rng: RandomNumberGenerator) -> Di
 	var worth: float = value_of(item, amount) * BONUS
 	var money := {"type": "money", "amount": ceili(worth / MONEY_ROUND) * MONEY_ROUND}
 	var options := []
-	var sow_season: String = "spring" if forest.season == "winter" else forest.season  # 冬は春にまける種
+	var frost_winter: bool = forest.season == "winter" and forest.climate().has_frost()
+	var sow_season: String = "spring" if frost_winter else forest.season  # 霜の降りる冬は春にまける種
 	for kind in Garden.CROPS:
 		var crop: Dictionary = Garden.CROPS[kind]
-		if sow_season in crop.seasons and not crop.get("seedling_only", false):
+		if garden.can_sow_in(kind, sow_season) and not crop.get("seedling_only", false):
 			options.append({"type": "crop_seed", "kind": kind, "count": maxi(1, int(worth / market.good(kind + "_seed").price))})
 	if forest.season in SEEDLING_SEASONS:
 		for kind in Seedlings.SEEDLING_CROPS:

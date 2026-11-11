@@ -9,6 +9,7 @@ extends CanvasLayer
 # 文言の中身は Main が決める(shop_rows・quest_line など)。ここは並べて出すだけ
 const Forest = preload("res://logic/Forest.gd")
 const TouchText = preload("res://view/TouchText.gd")
+const RegionPicker = preload("res://view/RegionPicker.gd")
 const MESSAGE_SECONDS := 3.0
 const DIARY_FADE_SECONDS := 0.6
 const TOUCH_STATUS_SECONDS := 0.25  # タッチのときに左上の文字を更新する間隔
@@ -18,6 +19,7 @@ const SHOP_HEADER_HEIGHT := 70.0  # 市場の画面の見出しと余白
 const SHOP_ROW_GAP := 4.0         # 行のあいだ(VBoxContainer の既定)
 
 signal shop_action(id)  # 市場の画面のボタン(品の id / "sell_<収穫物>" / "close")
+signal region_chosen(id)  # 土地のある都道府県を決めた(view/RegionPicker.gd)
 
 @onready var _label: Label = $PositionLabel
 @onready var _bg: ColorRect = $BG
@@ -43,6 +45,7 @@ var _diary_label: Label
 var _diary_fade: Tween
 var _hint_panel: PanelContainer
 var _hint_label: Label
+var picker: RegionPicker  # 都道府県を選ぶ画面(ゲームのはじめに一度だけ)
 
 func setup(player: Node, trees: Forest, main: Node) -> void:
 	_player = player
@@ -52,6 +55,17 @@ func setup(player: Node, trees: Forest, main: Node) -> void:
 	_build_shop()
 	_build_hint()
 	_build_diary()
+	picker = RegionPicker.new()
+	picker.chosen.connect(func(id): region_chosen.emit(id))
+	add_child(picker)
+
+# ── 都道府県を選ぶ画面 ──
+func open_region_picker() -> void:
+	picker.touch_mode = touch_mode
+	picker.open()
+
+func is_picker_open() -> bool:
+	return picker != null and picker.visible
 
 # 植えられない・収穫した などを数秒だけ出す
 func show_message(text: String, seconds: float = MESSAGE_SECONDS) -> void:
@@ -327,12 +341,10 @@ func _status_lines() -> PackedStringArray:
 # 持ち物(Tab)
 func _inventory_lines() -> PackedStringArray:
 	var pos: Vector2 = _main.player_pos()
-	var seeds: Dictionary = _trees.seeds
-	var sap: Dictionary = _trees.saplings
 	return PackedStringArray([
 		"─ 持ち物 ─",
-		"種: 白樺 %d  リンゴ %d  シベリア杉 %d" % [seeds.birch, seeds.apple, seeds.cedar],
-		"苗木: 白樺 %d  リンゴ %d  シベリア杉 %d\n      サクランボ %d  スモモ %d  ナシ %d" % [sap.birch, sap.apple, sap.cedar, sap.cherry, sap.plum, sap.pear],
+		"種: " + _stock_text(_trees.seeds, false),
+		"苗木: " + _stock_text(_trees.saplings, true),
 		"野菜の種: " + _main.crop_seeds_line() + _orders_suffix(),
 		"苗: " + _main.seedlings_line(),
 		"収穫物: " + _main.produce_line(),
@@ -343,13 +355,28 @@ func _inventory_lines() -> PackedStringArray:
 		"植えた木: %d本   いる場所: X %.0fm  Y %.0fm" % [_trees.trees.size(), pos.x, pos.y],
 	])
 
+# 持ち物の木の種・苗木の並び。この土地で育つ木と、持っている木だけ。3 つごとに折り返す。
+# 例: 「白樺 3  リンゴ 1  シベリア杉 0」(種には、苗木からしか育てない果樹は出さない)
+func _stock_text(stock: Dictionary, with_sapling_only: bool) -> String:
+	var order: Array = Forest.SPECIES.keys().filter(func(sp): return not sp in Forest.SAPLING_ONLY)
+	if with_sapling_only:
+		order.append_array(Forest.SAPLING_ONLY)
+	var parts := PackedStringArray()
+	for sp in order:
+		if _trees.grows_here(sp) or int(stock.get(sp, 0)) > 0:
+			parts.append("%s %d" % [Forest.SPECIES[sp].name, int(stock.get(sp, 0))])
+	var rows := PackedStringArray()
+	for i in range(0, parts.size(), 3):
+		rows.append("  ".join(parts.slice(i, i + 3)))
+	return "\n      ".join(rows) if not rows.is_empty() else "なし"
+
 # 注文した春の種があれば、持ち物の野菜の種の行のあとに出す
 func _orders_suffix() -> String:
 	var m = _main.world.market
 	if m.orders.is_empty():
 		return ""
 	return "
-      注文中(3/1に届く): " + _main.orders_text(m.orders)
+      注文中(%d/1に届く): " % _main.world.region.winter_end_month() + _main.orders_text(m.orders)
 
 # タッチのときは、キーの言い方をボタンの名前に置き換えて出す
 func _shown(text: String) -> String:
@@ -373,10 +400,10 @@ func _help_lines() -> PackedStringArray:
 	return PackedStringArray([
 		"─ 操作 ─",
 		"J:丸太の巣箱を作る/くり抜く/はちみつを採る  M:音量(大/中/小/消す)",
-		"L:鳥の餌台を立てる/白樺の種を置く(秋と冬)/育った木にムクドリの巣箱  X:果樹を剪定する(冬)",
+		_main.local_text("L:鳥の餌台を立てる/白樺の種を置く(秋と冬)/育った木にムクドリの巣箱  X:果樹を剪定する(冬)"),
 		"U:押したまま歩いて雪かき(冬)  H:小屋の東の台で薪を割る / 腰掛けで食べる",
 		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者と話す",
-		"[1]白樺 [2]果樹(押すたびに リンゴ/サクランボ/スモモ/ナシ) [3]シベリア杉 [V]種/苗木",
+		"[1]%s [2]果樹(押すたびに %s) [3]%s [V]種/苗木" % [_main.group_keys_text("broadleaf"), _main.group_keys_text("fruit", false), _main.group_keys_text("conifer")],
 		"[4]ラディッシュ [5]にんじん [6]きゅうり [7]じゃがいも [8]ニンニク [9]トマト",
 		"SPACE:植える/区画にまく  Q:水やり  E:収穫  Z:抜く/伐る",
 		"F:菜園  P:池  H:小屋(完成したら 苗づくり / ストーブの前で料理 / ベッドのそばで日記)  K:ヒントを閉じる",

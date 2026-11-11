@@ -186,7 +186,7 @@ func update_ambient() -> void:
 	var inside: bool = world.cabin.is_inside(pos)
 	var outside: float = INDOOR_OUTSIDE if inside else 1.0
 	var night: float = world.wildlife.darkness()
-	var raining: bool = f.is_raining() and f.season != "winter"  # 雪は音がしない
+	var raining: bool = f.is_raining() and not (f.season == "winter" and f.snowy_winter())  # 雪は音がしない
 	# 音量は小さめに(2026-11-06 とむの感想で下げた)
 	_loops.wind.goal = (0.26 if f.season == "winter" else 0.16) * lerpf(1.0, 0.75, night) * outside
 	_loops.leaves.goal = 0.24 * minf(1.0, leafy_trees_near(pos) / LEAF_FULL_TREES) * outside * (0.6 if raining else 1.0)

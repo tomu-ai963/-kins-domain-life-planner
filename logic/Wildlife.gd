@@ -57,7 +57,7 @@ var seen := []       # 一度でも来た生き物の id
 # 今の暗さ(0 = 昼、1 = 夜)。N のプレビューも含む(見た目を光に合わせるため)
 func darkness() -> float:
 	var hours: float = fposmod(clock.real_hours() + clock.preview_hours, 24.0)
-	return DayClock.darkness(DayClock.elevation_deg(DayClock.to_sun(hours, clock.today_of_year())))
+	return DayClock.darkness(DayClock.elevation_deg(clock.sun_dir(hours, clock.today_of_year())))
 
 func _time_fits(time: String) -> bool:
 	var d := darkness()

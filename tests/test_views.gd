@@ -2044,14 +2044,14 @@ func _test_market_pages() -> void:
 	_check(tallest <= 15, "1 列は多くても 15 行(%d 行)" % tallest)
 	var missing := []
 	for g in w.market.GOODS:
-		if not seen.has(g.id):
+		if w.market.sells(g) and not seen.has(g.id):  # その土地で育たない木は並ばない(県を選ぶ前は、県を選んで足した木)
 			missing.append(g.id)
 	for item in w.market.SELL_PRICES:
 		if not seen.has("sell_" + item):
 			missing.append(item)
 	_check(missing.is_empty(), "どの品にもたどり着ける(足りない: %s)" % str(missing))
 	_check(hud._shop_columns[0].get_child(0).text.contains("押すと次: 野菜の種"), "1 行目で次のページが分かる")
-	_check(hud._shop_columns[1].get_child(0).text.contains("保存食 10種類"), "次のページに持っている数が分かる")
+	_check(hud._shop_columns[1].get_child(0).text.contains("野菜 8種類"), "次のページに持っている数が分かる")
 	# 押すと買う列が変わる。フォーカスはページの行に残る
 	hud._shop_columns[0].get_child(0).grab_focus()
 	main._on_shop_action("page_buy")

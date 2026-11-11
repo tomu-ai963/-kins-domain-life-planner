@@ -17,11 +17,23 @@ const ROUND := {
 	"cherry": {"count": 9, "size": [0.17, 0.23], "core": 0.31, "branches": 5, "branch_thick": 0.022},
 	"plum": {"count": 11, "size": [0.14, 0.20], "core": 0.32, "branches": 6, "branch_thick": 0.018},
 	"pear": {"count": 9, "size": [0.17, 0.24], "core": 0.30, "branches": 4, "branch_thick": 0.024},
+	# 県を選ぶようにして足した木(2026-11-11)
+	"konara": {"count": 12, "size": [0.15, 0.22], "core": 0.32, "branches": 7, "branch_thick": 0.016},  # 雑木林の、こんもりした樹冠
+	"gajumaru": {"count": 16, "size": [0.13, 0.19], "core": 0.36, "branches": 8, "branch_thick": 0.03},  # 横に広い、細かい葉のかたまり
+	"kaki": {"count": 9, "size": [0.18, 0.25], "core": 0.32, "branches": 5, "branch_thick": 0.022},
+	"mikan": {"count": 10, "size": [0.16, 0.22], "core": 0.36, "branches": 5, "branch_thick": 0.02},  # 丸く刈り込んだ低い木
+	"shikuwasa": {"count": 10, "size": [0.15, 0.21], "core": 0.34, "branches": 5, "branch_thick": 0.018},
+	"ryukyu_pine": {"count": 6, "size": [0.20, 0.28], "core": 0.22, "branches": 5, "branch_thick": 0.02},  # 松: まばらな葉のかたまりが段になる
 }
 # 針葉樹の段: 下から上へ、段ごとに細くなる
-const CEDAR_TIERS := 5
-const CEDAR_RIM_WAVE := 0.07
-const CEDAR_RIM_DROOP := 0.018  # 縁の波に合わせて上下にも揺らす(枝先が垂れて見える)
+#   tiers: 段の数 / base・top: いちばん下・上の段の半径 / wave: 縁の波 / droop: 縁の波に合わせて上下にも揺らす(枝先が垂れて見える)
+const TIERED := {
+	"cedar": {"tiers": 5, "base": 0.44, "top": 0.15, "wave": 0.07, "droop": 0.018},
+	"sugi": {"tiers": 7, "base": 0.40, "top": 0.10, "wave": 0.05, "droop": 0.010},     # スギ: 細く尖った円錐
+	"ezomatsu": {"tiers": 6, "base": 0.46, "top": 0.10, "wave": 0.08, "droop": 0.030},  # エゾマツ: 枝先が垂れる
+}
+const CEDAR_RIM_WAVE := 0.07    # _add_tier の既定(シベリア杉と同じ)
+const CEDAR_RIM_DROOP := 0.018
 
 # 頂点をためて ArrayMesh にする。面の向きは法線から決めるので、呼ぶ側は順番を気にしなくてよい
 class MeshBuilder:
@@ -68,8 +80,8 @@ static func _rng(species: String, variant: int) -> RandomNumberGenerator:
 
 # 樹冠。{"mesh": 形, "anchors": 実を付ける場所(かたまりの表面)}
 static func crown(species: String, variant: int) -> Dictionary:
-	if species == "cedar":
-		return {"mesh": _cedar_crown(variant), "anchors": []}
+	if TIERED.has(species):
+		return {"mesh": _tiered_crown(species, variant), "anchors": []}
 	return _round_crown(species, variant)
 
 static func _round_crown(species: String, variant: int) -> Dictionary:
@@ -111,19 +123,22 @@ static func _add_lump(b: MeshBuilder, center: Vector3, radius: Vector3, tint: fl
 			var c := a + LUMP_SEGMENTS + 1
 			b.quad(a, a + 1, c, c + 1)
 
-# シベリア杉: 縁が波打った、垂れた傘を重ねる
-static func _cedar_crown(variant: int) -> ArrayMesh:
-	var rng := _rng("cedar", variant)
+# 針葉樹(シベリア杉・スギ・エゾマツ): 縁が波打った、垂れた傘を重ねる
+static func _tiered_crown(species: String, variant: int) -> ArrayMesh:
+	var spec: Dictionary = TIERED[species]
+	var tiers: int = spec.tiers
+	var rng := _rng(species, variant)
 	var b := MeshBuilder.new()
-	for t in range(CEDAR_TIERS):
-		var f := float(t) / float(CEDAR_TIERS - 1)
+	for t in range(tiers):
+		var f := float(t) / float(tiers - 1)
 		var rim_y := lerpf(-0.5, 0.16, f) + rng.randf_range(-0.012, 0.012)
-		var apex_y := 0.5 if t == CEDAR_TIERS - 1 else rim_y + 0.34
-		var radius := lerpf(0.44, 0.15, f) * rng.randf_range(0.97, 1.03)
-		_add_tier(b, rim_y, apex_y, radius, lerpf(0.82, 1.0, f), rng)
+		var apex_y := 0.5 if t == tiers - 1 else rim_y + 0.34
+		var radius := lerpf(spec.base, spec.top, f) * rng.randf_range(0.97, 1.03)
+		_add_tier(b, rim_y, apex_y, radius, lerpf(0.82, 1.0, f), rng, spec.wave, spec.droop)
 	return b.commit()
 
-static func _add_tier(b: MeshBuilder, rim_y: float, apex_y: float, radius: float, tint: float, rng: RandomNumberGenerator) -> void:
+static func _add_tier(b: MeshBuilder, rim_y: float, apex_y: float, radius: float, tint: float, rng: RandomNumberGenerator,
+		rim_wave := CEDAR_RIM_WAVE, rim_droop := CEDAR_RIM_DROOP) -> void:
 	const SEGMENTS := 60  # 波 1 つを 5 分割以上で描いて、縁を丸くする
 	const STEPS := 3  # 頂点から縁まで。少しふくらませて、ただの円錐に見えないように
 	var waves := rng.randi_range(9, 12)
@@ -135,8 +150,8 @@ static func _add_tier(b: MeshBuilder, rim_y: float, apex_y: float, radius: float
 		for j in range(SEGMENTS + 1):
 			var phi := TAU * float(j) / float(SEGMENTS)
 			var wave := sin(float(waves) * phi + phase)
-			var r := radius * pow(along, 0.85) * (1.0 + CEDAR_RIM_WAVE * along * wave)
-			var y := apex_y - height * along + CEDAR_RIM_DROOP * along * wave
+			var r := radius * pow(along, 0.85) * (1.0 + rim_wave * along * wave)
+			var y := apex_y - height * along + rim_droop * along * wave
 			var n := Vector3(cos(phi) * height, radius, sin(phi) * height).normalized()
 			b.vertex(Vector3(cos(phi) * r, y, sin(phi) * r), n, tint)
 	for s in range(STEPS):

@@ -176,8 +176,9 @@ func present() -> Array:
 			list.append(id)
 	return list
 
+# 冬に池が凍っているか(雪の積もらない土地では凍らない)
 func is_frozen() -> bool:
-	return forest.season == "winter" and water > 0
+	return forest.season == "winter" and forest.snowy_winter() and water > 0
 
 # 凍った池の上か(冬は上を歩けて、滑る。2026-11-11 とむ決定)
 func is_on_ice(pos: Vector2) -> bool:

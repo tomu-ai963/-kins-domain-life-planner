@@ -79,7 +79,7 @@ func sow(pos: Vector2, kind: String, from_seedling := false) -> String:
 		return "no_plot"
 	if not crop_at(pos).is_empty():
 		return "occupied"
-	if not (forest.season in CROPS[kind].seasons):
+	if not can_sow_now(kind):
 		return "not_season"
 	if not from_seedling:
 		if CROPS[kind].get("seedling_only", false):
@@ -96,6 +96,13 @@ func sow(pos: Vector2, kind: String, from_seedling := false) -> String:
 		_water(crops[-1])
 	_commit()
 	return "sown"
+
+# その季節にまける(苗を植えられる)か。土地の気候で変わる(霜の降りない土地は、春か秋の野菜を冬にもまける)
+func can_sow_in(kind: String, season: String) -> bool:
+	return forest.climate().can_sow(CROPS[kind], season)
+
+func can_sow_now(kind: String) -> bool:
+	return can_sow_in(kind, forest.season)
 
 # 足元の区画に水をあげる。結果: watered / none / done / ripe
 func water_at(pos: Vector2) -> String:
@@ -260,7 +267,7 @@ func growth_ratio(c: Dictionary) -> float:
 	return clampf((growth_days(c) + forest.time_offset_years) / float(CROPS[c.kind].grow_days), 0.0, 1.0)
 
 # 霜(日付が変わったときに呼ぶ): 冬を迎えた野菜は枯れる。枯れた数を last_frost に残す。
-# 閉じているあいだに冬が来て過ぎた場合も枯れている。ニンニクは霜に強い
+# 閉じているあいだに冬が来て過ぎた場合も枯れている。ニンニクは霜に強い。霜の降りない土地(南西諸島)では枯れない
 func apply_frost() -> void:
 	last_frost = {}
 	var today: int = day_number()
@@ -268,28 +275,35 @@ func apply_frost() -> void:
 		var c: Dictionary = crops[i]
 		if CROPS[c.kind].get("hardy", false):
 			continue
-		if forest.season == "winter" or _winter_between(int(c.sown_day), today):
+		if (forest.season == "winter" and forest.climate().has_frost()) or _winter_between(int(c.sown_day), today):
 			last_frost[c.kind] = int(last_frost.get(c.kind, 0)) + 1
 			crops.remove_at(i)
 	if not last_frost.is_empty():
 		_commit()
 
-# from から to の前の日までに、冬の日(12〜2 月)があるか
+# from から to の前の日までに、霜の降りる日(土地の冬の日。今までのルールでは 12〜2 月)があるか
 func _winter_between(from: int, to: int) -> bool:
 	for d in range(from, to):
-		var month := int(Forest.date_of_day(d).substr(5, 2))
-		if month == 12 or month <= 2:
+		if _is_frost_day(d):
 			return true
 	return false
 
-# 今日から霜の日(冬の最初の日 = 12 月 1 日)までの日数。冬のあいだは 0
+func _is_frost_day(day: int) -> bool:
+	return forest.climate().is_frost_month(int(Forest.date_of_day(day).substr(5, 2)))
+
+# 今日から霜の日(土地の冬の最初の日。今までのルールでは 12 月 1 日)までの日数。冬のあいだは 0。霜の降りない土地は 366
 func days_to_frost() -> int:
-	var today: int = day_number()
+	return _days_to_frost_from(day_number())
+
+func _days_to_frost_from(today: int) -> int:
 	for d in range(today, today + 366):
-		var month := int(Forest.date_of_day(d).substr(5, 2))
-		if month == 12 or month <= 2:
+		if _is_frost_day(d):
 			return d - today
 	return 366
+
+# 霜の降りはじめる日の文言。例: 「12月1日」
+func frost_date_text() -> String:
+	return "%d月1日" % forest.climate().winter_start_month()
 
 # 毎日水をやっても、育ちきる前に霜で枯れるか(霜に強い野菜は枯れない)。
 # 育ちきった日が霜の日なら、その朝に枯れるので間に合わない
@@ -298,9 +312,10 @@ func misses_frost(c: Dictionary) -> bool:
 		return false
 	return days_left(c) >= days_to_frost()
 
-# 霜が近いか(11 月 24 日から月末まで。霜に弱い野菜が畑にあるときだけ)。date は YYYY-MM-DD
+# 霜が近いか(霜の日の 7 日前から前の日まで。今までのルールでは 11 月 24 日から月末まで。霜に弱い野菜が畑にあるときだけ)。date は YYYY-MM-DD
 func frost_is_near(date: String) -> bool:
-	if int(date.substr(5, 2)) != 11 or int(date.substr(8, 2)) < 24:
+	var left := _days_to_frost_from(int(Time.get_unix_time_from_datetime_string(date) / 86400.0))
+	if left < 1 or left > 7:
 		return false
 	for c in crops:
 		if not CROPS[c.kind].get("hardy", false):

@@ -48,7 +48,7 @@ func setup(f: Forest, p: Node3D, d: Node) -> void:
 # 天気を読み直す。instant なら光もすぐ切り替える(開いたときは、最初から雨の光で始める)
 func refresh(instant := false) -> void:
 	var falling := forest.is_raining()
-	var snowing := falling and forest.season == "winter"
+	var snowing := falling and forest.season == "winter" and forest.snowy_winter()
 	_set_emitting(_rain, falling and not snowing)
 	_set_emitting(_ripples, falling and not snowing)
 	_set_emitting(_snow, snowing)

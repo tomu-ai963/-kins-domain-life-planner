@@ -6,6 +6,7 @@ extends RefCounted
 # 座標の単位は m
 
 const SaveRead = preload("res://logic/SaveRead.gd")
+const Region = preload("res://logic/Region.gd")
 
 signal changed  # 見た目に関わる状態が変わった
 signal dirty    # セーブに入る状態が変わった
@@ -20,8 +21,9 @@ const SECONDS_PER_YEAR := 86400.0
 # 苗木は市場で買う。必ず根付き、樹齢 2〜4 年から始まる。
 # 育った木は実る季節に根元へ種を落とす(拾わなかった分は翌日には消える)。
 # リンゴは樹齢 6 年から秋に実り、収穫すると「リンゴ」が手に入る(市場で売れる。種は増えない)
-const INITIAL_SEEDS := {"birch": 3, "apple": 1, "cedar": 0, "cherry": 0, "plum": 0, "pear": 0}
-const INITIAL_SAPLINGS := {"birch": 0, "apple": 0, "cedar": 0, "cherry": 0, "plum": 0, "pear": 0}
+# 県を選ぶ前の(今までの)はじめの種。県を選んで新しく始めたときは start_stock で決め直す
+const INITIAL_SEEDS := {"birch": 3, "apple": 1}
+const START_WIND_SEEDS := 3  # 県を選んで新しく始めたときの、その土地の広葉樹の種(今までの白樺 3 粒と同じ)
 const APPLE_FRUIT_AGE := 6.0
 # 果樹。seasons: 実る季節 / age: 実りはじめる樹齢 / first: はじめの収穫量 / step: 1 年で増える量 / most: 上限(1 本の 1 日)
 # unit: 単位(文言用)。リンゴの 300₽/日 を超えない数字にした(仮の数字)
@@ -30,11 +32,16 @@ const FRUITS := {
 	"cherry": {"seasons": ["summer"], "age": 4.0, "first": 1, "step": 1, "most": 3, "unit": "kg"},
 	"plum": {"seasons": ["summer"], "age": 5.0, "first": 1, "step": 1, "most": 5, "unit": "kg"},
 	"pear": {"seasons": ["autumn"], "age": 6.0, "first": 4, "step": 4, "most": 15, "unit": "個"},
+	# 県を選ぶようにして足した果樹(2026-11-11)。カキは接ぎ木の苗木で 5〜6 年(種からだと「柿八年」)。
+	# ミカン・シークヮーサーは秋の終わりから冬に色づく常緑樹
+	"kaki": {"seasons": ["autumn"], "age": 6.0, "first": 4, "step": 4, "most": 15, "unit": "個"},
+	"mikan": {"seasons": ["autumn", "winter"], "age": 5.0, "first": 5, "step": 5, "most": 20, "unit": "個"},
+	"shikuwasa": {"seasons": ["autumn", "winter"], "age": 4.0, "first": 1, "step": 1, "most": 5, "unit": "kg"},
 }
-const FRUIT_ORDER := ["apple", "cherry", "plum", "pear"]  # 果樹を選ぶ順番(キーの 2)
+const FRUIT_ORDER := ["apple", "cherry", "plum", "pear", "kaki", "mikan", "shikuwasa"]  # 果樹を選ぶ順番(キーの 2)
 # 収穫してから次に実るまでの日数(2026-11-11 とむ決定。前は毎日採れて、季節の売上が野菜の区画並みだった。仮の数字)
 const FRUIT_INTERVAL := 3
-const SAPLING_ONLY := ["cherry", "plum", "pear"]  # 接ぎ木の苗木から育てる(現実でも、種からだと親と同じ実にならない)
+const SAPLING_ONLY := ["cherry", "plum", "pear", "kaki", "mikan", "shikuwasa"]  # 接ぎ木の苗木から育てる(現実でも、種からだと親と同じ実にならない)
 const GERMINATION_YEARS := 1.0  # 種から芽が出るまで(= 1 日)
 # 剪定: 葉の落ちた冬に果樹の枝を切ると、次の収穫が増える(現実でも果樹の剪定は冬の仕事)。1 本につきひと冬 1 回
 const PRUNE_BONUS := 1.25  # 剪定した木の収穫の倍率(仮の数字)
@@ -46,10 +53,10 @@ const PRUNE_BONUS := 1.25  # 剪定した木の収穫の倍率(仮の数字)
 const WATER_BONUS_YEARS := 0.5
 const DAILY_EVENTS := [
 	# [id, 重み]。文言は Main が決める
-	["birch_seed", 35],  # 風で白樺の種が飛んできた(+1)
-	["cedar_seed", 15],  # リスがシベリア杉の実を置いていった(+1)
-	["rain", 25],        # 全部の木に水やり済み
-	["birds", 25],       # 演出のみ
+	["birch_seed", 35],  # 風で白樺の種が飛んできた(+1)。県を選んだら、その土地の広葉樹(Region.wind_seed)
+	["cedar_seed", 15],  # リスがシベリア杉の実を置いていった(+1)。県を選んだら、その土地の針葉樹(Region.nut_seed)
+	["rain", 25],        # 全部の木に水やり済み。重みは土地の雨の多さ(Region.rain_weight)
+	["birds", 25],       # 演出のみ。重みは 50 − 雨の重み(合わせて 100 のまま)
 ]
 
 # 樹種ごとのパラメータ(色などの見た目は view 側が持つ)。数値は現実の目安から
@@ -62,54 +69,126 @@ const DAILY_EVENTS := [
 #   seed_drop: 1 本が 1 日に落とす種の数(ひとかたまりで落ちている)
 #   wood_age: 伐って丸太(約 0.1m³)が採れはじめる樹齢 / wood_years: 丸太 1 本増えるのにかかる年数 / wood_max: 上限
 #             (白樺: 20 年で 2 本ほど = 約 0.2m³・40 年で 6 本 / 杉は育つのが遅い / リンゴは太くならない)
+#   group: broadleaf(広葉樹。キーの 1)/ fruit(果樹。キーの 2)/ conifer(針葉樹。キーの 3)
+#   zones: 植えられる気候区分(Region.ZONES)。現実に育つところの目安。植物を足すときはここに書く
+#   regional: 県を選んでから植えられる木(選ぶ前の今までのルールには出てこない)
+const COLD := ["hokkaido", "tohoku", "snowy", "highland"]
+const NOT_ISLANDS := ["hokkaido", "tohoku", "snowy", "highland", "pacific", "setouchi", "south"]
+const HONSHU_TO_KYUSHU := ["tohoku", "snowy", "highland", "pacific", "setouchi", "south"]
+const WARM := ["pacific", "setouchi", "south"]
 const SPECIES := {
 	"birch": {
+		"group": "broadleaf", "zones": COLD,
 		"name": "白樺", "max_r": 3.5, "tau": 6.0, "p": 2.5, "evergreen": false,
 		"germination": 0.4, "sapling_age": 2.0,
 		"seed_age": 10.0, "seed_seasons": ["autumn", "winter"], "seed_drop": 5,
 		"wood_age": 15.0, "wood_years": 5.0, "wood_max": 6,
 	},
 	"apple": {
+		"group": "fruit", "zones": COLD,
 		"name": "リンゴ", "max_r": 3.0, "tau": 5.0, "p": 2.0, "evergreen": false,
 		"germination": 0.6, "sapling_age": 1.0,
 		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
 		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
 	},
 	"cherry": {
+		"group": "fruit", "zones": COLD,
 		"name": "サクランボ", "max_r": 2.6, "tau": 4.0, "p": 2.0, "evergreen": false,
 		"germination": 0.0, "sapling_age": 1.0,
 		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
 		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
 	},
 	"plum": {
+		"group": "fruit", "zones": NOT_ISLANDS,
 		"name": "スモモ", "max_r": 2.4, "tau": 4.0, "p": 2.0, "evergreen": false,
 		"germination": 0.0, "sapling_age": 1.0,
 		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
 		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
 	},
 	"pear": {
+		"group": "fruit", "zones": NOT_ISLANDS,
 		"name": "ナシ", "max_r": 2.8, "tau": 6.0, "p": 2.0, "evergreen": false,
 		"germination": 0.0, "sapling_age": 1.0,
 		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
 		"wood_age": 25.0, "wood_years": 10.0, "wood_max": 3,
 	},
 	"cedar": {
+		"group": "conifer", "zones": COLD,
 		"name": "シベリア杉", "max_r": 6.0, "tau": 40.0, "p": 2.0, "evergreen": true,
 		"germination": 0.5, "sapling_age": 4.0,
 		"seed_age": 25.0, "seed_seasons": ["autumn"], "seed_drop": 5,
 		"wood_age": 40.0, "wood_years": 10.0, "wood_max": 8,
 	},
+	# ── 県を選ぶようにして足した木(2026-11-11)。数字は現実の目安から置いた仮の数字 ──
+	"konara": {  # コナラ: 北海道から九州の雑木林。どんぐりはよく芽が出る。15〜20 年ごとに伐って薪にしてきた
+		"group": "broadleaf", "zones": NOT_ISLANDS, "regional": true,
+		"name": "コナラ", "max_r": 4.0, "tau": 8.0, "p": 2.2, "evergreen": false,
+		"germination": 0.6, "sapling_age": 2.0,
+		"seed_age": 15.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 15.0, "wood_years": 5.0, "wood_max": 6,
+	},
+	"gajumaru": {  # ガジュマル: 沖縄の常緑樹。実を食べた鳥が種を運ぶ。幹は丸太には向かない
+		"group": "broadleaf", "zones": ["nansei"], "regional": true,
+		"name": "ガジュマル", "max_r": 5.0, "tau": 12.0, "p": 2.0, "evergreen": true,
+		"germination": 0.3, "sapling_age": 2.0,
+		"seed_age": 8.0, "seed_seasons": ["summer", "autumn"], "seed_drop": 5,
+		"wood_age": 25.0, "wood_years": 8.0, "wood_max": 4,
+	},
+	"kaki": {
+		"group": "fruit", "zones": HONSHU_TO_KYUSHU, "regional": true,
+		"name": "カキ", "max_r": 3.0, "tau": 6.0, "p": 2.0, "evergreen": false,
+		"germination": 0.0, "sapling_age": 1.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 25.0, "wood_years": 10.0, "wood_max": 3,
+	},
+	"mikan": {  # ミカン(温州みかん): 冬に霜の少ない、海に近い暖かいところ
+		"group": "fruit", "zones": WARM, "regional": true,
+		"name": "ミカン", "max_r": 2.2, "tau": 5.0, "p": 2.0, "evergreen": true,
+		"germination": 0.0, "sapling_age": 1.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
+	},
+	"shikuwasa": {  # シークヮーサー: 沖縄の小さな柑橘
+		"group": "fruit", "zones": ["nansei"], "regional": true,
+		"name": "シークヮーサー", "max_r": 2.0, "tau": 5.0, "p": 2.0, "evergreen": true,
+		"germination": 0.0, "sapling_age": 1.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
+	},
+	"sugi": {  # スギ: 東北から九州。日本でいちばん多く植えられてきた木。シベリア杉より速く育つ
+		"group": "conifer", "zones": HONSHU_TO_KYUSHU, "regional": true,
+		"name": "スギ", "max_r": 3.0, "tau": 15.0, "p": 2.0, "evergreen": true,
+		"germination": 0.3, "sapling_age": 3.0,
+		"seed_age": 20.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 20.0, "wood_years": 6.0, "wood_max": 8,
+	},
+	"ezomatsu": {  # エゾマツ: 北海道の針葉樹。寒さに強く、育つのはゆっくり
+		"group": "conifer", "zones": ["hokkaido"], "regional": true,
+		"name": "エゾマツ", "max_r": 3.0, "tau": 25.0, "p": 2.0, "evergreen": true,
+		"germination": 0.4, "sapling_age": 4.0,
+		"seed_age": 30.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 35.0, "wood_years": 8.0, "wood_max": 8,
+	},
+	"ryukyu_pine": {  # リュウキュウマツ: 沖縄の松。やせた土地でも速く育つ
+		"group": "conifer", "zones": ["nansei"], "regional": true,
+		"name": "リュウキュウマツ", "max_r": 4.0, "tau": 10.0, "p": 2.0, "evergreen": true,
+		"germination": 0.6, "sapling_age": 2.0,
+		"seed_age": 10.0, "seed_seasons": ["autumn", "winter"], "seed_drop": 5,
+		"wood_age": 15.0, "wood_years": 5.0, "wood_max": 6,
+	},
 }
+const GROUPS := ["broadleaf", "fruit", "conifer"]  # キーの 1・2・3
 
 var time = null  # WorldTime(GameWorld が設定する)。今日の日付と今の時刻はここから読む
-
+var region = null  # Region(GameWorld が設定する)。季節・植えられる木・雨の多さ。県を選ぶまでは null(今までのルール)
+var _legacy := Region.new()  # 県を選ぶ前の気候(今までのルール)
 # [{pos: Vector2(m), species, form: "seed"/"sapling"/""(移行前の木), planted_at: int,
 #   start_age: float(苗木の樹齢), sprouts: bool(種が芽を出すか), last_harvest, last_watered, bonus_years,
 #   pruned_year: int(剪定が効く収穫の年。0 = まだ)}]
 var trees := []
-var seeds := INITIAL_SEEDS.duplicate()        # 樹種ごとの種の所持数
-var saplings := INITIAL_SAPLINGS.duplicate()  # 樹種ごとの苗木の所持数
-var produce := {"apple": 0, "cherry": 0, "plum": 0, "pear": 0}  # 収穫物(市場で売る)
+var seeds := initial_seeds()      # 樹種ごとの種の所持数
+var saplings := zero_counts()     # 樹種ごとの苗木の所持数
+var produce := fruit_counts()     # 果樹ごとの収穫物(市場で売る)
 var pickups := []             # 今日、地面に落ちている種 [{pos, species, amount}]
 var last_failed := {}         # 今日の確認で芽が出なかった種の数 {species: 本数}(保存しない)
 var germination_rates := {}   # 発芽率(テストで 1.0 にできるように変数にする)
@@ -121,6 +200,62 @@ var season := "summer"        # GameWorld が現実の日付から設定する
 func _init() -> void:
 	for sp in SPECIES:
 		germination_rates[sp] = SPECIES[sp].germination
+
+# 樹種ごとに 0 の数
+static func zero_counts() -> Dictionary:
+	var d := {}
+	for sp in SPECIES:
+		d[sp] = 0
+	return d
+
+static func fruit_counts() -> Dictionary:
+	var d := {}
+	for sp in FRUITS:
+		d[sp] = 0
+	return d
+
+# 県を選ぶ前の(今までの)はじめの種
+static func initial_seeds() -> Dictionary:
+	var d := zero_counts()
+	d.merge(INITIAL_SEEDS, true)
+	return d
+
+# 県を選んで新しく始めたとき: その土地の広葉樹の種と、育つならリンゴの種 1 粒(今までの白樺 3・リンゴ 1 に合わせた)
+func start_stock() -> void:
+	seeds = zero_counts()
+	seeds[wind_seed()] = START_WIND_SEEDS
+	if grows_here("apple"):
+		seeds["apple"] = 1
+	saplings = zero_counts()
+	_commit()
+
+# この土地で植えられる木か(県を選ぶ前は、今までの木だけ)
+func grows_here(species: String) -> bool:
+	if not SPECIES.has(species):
+		return false
+	if region == null:
+		return not SPECIES[species].get("regional", false)
+	return region.allows(SPECIES[species])
+
+# その組(broadleaf / fruit / conifer)で、この土地で植えられる木(SPECIES の順。果樹は FRUIT_ORDER の順)
+func species_in(group: String) -> Array:
+	var order: Array = FRUIT_ORDER if group == "fruit" else SPECIES.keys()
+	return order.filter(func(sp): return SPECIES[sp].group == group and grows_here(sp))
+
+# 風や鳥が運んでくる広葉樹の種 / リスや風が運んでくる針葉樹の種(日替わりの発見)
+func wind_seed() -> String:
+	return region.wind_seed() if region != null else "birch"
+
+func nut_seed() -> String:
+	return region.nut_seed() if region != null else "cedar"
+
+# 土地の気候(季節・雪・霜)。県を選ぶ前は今までのルール
+func climate():
+	return region if region != null else _legacy
+
+# 冬に雪が積もって地面が凍る土地か
+func snowy_winter() -> bool:
+	return climate().has_snow()
 
 # 保存が必要な変更のあと: 保存してから描き直す
 func _commit() -> void:
@@ -134,11 +269,17 @@ func set_season(s: String) -> void:
 	changed.emit()
 
 # 今の季節に植えられるか。冬は地面が凍っているので苗木は植えられない。
-# 種は、雪の上にまく方法がある白樺だけ
+# 種は、雪の上にまく方法がある白樺だけ。雪が積もらない土地では冬も植えられる
 func can_plant(species: String, form: String) -> bool:
-	if season != "winter":
-		return true
-	return form == "seed" and species == "birch"
+	return plant_problem(species, form) == ""
+
+# 植えられない理由。"" = 植えられる / not_here = この土地では育たない / frozen = 冬で地面が凍っている
+func plant_problem(species: String, form: String) -> String:
+	if not grows_here(species):
+		return "not_here"
+	if season != "winter" or not snowy_winter():
+		return ""
+	return "" if form == "seed" and species == "birch" else "frozen"
 
 # 種(form = "seed")か苗木("sapling")を 1 つ使って植える。持っていなければ植えずに false
 func add_tree(pos: Vector2, species: String, form := "seed") -> bool:
@@ -299,22 +440,30 @@ func collect_near(pos: Vector2, radius: float) -> Array:
 func roll_daily_event(date: String) -> String:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = date.hash()
+	var events := daily_events()
 	var total := 0
-	for e in DAILY_EVENTS:
+	for e in events:
 		total += e[1]
 	var r := rng.randi_range(0, total - 1)
-	for e in DAILY_EVENTS:
+	for e in events:
 		if r < e[1]:
 			return e[0]
 		r -= e[1]
-	return DAILY_EVENTS[-1][0]
+	return events[-1][0]
+
+# 日替わりの発見と重み。雨の重みは土地で変わり、そのぶん鳥(演出だけ)を減らす
+func daily_events() -> Array:
+	if region == null:
+		return DAILY_EVENTS
+	var rain: int = clampi(region.rain_weight(), 0, 50)
+	return [DAILY_EVENTS[0], DAILY_EVENTS[1], ["rain", rain], ["birds", 50 - rain]]
 
 func _apply_event(id: String) -> void:
 	match id:
 		"birch_seed":
-			seeds["birch"] += 1
+			seeds[wind_seed()] += 1
 		"cedar_seed":
-			seeds["cedar"] += 1
+			seeds[nut_seed()] += 1
 		"rain":
 			water_all()
 
@@ -409,14 +558,19 @@ func harvest_nearest(pos: Vector2, max_dist: float) -> String:
 	_commit()
 	return "harvested"
 
-# 12 月の剪定は翌年の収穫に、1〜2 月の剪定はその年の収穫に効く。その日の剪定が効く収穫の年
+# 12 月の剪定は翌年の収穫に、1〜2 月の剪定はその年の収穫に効く。その日の剪定が効く収穫の年(今までのルール)
 static func harvest_year_of(date: String) -> int:
 	var year := int(date.substr(0, 4))
 	return year + 1 if int(date.substr(5, 2)) == 12 else year
 
+# 土地の冬で数える: 年の後半の冬(北海道は 11 月から)の剪定は翌年の収穫に、年が明けてからの冬の剪定はその年の収穫に効く
+func harvest_year_on(date: String) -> int:
+	var year := int(date.substr(0, 4))
+	return year + 1 if int(date.substr(5, 2)) >= 7 and season_of_date(date) == "winter" else year
+
 # この冬(と、次の収穫まで)剪定が効いているか
 func is_pruned(tree: Dictionary) -> bool:
-	return int(tree.get("pruned_year", 0)) == harvest_year_of(today())
+	return int(tree.get("pruned_year", 0)) == harvest_year_on(today())
 
 # 実をつける年になった果樹か
 func _is_bearing(tree: Dictionary) -> bool:
@@ -444,7 +598,7 @@ func prune_nearest(pos: Vector2, max_dist: float) -> String:
 		return "young"
 	if is_pruned(tree):
 		return "done"
-	tree.pruned_year = harvest_year_of(today())
+	tree.pruned_year = harvest_year_on(today())
 	_commit()
 	return "pruned"
 
@@ -456,10 +610,13 @@ func today() -> String:
 func day_number() -> int:
 	return int(Time.get_unix_time_from_datetime_string(today()) / 86400.0)
 
-# その日付が夏か(6〜8 月。池の水が蒸発する)。テストで差し替えられるようにメソッドにしておく
+# その日付が夏か(池の水が蒸発する)。土地の季節で決まる(今までのルールでは 6〜8 月)。テストで差し替えられるようにメソッドにしておく
 func is_summer_date(date: String) -> bool:
-	var month := int(date.substr(5, 2))
-	return month >= 6 and month <= 8
+	return season_of_date(date) == "summer"
+
+# その日付の季節(土地の気候で決まる)
+func season_of_date(date: String) -> String:
+	return climate().season_of_date(date)
 
 # 通し番号から日付(YYYY-MM-DD)に戻す
 static func date_of_day(n: int) -> String:
@@ -551,9 +708,9 @@ func from_save(data: Dictionary) -> void:
 	# 旧形式のセーブにある time_offset_years は読まない(先送りは 0 から)
 	time_offset_years = 0.0
 	# 記録がない旧形式のセーブは、初期の種・苗木 0・収穫物 0 から始める
-	seeds = _counts(data.get("seeds", {}), INITIAL_SEEDS)
-	saplings = _counts(data.get("saplings", {}), INITIAL_SAPLINGS)
-	produce = _counts(data.get("produce", {}), {"apple": 0, "cherry": 0, "plum": 0, "pear": 0})
+	seeds = _counts(data.get("seeds", {}), initial_seeds())
+	saplings = _counts(data.get("saplings", {}), zero_counts())
+	produce = _counts(data.get("produce", {}), fruit_counts())
 	# 記録がない旧形式のセーブは、次に開いたとき(= 今)その日の発見が起きる
 	last_day = SaveRead.text(data, "last_day")
 	today_event = SaveRead.text(data, "today_event")

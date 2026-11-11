@@ -31,6 +31,15 @@ const COLORS := {
 		"leaf_autumn": Color(0.08, 0.42, 0.20, 0.65),
 		"trunk": Color(0.30, 0.18, 0.08),
 	},
+	# 県を選ぶようにして足した木(3D の KINDS と同じ色)
+	"konara": {"leaf": Color(0.36, 0.60, 0.24, 0.70), "leaf_autumn": Color(0.72, 0.44, 0.16, 0.70), "trunk": Color(0.40, 0.36, 0.30)},
+	"gajumaru": {"leaf": Color(0.16, 0.48, 0.20, 0.70), "leaf_autumn": Color(0.16, 0.48, 0.20, 0.70), "trunk": Color(0.52, 0.48, 0.40)},
+	"kaki": {"leaf": Color(0.26, 0.54, 0.20, 0.85), "leaf_autumn": Color(0.86, 0.40, 0.12, 0.85), "trunk": Color(0.26, 0.20, 0.16)},
+	"mikan": {"leaf": Color(0.14, 0.42, 0.18, 0.85), "leaf_autumn": Color(0.14, 0.42, 0.18, 0.85), "trunk": Color(0.36, 0.30, 0.20)},
+	"shikuwasa": {"leaf": Color(0.16, 0.46, 0.18, 0.85), "leaf_autumn": Color(0.16, 0.46, 0.18, 0.85), "trunk": Color(0.36, 0.30, 0.20)},
+	"sugi": {"leaf": Color(0.14, 0.36, 0.16, 0.65), "leaf_autumn": Color(0.14, 0.36, 0.16, 0.65), "trunk": Color(0.42, 0.24, 0.14)},
+	"ezomatsu": {"leaf": Color(0.10, 0.32, 0.22, 0.65), "leaf_autumn": Color(0.10, 0.32, 0.22, 0.65), "trunk": Color(0.34, 0.26, 0.20)},
+	"ryukyu_pine": {"leaf": Color(0.20, 0.46, 0.22, 0.65), "leaf_autumn": Color(0.20, 0.46, 0.22, 0.65), "trunk": Color(0.46, 0.28, 0.18)},
 }
 
 var forest: Forest

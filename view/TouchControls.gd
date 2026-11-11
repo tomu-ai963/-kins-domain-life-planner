@@ -130,7 +130,7 @@ func _view() -> Vector2:
 
 # 開いている画面と近くにあるものに合わせて、今出すボタンを返す
 func pads(view: Vector2) -> Array:
-	if not active or is_portrait(view) or _hud.is_shop_open():  # 市場などの画面には閉じるボタンがある
+	if not active or is_portrait(view) or _hud.is_shop_open() or _hud.is_picker_open():  # 市場などの画面には閉じるボタンがある
 		return []
 	if _hud.is_diary_open():
 		var size := Vector2(160, 56)
@@ -189,18 +189,27 @@ func _menu_pads(view: Vector2) -> Array:
 	list.append(_pad("menu_close", "閉じる", KEY_NONE, close_rect))
 	return list
 
+# 木のボタン(id は今までのまま birch = 広葉樹・cedar = 針葉樹)が受け持つ組
+const TREE_GROUPS := {"birch": "broadleaf", "fruit": "fruit", "cedar": "conifer"}
+
 func _menu_text(id: String, text: String) -> String:
 	if id == "form":
 		return "苗木で植える" if _main.selected_form == "sapling" else "種で植える"
+	if id == "birch" or id == "cedar":
+		# 選んでいる木、なければその土地で最初に育つ木の名前(県を選ぶ前は 白樺・シベリア杉)
+		var f = _main.world.forest
+		if _is_selected(id):
+			return f.SPECIES[_main.selected_species].name
+		var list: Array = f.species_in(TREE_GROUPS[id])
+		return f.SPECIES[list[0]].name if not list.is_empty() else text
 	return text
 
 # メニューで今選ばれているものは色を変える
 func _is_selected(id: String) -> bool:
 	match id:
-		"birch", "cedar":
-			return _main.selected_species == id
-		"fruit":
-			return _main.selected_species != "birch" and _main.selected_species != "cedar"
+		"birch", "cedar", "fruit":
+			var f = _main.world.forest
+			return f.SPECIES.has(_main.selected_species) and f.SPECIES[_main.selected_species].group == TREE_GROUPS[id]
 		"radish", "carrot", "cucumber", "potato", "garlic", "tomato":
 			return _main.selected_crop == id
 	return false
@@ -245,7 +254,7 @@ func touch(finger: int, pos: Vector2, pressed: bool) -> bool:
 	return false
 
 func _can_walk(view: Vector2) -> bool:
-	return active and not menu_open and not is_portrait(view) and not _hud.is_shop_open() and not _hud.is_diary_open()
+	return active and not menu_open and not is_portrait(view) and not _hud.is_shop_open() and not _hud.is_diary_open() and not _hud.is_picker_open()
 
 func drag(finger: int, pos: Vector2) -> bool:
 	if finger != _stick_finger:

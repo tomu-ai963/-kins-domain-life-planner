@@ -39,6 +39,9 @@ const GROUND := {
 	"autumn": {"wild": Color(0.56, 0.49, 0.24), "grass": Color(0.74, 0.66, 0.32), "grid": Color(0.62, 0.55, 0.26)},
 	# 冬: 空の青い環境光を受けるので、地面の色は暖かめにしておく(青白く見えないように)
 	"winter": {"wild": Color(0.92, 0.91, 0.88), "grass": Color(0.98, 0.95, 0.91), "grid": Color(0.86, 0.84, 0.82)},
+	# 雪の積もらない土地の冬: 枯れ草の色(霜の降りない南西諸島は、冬も緑が残る)
+	"winter_dry": {"wild": Color(0.52, 0.48, 0.30), "grass": Color(0.70, 0.66, 0.42), "grid": Color(0.58, 0.54, 0.34)},
+	"winter_green": {"wild": Color(0.40, 0.56, 0.30), "grass": Color(0.58, 0.74, 0.40), "grid": Color(0.46, 0.62, 0.32)},
 }
 
 # 土地の外の森(丘の上)。歩ける範囲より外だけに生えていて、見るだけのもの
@@ -57,6 +60,8 @@ const LEAF_COLORS := {
 	"summer": Color(0.27, 0.52, 0.22),
 	"autumn": Color(0.80, 0.58, 0.18),
 	"winter": Color(0.42, 0.36, 0.31),  # 冬は隠すので見えない
+	"winter_dry": Color(0.56, 0.44, 0.26),
+	"winter_green": Color(0.30, 0.50, 0.24),
 }
 
 var forest: Forest
@@ -98,11 +103,17 @@ func set_land(l, c) -> void:
 	cabin.changed.connect(hide_covered)
 	hide_covered()
 
+# 見た目の季節。雪の積もらない土地の冬は winter_dry(霜も降りなければ winter_green)
+func look_season() -> String:
+	if forest.season != "winter" or forest.snowy_winter():
+		return forest.season
+	return "winter_dry" if forest.climate().has_frost() else "winter_green"
+
 # 季節が変わったときだけ色を差し替える(形は作り直さない)
 func _on_changed() -> void:
-	if forest.season == _season:
+	if look_season() == _season:
 		return
-	_season = forest.season
+	_season = look_season()
 	var pal: Dictionary = GROUND[_season]
 	_wild_mat.albedo_color = pal.wild
 	_grass_mat.albedo_color = pal.grass

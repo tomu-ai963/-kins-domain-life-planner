@@ -64,11 +64,11 @@ func _test_tables() -> void:
 		_check(Forest.FRUITS.has(id) and Forest.SPECIES.has(id), "%s は果樹で樹種" % id)
 		_check(Market.SELL_PRICES.has(id), "%s に買い取り値がある" % id)
 		_check(Visitors.ASK.has(id), "%s を訪問者が頼める" % id)
-		_check(Forest.INITIAL_SAPLINGS.has(id) and Forest.INITIAL_SEEDS.has(id), "%s の持ち物の枠がある" % id)
+		_check(Forest.zero_counts().has(id) and Forest.initial_seeds().has(id), "%s の持ち物の枠がある" % id)
 	for id in Forest.SAPLING_ONLY:
 		_check(not Market.good(id + "_sapling").is_empty(), "%s の苗木を市場で買える" % id)
 		_check(Market.good(id + "_seed").is_empty(), "%s の種は売っていない" % id)
-		_check(Forest.INITIAL_SEEDS[id] == 0 and Forest.INITIAL_SAPLINGS[id] == 0, "%s は最初は持っていない" % id)
+		_check(Forest.initial_seeds()[id] == 0 and Forest.zero_counts()[id] == 0, "%s は最初は持っていない" % id)
 	# 収入がリンゴ(1 本 300₽/日)を超えない
 	var apple_best: int = Forest.FRUITS.apple.most * Market.SELL_PRICES.apple
 	_check(apple_best == 300, "前提: リンゴは 1 本 300₽/日まで")

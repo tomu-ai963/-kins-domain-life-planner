@@ -121,7 +121,7 @@ func _test_wording() -> void:
 	var keyboard := RegEx.create_from_string("WASD|矢印|ホイール|クリック|Enter|Esc|Tab|F1|SPACE|\\[[0-9A-Z]\\]|(?<![A-Za-z0-9])[A-Z] (で|を)")
 	for path in ["res://Main.gd", "res://HUD.gd"]:
 		for line in FileAccess.get_file_as_string(path).split("\n"):
-			if line.strip_edges().begins_with("#") or line.contains("func _help_lines") or line.contains("Tab:%s"):
+			if line.strip_edges().begins_with("#") or line.contains("func _help_lines") or line.contains("Tab:%s") or line.contains("group_keys_text(\"broadleaf\")"):
 				continue
 			for m in strings.search_all(line):
 				var shown: String = TouchText.convert(m.get_string(1).replace("\\n", "\n"))

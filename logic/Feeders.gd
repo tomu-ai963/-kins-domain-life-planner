@@ -63,7 +63,11 @@ func hungry_count() -> int:
 func ever_fed() -> bool:
 	return feeders.any(func(f): return int(f.fed_day) >= 0)
 
-# L: 近くに餌台がなければ front に立てる。あれば白樺の種を置く
+# 餌台に置く種の樹種(その土地の広葉樹の種。県を選ぶ前は白樺)
+func feed_species() -> String:
+	return forest.wind_seed()
+
+# L: 近くに餌台がなければ front に立てる。あれば餌の種(feed_species)を置く
 # 結果: placed / too_many / blocked / no_wood / fed / full / not_season / no_seed
 func act(pos: Vector2, front = null) -> String:
 	var near := feeder_near(pos)
@@ -74,9 +78,10 @@ func act(pos: Vector2, front = null) -> String:
 		return "not_season"
 	if fed_today(near):
 		return "full"
-	if int(forest.seeds.get("birch", 0)) < FEED_SEEDS:
+	var sp := feed_species()
+	if int(forest.seeds.get(sp, 0)) < FEED_SEEDS:
 		return "no_seed"
-	forest.seeds.birch = int(forest.seeds.birch) - FEED_SEEDS
+	forest.seeds[sp] = int(forest.seeds[sp]) - FEED_SEEDS
 	near.fed_day = forest.day_number()
 	_commit()
 	return "fed"

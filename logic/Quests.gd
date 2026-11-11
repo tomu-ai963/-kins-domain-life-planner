@@ -22,7 +22,7 @@ const HEDGE_BAND := 3.0          # 生垣とみなす帯: 境界から内側 3m
 const HEDGE_SEGMENT := 10.0      # 周囲を 10m ごとに区切る
 const HEDGE_SEGMENTS := 40       # 周囲 400m / 10m
 const GARDEN_PLOTS := 4          # 菜園は区画 4 つ
-const FAMILY_CEDAR_RADIUS := 5.0 # 中心から 5m 以内のシベリア杉
+const FAMILY_CEDAR_RADIUS := 5.0 # 中心から 5m 以内の家族の木(family_tree。シベリア杉・スギ・ガジュマル)
 const MILESTONE_AGES := [10, 25, 50, 100]  # 木の節目の樹齢(1 現実日 = 1 年)
 
 var done := []                   # 達成したクエストの id(達成した順)
@@ -74,6 +74,10 @@ func _fill(filled: Array, s: float) -> void:
 	filled[clampi(floori(s / HEDGE_SEGMENT), 0, HEDGE_SEGMENTS - 1)] = true
 
 # [いまの数, 目標の数]
+# 「家族の木」のクエストで中心に植える木(その土地の木。県を選ぶ前はシベリア杉)
+func family_tree() -> String:
+	return forest.region.family_tree() if forest.region != null else "cedar"
+
 func progress(id: String) -> Array:
 	match id:
 		"hedge":
@@ -88,7 +92,7 @@ func progress(id: String) -> Array:
 			return [1 if pond.is_dug() else 0, 1]  # 掘り終えたら達成(水はあとからたまる)
 		"family_cedar":
 			for t in forest.trees:
-				if t.species == "cedar" and forest.is_established(t) and t.pos.length() <= FAMILY_CEDAR_RADIUS:
+				if t.species == family_tree() and forest.is_established(t) and t.pos.length() <= FAMILY_CEDAR_RADIUS:
 					return [1, 1]
 			return [0, 1]
 	return [0, 1]
@@ -135,8 +139,13 @@ func take_guide_complete() -> bool:
 	return true
 
 # ── 木の節目 ──
-static func milestone_total() -> int:
-	return Forest.SPECIES.size() * MILESTONE_AGES.size()
+# 節目の数: この土地で育つ樹種(と、土地に植わっている樹種)× 節目の樹齢
+func milestone_total() -> int:
+	var n := 0
+	for sp in Forest.SPECIES:
+		if forest.grows_here(sp) or forest.trees.any(func(t): return t.species == sp):
+			n += 1
+	return n * MILESTONE_AGES.size()
 
 # 樹種ごとの、いちばん年上の根付いた木の樹齢(現実の樹齢)
 func oldest_ages() -> Dictionary:

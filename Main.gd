@@ -66,7 +66,7 @@ const BUY_PAGES := [
 	{"name": "小屋", "forms": ["extension", "furniture"]},
 ]
 const FURNITURE_NAMES := {"shelf": "保存食の棚", "rocking_chair": "揺り椅子", "rug": "じゅうたん", "lamp": "ランプ", "clock": "掛け時計"}
-const SELL_PAGES := ["収穫物", "保存食"]
+const SELL_PAGES := ["果物", "野菜", "保存食"]  # 果物ははちみつも。野菜は苗も(県を選ぶようにして果樹が増えたので 3 つに分けた)
 
 # 野菜を選ぶキー(HUD の並びもこの順)
 const CROP_KEYS := {KEY_4: "radish", KEY_5: "carrot", KEY_6: "cucumber", KEY_7: "potato", KEY_8: "garlic", KEY_9: "tomato"}
@@ -97,6 +97,7 @@ func _ready() -> void:
 	$Market.setup(world.market)
 	$HUD.setup($Player, world.forest, self)
 	$HUD.shop_action.connect(_on_shop_action)
+	$HUD.region_chosen.connect(_on_region_chosen)
 	$Player.plant_tree.connect(_on_plant_tree)
 	_setup_3d_only()
 	world.load_game()
@@ -108,6 +109,25 @@ func _ready() -> void:
 		$Ground.hide_covered()  # セーブにあった区画や小屋の上には草を生やさない
 		$Wildlife.sync_animals()  # セーブにあった木や畑に合わせて、最初からいるように
 		_apply_sound_level()
+	# 県の記録がなければ、選ぶ画面を出す。本物のセーブのときだけ(テストや確認用のセーブでは、要るときに開く)
+	if not world.region.is_chosen() and world.save_path == world.SAVE_PATH:
+		open_region_picker()
+
+# ── 土地のある都道府県(ゲームのはじめに一度だけ選ぶ) ──
+func open_region_picker() -> void:
+	$Player.set_physics_process(false)  # 選んでいるあいだは歩かない
+	$HUD.open_region_picker()
+
+func _on_region_chosen(id: String) -> void:
+	$Player.set_physics_process(true)
+	if world.choose_region(id) != "chosen":
+		return
+	_fit_selection()
+	var weather := get_node_or_null("Weather")
+	if weather != null:
+		weather.refresh(true)  # 雪の積もらない土地なら、雪を雨に
+	var z: Dictionary = world.region.zone()
+	$HUD.show_message("%sに土地を持った(気候: %s)。季節と植えられる木は、この土地に合わせて決まる" % [world.region.pref_name(), z.name], 7.0)
 
 # 昼夜の光と小屋の中は 3D だけ(2D のシーンには DayLight がない)
 func _setup_3d_only() -> void:
@@ -205,7 +225,7 @@ func _check_new_day() -> void:
 		lines.append("%sが訪ねてきた(C で話す)" % world.visitors.CAST[world.visitors.who()].name)
 	var pond := world.pond
 	if pond.last_gain > 0:
-		lines.append("%sで池に水がたまった(%d%%)" % ["雪" if f.season == "winter" else "雨", pond.water])
+		lines.append("%sで池に水がたまった(%d%%)" % ["雪" if is_snow_day(f.season) else "雨", pond.water])
 	for c in pond.last_arrivals:
 		lines.append("池に%sが来た" % pond.CREATURES[c].name)
 	if world.bees.last_arrivals > 0:
@@ -281,16 +301,16 @@ func _feeder_action() -> void:
 	match fd.act(pos, front):
 		"placed":
 			_act("build", fd.last_fed.pos)
-			$HUD.show_message("鳥の餌台を立てた(丸太 -%d本)。L で白樺の種を%d粒置くと鳥が来る(秋と冬)" % [fd.LOG_COST, fd.FEED_SEEDS], 6.0)
+			$HUD.show_message(local_text("鳥の餌台を立てた(丸太 -%d本)。L で白樺の種を%d粒置くと鳥が来る(秋と冬)" % [fd.LOG_COST, fd.FEED_SEEDS]), 6.0)
 		"fed":
 			_act("feed", fd.last_fed.pos)
-			$HUD.show_message("餌台に白樺の種を置いた(-%d粒)。少し離れて待つと鳥が来る(餌は翌日まで残る)" % fd.FEED_SEEDS, 6.0)
+			$HUD.show_message(local_text("餌台に白樺の種を置いた(-%d粒)。少し離れて待つと鳥が来る(餌は翌日まで残る)" % fd.FEED_SEEDS), 6.0)
 		"full":
 			$HUD.show_message("今日はもう餌を置いた(翌日まで残る)")
 		"not_season":
 			$HUD.show_message("餌を置くのは秋と冬(ほかの季節は、鳥は自分で餌を見つけられる)", 5.0)
 		"no_seed":
-			$HUD.show_message("白樺の種が%d粒いる(今 %d粒。白樺の根元に落ちるのを拾うか、市場で買える)" % [fd.FEED_SEEDS, world.forest.seeds.birch], 5.0)
+			$HUD.show_message(local_text("白樺の種が%d粒いる(今 %d粒。白樺の根元に落ちるのを拾うか、市場で買える)" % [fd.FEED_SEEDS, int(world.forest.seeds[fd.feed_species()])]), 5.0)
 		"no_wood":
 			$HUD.show_message("丸太が%d本いる(市場で買うか、育った木を Z で伐る)" % fd.LOG_COST)
 		"too_many":
@@ -355,8 +375,8 @@ func feeder_line() -> String:
 	if fd.fed_today(near):
 		return "餌台: 今日は餌を置いた" + birds
 	if fd.is_fed(near):
-		return "餌台: 餌が残っている(L で足す・白樺の種 %d粒)" % fd.FEED_SEEDS + birds
-	return "餌台: 餌がない(L で白樺の種を %d粒置く)" % fd.FEED_SEEDS
+		return local_text("餌台: 餌が残っている(L で足す・白樺の種 %d粒)" % fd.FEED_SEEDS) + birds
+	return local_text("餌台: 餌がない(L で白樺の種を %d粒置く)" % fd.FEED_SEEDS)
 
 # 暗くて鳥が見えないときの、昼の様子(餌があるときだけ)。例: 「。昼のあいだにシジュウカラ 2羽が来ていた」
 # 冬は 17 時に暗くなるので、夕方からしか開けない人にも餌台の鳥が来ていることを知らせる
@@ -416,7 +436,31 @@ func prune_line() -> String:
 # HUD に出す、今のヒント。なければ ""
 func hint_text() -> String:
 	var id: String = world.guide.current
-	return GUIDE_TEXTS[id] if id != "" else ""
+	if id == "":
+		return ""
+	if id == "winter" and not world.forest.snowy_winter():
+		return MILD_WINTER_TEXT if world.region.has_frost() else WARM_WINTER_TEXT
+	return local_text(GUIDE_TEXTS[id])
+
+# 雪の積もらない土地の冬のヒント
+const MILD_WINTER_TEXT := "冬は霜で、霜に弱い野菜が枯れる(ニンニクは平気)。\n雪は積もらないので、冬も木を植えられる。"
+const WARM_WINTER_TEXT := "冬も霜は降りない。春か秋にまく野菜は、冬にもまける。\n冬も木を植えられる。"
+
+# 決まった文言の木の名前を、その土地の木に置き換える(県を選ぶ前は今までの文言のまま)。
+# 白樺の種 → 餌台に置く種(その土地の広葉樹)、シベリア杉 → 家族の木、家族の杉 → ガジュマルなら家族の木
+func local_text(text: String) -> String:
+	var f := world.forest
+	var wind: String = f.wind_seed()
+	if wind != "birch":
+		var sp: Dictionary = f.SPECIES[wind]
+		text = text.replace("白樺は樹齢15年から", "%sは樹齢%d年から" % [sp.name, int(sp.wood_age)])
+		text = text.replace("白樺の種", sp.name + "の種").replace("白樺の根元", sp.name + "の根元")
+	var family: String = world.quests.family_tree()
+	if family != "cedar":
+		text = text.replace("シベリア杉", f.SPECIES[family].name)
+		if family != "sugi":
+			text = text.replace("家族の杉", "家族の木")
+	return text
 
 # ── 訪ねてくる人(3D だけ) ──────────────────────────────────────
 # 話すだけの日の言葉。{tomorrow} は明日の空模様に置き換える
@@ -724,9 +768,26 @@ const WATER_MESSAGES := {
 
 # 発見の文言。雨の日は冬なら雪になる(降るものは WeatherView3D と同じ。効き目は雨と同じ)
 func daily_message(id: String) -> String:
-	if id == "rain" and world.forest.season == "winter":
+	var f := world.forest
+	if id == "rain" and is_snow_day(f.season):
 		return "雪が降った。今日は全部の木と野菜に水やり済み"
+	if id == "birch_seed" and f.wind_seed() != "birch":
+		var name: String = f.SPECIES[f.wind_seed()].name
+		return "%s(%sの種 +1)" % [SEED_ARRIVALS.get(f.wind_seed(), "風で%sの種が飛んできた") % name, name]
+	if id == "cedar_seed" and f.nut_seed() != "cedar":
+		var name: String = f.SPECIES[f.nut_seed()].name
+		return "%s(%sの種 +1)" % [SEED_ARRIVALS.get(f.nut_seed(), "風で%sの種が飛んできた") % name, name]
 	return DAILY_MESSAGES[id]
+
+# その季節の雨の日は雪になるか(雪の積もる土地の冬だけ。降るものは WeatherView3D と同じ)
+func is_snow_day(season: String) -> bool:
+	return season == "winter" and world.forest.snowy_winter()
+
+# 種が運ばれてきたときの文言(白樺・シベリア杉のほかの木)
+const SEED_ARRIVALS := {
+	"konara": "カケスが%sのどんぐりを落としていった",
+	"gajumaru": "鳥が%sの種を運んできた",
+}
 
 # 日替わりの発見(Forest.DAILY_EVENTS の id)ごとの文言
 const DAILY_MESSAGES := {
@@ -743,6 +804,13 @@ const QUEST_TEXTS := {
 	"pond": {"name": "池を掘る", "short": "池", "unit": "", "hint": "P で場所を決めて、1日1回 5日かけて掘る"},
 	"family_cedar": {"name": "中心に家族の杉を植える", "short": "家族の杉", "unit": "", "hint": "中心から5m以内にシベリア杉"},
 }
+# その土地のクエストの文言(家族の木は土地で変わる)
+func quest_text(id: String) -> Dictionary:
+	var t: Dictionary = QUEST_TEXTS[id].duplicate()
+	for k in t:
+		t[k] = local_text(t[k])
+	return t
+
 # 生き物の図鑑で、まだ見ていない生き物の会い方(愛の空間の完成後、HUD に 1 つずつ出す)
 const GUIDE_HINTS := {
 	"sparrow": "木が3本あれば昼に来る",
@@ -849,7 +917,7 @@ func _act(kind: String, target = null, item := "") -> void:
 		$Player.act(kind, target, item)
 
 func _on_plant_tree(pos: Vector2) -> void:
-	if $HUD.is_shop_open() or $HUD.is_diary_open():
+	if $HUD.is_shop_open() or $HUD.is_diary_open() or $HUD.is_picker_open():
 		return
 	# 菜園の区画の上では、木ではなく野菜をまく
 	if world.land.plot_at(pos) != null:
@@ -870,9 +938,13 @@ func _on_plant_tree(pos: Vector2) -> void:
 	if selected_form == "seed" and selected_species in world.forest.SAPLING_ONLY:
 		$HUD.show_message("%sは苗木から育てる(V で苗木に切り替える。市場で買える)" % world.forest.SPECIES[selected_species].name, 5.0)
 		return
-	if not world.forest.can_plant(selected_species, selected_form):
-		$HUD.show_message("冬は地面が凍っていて植えられない(白樺の種だけは雪の上にまける)", 5.0)
-		return
+	match world.forest.plant_problem(selected_species, selected_form):
+		"not_here":
+			$HUD.show_message("%sは%sでは育たない(1・2・3 で、この土地で育つ木を選べる)" % [world.forest.SPECIES[selected_species].name, world.region.pref_name()], 5.0)
+			return
+		"frozen":
+			$HUD.show_message("冬は地面が凍っていて植えられない(白樺の種だけは雪の上にまける)", 5.0)
+			return
 	if not world.forest.add_tree(pos, selected_species, selected_form):
 		$HUD.show_message("%sの%sがない(市場で買える)" % [world.forest.SPECIES[selected_species].name, FORM_NAMES[selected_form]])
 		return
@@ -881,13 +953,43 @@ func _on_plant_tree(pos: Vector2) -> void:
 		$HUD.show_message("種をまいた。芽が出るかは1日たつと分かる")
 	_check_quests()
 
-# 2: 押すたびに次の果樹を選ぶ。苗木からしか育てない果樹なら、苗木に切り替える
-func _select_next_fruit() -> void:
-	var order: Array = world.forest.FRUIT_ORDER
+# 1・2・3: 押すたびに、その組(広葉樹・果樹・針葉樹)のうち、この土地で育つ次の木を選ぶ。
+# 苗木からしか育てない果樹なら、苗木に切り替える。その組に育つ木がなければ選び直さない
+func _select_next_in(group: String) -> void:
+	var order: Array = world.forest.species_in(group)
+	if order.is_empty():
+		$HUD.show_message("この土地で育つ%sは、まだない" % GROUP_NAMES[group])
+		return
 	var i: int = order.find(selected_species)
 	selected_species = order[(i + 1) % order.size()] if i >= 0 else order[0]
 	if selected_species in world.forest.SAPLING_ONLY:
 		selected_form = "sapling"
+
+func _select_next_fruit() -> void:
+	_select_next_in("fruit")
+
+const GROUP_NAMES := {"broadleaf": "広葉樹", "fruit": "果樹", "conifer": "針葉樹"}
+
+# 操作説明に出す、キーで選べる木。1 種類ならその名前、2 種類以上なら「広葉樹(白樺/コナラ)」。
+# with_group = false なら名前だけを / でつなぐ(果樹の行用)
+func group_keys_text(group: String, with_group := true) -> String:
+	var names := PackedStringArray()
+	for sp in world.forest.species_in(group):
+		names.append(world.forest.SPECIES[sp].name)
+	if names.is_empty():
+		return "なし" if with_group else "この土地で育つものはまだない"
+	if names.size() == 1 or not with_group:
+		return "/".join(names)
+	return "%s(%s)" % [GROUP_NAMES[group], "/".join(names)]
+
+# 県を決めたあと: 選んでいる木がこの土地で育たなければ、育つ広葉樹に選び直す
+func _fit_selection() -> void:
+	if world.forest.grows_here(selected_species):
+		return
+	var list: Array = world.forest.species_in("broadleaf")
+	if not list.is_empty():
+		selected_species = list[0]
+		selected_form = "seed"
 
 # 選んでいる植えるもの(HUD 用)。例: 「白樺の種」
 func selected_name() -> String:
@@ -1237,7 +1339,7 @@ func _tomorrow_lines() -> PackedStringArray:
 	var lines := PackedStringArray()
 	var rain: bool = world.tomorrow_rain()
 	if rain:
-		lines.append("%sになりそう(水やりはいらない)" % ("雪" if season == "winter" else "雨"))
+		lines.append("%sになりそう(水やりはいらない)" % ("雪" if is_snow_day(season) else "雨"))
 	if g.frost_is_near(world.forest.today()):
 		lines.append("12月の霜が近い(ニンニク以外は早めに収穫を)")
 	if plan.ripe > 0:
@@ -1330,11 +1432,12 @@ func pond_line() -> String:
 	return "池: %s%s" % [state, "(%s)" % "・".join(names) if not names.is_empty() else ""]
 
 # ── 畑の野菜 ────────────────────────────────────────────────
-# まける季節の文言。例: 「春・秋」
+# まける季節の文言(土地の気候で変わる)。例: 「春・秋」
 func crop_seasons(kind: String) -> String:
 	var names := PackedStringArray()
-	for s in world.garden.CROPS[kind].seasons:
-		names.append(SEASON_NAMES[s])
+	for s in ["spring", "summer", "autumn", "winter"]:
+		if world.garden.can_sow_in(kind, s):
+			names.append(SEASON_NAMES[s])
 	return "・".join(names)
 
 func _sow(pos: Vector2) -> void:
@@ -1351,7 +1454,7 @@ func _sow(pos: Vector2) -> void:
 			var planted: Dictionary = g.crop_at(pos)
 			if g.misses_frost(planted):
 				# まくのは止めない。間に合わないことだけ知らせる
-				$HUD.show_message("%s%s。ただ、霜(12月1日)まであと%d日で、育ちきる(%d日)前に枯れてしまう" % [crop.name, verb, g.days_to_frost(), g.days_left(planted)], 7.0)
+				$HUD.show_message("%s%s。ただ、霜(%s)まであと%d日で、育ちきる(%d日)前に枯れてしまう" % [crop.name, verb, g.frost_date_text(), g.days_to_frost(), g.days_left(planted)], 7.0)
 			else:
 				$HUD.show_message("%s%s(毎日水をやれば%d日で収穫できる)" % [crop.name, verb, g.days_left(planted)], 5.0)
 		"needs_seedling":
@@ -1532,20 +1635,22 @@ func shop_rows() -> Array:
 	var buy_next: int = (_buy_page + 1) % BUY_PAGES.size()
 	rows.append({"id": "page_buy", "text": "買う品: %s(押すと次: %s)" % [BUY_PAGES[_buy_page].name, BUY_PAGES[buy_next].name], "column": 0})
 	for g in m.GOODS:
+		if not m.sells(g):
+			continue  # この土地で育たない木と野菜は並ばない
 		var label: String = "済: %s" % good_name(g) if m.is_owned(g) else "買う: %s  %d₽" % [good_name(g), g.price]
 		rows.append({"id": g.id, "text": label, "column": 0, "page": _buy_page_of(g)})
-	# 冬は、春の種を安く注文できる(3 月 1 日に届く)。野菜の種のページに並べる
+	# 冬は、春の種を安く注文できる(冬が終わった月の 1 日に届く。今までのルールでは 3 月 1 日)。野菜の種のページに並べる
 	if m.can_order():
 		for kind in m.orderable():
 			var ordered: int = int(m.orders.get(kind, 0))
 			var note := "・注文済み %d" % ordered if ordered > 0 else ""
-			rows.append({"id": "order_" + kind, "text": "注文: %s(3/1に届く%s)  %d₽" % [world.garden.CROPS[kind].seed_name, note, m.order_price(kind)], "column": 0, "page": 1})
+			rows.append({"id": "order_" + kind, "text": "注文: %s(%d/1に届く%s)  %d₽" % [world.garden.CROPS[kind].seed_name, world.region.winter_end_month(), note, m.order_price(kind)], "column": 0, "page": 1})
 	var sell_next: int = (_sell_page + 1) % SELL_PAGES.size()
 	rows.append({"id": "page_sell", "text": "売る品: %s(押すと次: %s %d種類)" % [SELL_PAGES[_sell_page], SELL_PAGES[sell_next], _held_kinds(sell_next)], "column": 1})
 	for item in m.SELL_PRICES:
 		# 野菜は持っているものだけ並べる(行が多くなりすぎないように)
 		var n := produce_count(item)
-		if item == "apple" or n > 0:
+		if (item == "apple" and world.forest.grows_here("apple")) or n > 0:
 			var dear := "(%s)" % SEASON_NAMES[world.forest.season] if m.price_rate(item, world.forest.season) > 1.0 else ""
 			rows.append({"id": "sell_" + item, "text": "売る: %s %d%s × %d₽%s" % [produce_name(item), n, produce_unit(item), m.sell_price(item), dear], "column": 1, "page": _sell_page_of(item)})
 	rows.append({"id": "close", "text": "閉じる(B / Esc)", "column": 1})
@@ -1558,7 +1663,9 @@ func _buy_page_of(g: Dictionary) -> int:
 	return 0
 
 func _sell_page_of(item: String) -> int:
-	return 1 if world.kitchen.RECIPES.has(item) else 0
+	if world.kitchen.RECIPES.has(item):
+		return 2
+	return 0 if world.forest.FRUITS.has(item) or item == "honey" else 1
 
 # そのページで持っている品の種類の数
 func _held_kinds(page: int) -> int:
@@ -1634,7 +1741,7 @@ func _on_shop_action(id: String) -> void:
 		var ordered: bool = m.order(kind) == "ordered"
 		_sfx("coin" if ordered else "click")
 		if ordered:
-			$HUD.show_message("%sを注文した(-%d₽)。3月1日に届く(店頭より%d₽安い)" % [world.garden.CROPS[kind].seed_name, price, int(m.good(kind + "_seed").price) - price], 5.0)
+			$HUD.show_message("%sを注文した(-%d₽)。%d月1日に届く(店頭より%d₽安い)" % [world.garden.CROPS[kind].seed_name, price, world.region.winter_end_month(), int(m.good(kind + "_seed").price) - price], 5.0)
 		else:
 			$HUD.show_message("お金が足りない(%d₽ 必要)" % price)
 	elif id.begins_with("sell_"):
@@ -1697,10 +1804,10 @@ func _check_quests(prefix := "") -> void:
 	elif not done.is_empty():
 		var names := PackedStringArray()
 		for id in done:
-			names.append(QUEST_TEXTS[id].name)
+			names.append(quest_text(id).name)
 		var left := PackedStringArray()
 		for id in q.remaining():
-			left.append(QUEST_TEXTS[id].short)
+			left.append(quest_text(id).short)
 		lines.append("達成: %s(%d/%d。残り: %s)" % ["・".join(names), q.done.size(), q.QUESTS.size(), "・".join(left)])
 	for m in reached:
 		lines.append(milestone_text(m))
@@ -1720,7 +1827,7 @@ func quest_line() -> String:
 		return "愛の空間: 図鑑 %d/%d・木の節目 %d/%d%s" % [q.guide_seen().size(), q.guide_ids().size(), q.milestones.size(), q.milestone_total(), _next_goal_text()]
 	# まだのうち、いちばん前のものを詳しく。ほかは名前だけ
 	var id: String = q.current_id()
-	var t: Dictionary = QUEST_TEXTS[id]
+	var t: Dictionary = quest_text(id)
 	var p: Array = q.progress(id)
 	var count := ""
 	if t.unit != "":
@@ -1728,7 +1835,7 @@ func quest_line() -> String:
 	var others := PackedStringArray()
 	for other in q.remaining():
 		if other != id:
-			others.append(QUEST_TEXTS[other].short)
+			others.append(quest_text(other).short)
 	var rest := "・ほかに %s" % "・".join(others) if not others.is_empty() else ""
 	return "クエスト %d/%d 済: %s%s(%s)%s" % [q.done.size(), q.QUESTS.size(), t.name, count, t.hint, rest]
 
@@ -1737,7 +1844,7 @@ func _next_goal_text() -> String:
 	var q := world.quests
 	var missing: Array = q.guide_missing()
 	if not missing.is_empty():
-		return "(次: %s・%s)" % [_creature_name(missing[0]), GUIDE_HINTS[missing[0]]]
+		return "(次: %s・%s)" % [_creature_name(missing[0]), local_text(GUIDE_HINTS[missing[0]])]
 	var m: Dictionary = q.next_milestone()
 	if not m.is_empty():
 		return "(次の節目: %s 樹齢%d年まで あと%d日)" % [world.forest.SPECIES[m.species].name, m.age, m.days]
@@ -1876,6 +1983,8 @@ func _needs_fell_confirm(pos: Vector2) -> bool:
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
+	if $HUD.is_picker_open():
+		return  # 選ぶのは画面のボタン(矢印キー + Enter でも選べる)
 	if $HUD.is_diary_open():
 		if event.keycode == KEY_H or event.keycode == KEY_ESCAPE or event.keycode == KEY_ENTER:
 			_wake()
@@ -1895,11 +2004,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_F1:
 			$HUD.help_open = not $HUD.help_open
 		KEY_1:
-			selected_species = "birch"
+			_select_next_in("broadleaf")
 		KEY_2:
 			_select_next_fruit()
 		KEY_3:
-			selected_species = "cedar"
+			_select_next_in("conifer")
 		KEY_V:
 			selected_form = "sapling" if selected_form == "seed" else "seed"
 		KEY_B:

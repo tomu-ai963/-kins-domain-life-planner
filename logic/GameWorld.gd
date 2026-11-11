@@ -24,6 +24,7 @@ const Market = preload("res://logic/Market.gd")
 const DayClock = preload("res://logic/DayClock.gd")
 const WorldTime = preload("res://logic/WorldTime.gd")
 const SaveRead = preload("res://logic/SaveRead.gd")
+const Region = preload("res://logic/Region.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
 # セーブの版(2026-11-11 から書く。レビュー S4)。セーブの形を変える変更(名前・単位を変える、意味を変える)をしたら 1 上げ、
@@ -57,6 +58,8 @@ var quests := Quests.new()
 var market := Market.new()
 var time := WorldTime.new()      # ゲームの「今」。日付と時刻はここから読む(テストでは日付を進められる)
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
+var region := Region.new()       # 土地のある都道府県と気候。はじめに 1 度だけ選ぶ(選ぶ前は今までのルール)
+var is_new_game := false         # 読み込むセーブがなかった(新しく始めた)。県を選んだときに、その土地のはじめの種を配る
 var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
 var backup_dir := ""             # 控えを置くフォルダ。空なら控えを取らない(本物のセーブのときだけ Main が設定する)
@@ -65,6 +68,7 @@ var load_notice := ""            # 読み込みで知らせることがあれば
 func _init() -> void:
 	forest.time = time
 	clock.time = time
+	clock.region = region
 	quests.forest = forest
 	quests.land = land
 	quests.pond = pond
@@ -203,18 +207,27 @@ func tomorrow_date() -> String:
 func tomorrow_rain() -> bool:
 	return forest.roll_daily_event(tomorrow_date()) == "rain"
 
-# 季節は現実の日付から(3-5月=春 / 6-8月=夏 / 9-11月=秋 / 12-2月=冬)
-static func season_for_month(m: int) -> String:
-	if m >= 3 and m <= 5:
-		return "spring"
-	if m >= 6 and m <= 8:
-		return "summer"
-	if m >= 9 and m <= 11:
-		return "autumn"
-	return "winter"
+# 季節は現実の日付と、土地の気候から(Region.ZONES。選ぶ前は 3-5月=春 / 6-8月=夏 / 9-11月=秋 / 12-2月=冬)
+func season_for_month(m: int) -> String:
+	return region.season_of_month(m)
 
 func refresh_season() -> void:
 	forest.set_season(season_for_month(time.month()))
+
+# 県を決める(一度だけ。あとから変えられない)。新しいゲームなら、その土地のはじめの種にする。決めたら保存する
+# 結果: chosen / already(もう決まっている) / unknown(知らない id)
+func choose_region(id: String) -> String:
+	if region.is_chosen():
+		return "already"
+	if not region.choose(id):
+		return "unknown"
+	forest.region = region
+	refresh_season()
+	if is_new_game:
+		forest.start_stock()
+	forest.changed.emit()
+	save_game()
+	return "chosen"
 
 # ── セーブ / ロード ──────────────────────────────────────────
 func save_game() -> void:
@@ -235,6 +248,7 @@ func save_game() -> void:
 	data["nest_boxes"] = nest_boxes.to_save()
 	data["snow"] = snow.to_save()
 	data["sound_level"] = sound_level
+	data["region"] = region.to_save()
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
 	_write_save(JSON.stringify(data))
@@ -269,16 +283,19 @@ static func _read_save(path: String):
 
 func load_game() -> void:
 	load_notice = ""
+	is_new_game = false
 	var data = _read_save(save_path)
 	var tmp := save_path + TMP_SUFFIX
 	if data == null and FileAccess.file_exists(save_path):
 		data = _recover_broken_save()
 		if data == null:
+			is_new_game = true
 			return  # 戻せるものがなかった。新しいゲームで始める(読めなかったファイルは別名で残してある)
 	elif data == null:
 		# セーブがない。付け替えの途中で落ちたなら、書き終えた .tmp が残っている
 		data = _read_save(tmp)
 		if data == null:
+			is_new_game = true
 			return  # はじめて開いた
 		_write_save(FileAccess.get_file_as_string(tmp))
 		_backup_save()
@@ -367,6 +384,10 @@ func load_game() -> void:
 	nest_boxes.from_save(nbd)
 	snow.from_save(snow_data)
 	sound_level = clampi(SaveRead.whole(data, "sound_level", 3), 0, 3)
+	# 県の記録がないセーブ(2026-11-11 より前)は、開いたときに一度だけ選ぶ
+	region.from_save(data.get("region"))
+	forest.region = region if region.is_chosen() else null
+	refresh_season()
 	market.from_save(md)
 	forest.from_save(data)
 	quests.from_save(qd)  # 木を読んだあと(木の節目を数えるため)

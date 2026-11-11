@@ -76,7 +76,7 @@ func _process(delta: float) -> void:
 		apply_light()
 
 func apply_light() -> void:
-	var dir := DayClock.to_sun(clock.real_hours() + _shown_offset, clock.today_of_year())
+	var dir := clock.sun_dir(clock.real_hours() + _shown_offset, clock.today_of_year())
 	var elev := DayClock.elevation_deg(dir)
 	var k := cloudy(sample(elev), overcast)
 	sun.basis = Basis.looking_at(-light_dir(dir))

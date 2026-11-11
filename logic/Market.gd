@@ -28,6 +28,20 @@ const GOODS := [
 	{"id": "cherry_sapling", "species": "cherry", "form": "sapling", "amount": 1, "price": 700},
 	{"id": "plum_sapling", "species": "plum", "form": "sapling", "amount": 1, "price": 700},
 	{"id": "pear_sapling", "species": "pear", "form": "sapling", "amount": 1, "price": 900},
+	# 県を選ぶようにして足した木(2026-11-11。値段は今の木に合わせた仮の数字)。その土地で育つものだけ並ぶ
+	{"id": "konara_seed", "species": "konara", "form": "seed", "amount": 10, "price": 60},
+	{"id": "gajumaru_seed", "species": "gajumaru", "form": "seed", "amount": 10, "price": 100},
+	{"id": "sugi_seed", "species": "sugi", "form": "seed", "amount": 10, "price": 100},
+	{"id": "ezomatsu_seed", "species": "ezomatsu", "form": "seed", "amount": 10, "price": 200},
+	{"id": "ryukyu_pine_seed", "species": "ryukyu_pine", "form": "seed", "amount": 10, "price": 80},
+	{"id": "konara_sapling", "species": "konara", "form": "sapling", "amount": 1, "price": 400},
+	{"id": "gajumaru_sapling", "species": "gajumaru", "form": "sapling", "amount": 1, "price": 800},
+	{"id": "sugi_sapling", "species": "sugi", "form": "sapling", "amount": 1, "price": 600},
+	{"id": "ezomatsu_sapling", "species": "ezomatsu", "form": "sapling", "amount": 1, "price": 1200},
+	{"id": "ryukyu_pine_sapling", "species": "ryukyu_pine", "form": "sapling", "amount": 1, "price": 500},
+	{"id": "kaki_sapling", "species": "kaki", "form": "sapling", "amount": 1, "price": 900},
+	{"id": "mikan_sapling", "species": "mikan", "form": "sapling", "amount": 1, "price": 900},
+	{"id": "shikuwasa_sapling", "species": "shikuwasa", "form": "sapling", "amount": 1, "price": 800},
 	{"id": "radish_seed", "species": "radish", "form": "crop_seed", "amount": 1, "price": 40},
 	{"id": "carrot_seed", "species": "carrot", "form": "crop_seed", "amount": 1, "price": 50},
 	{"id": "cucumber_seed", "species": "cucumber", "form": "crop_seed", "amount": 1, "price": 60},
@@ -47,7 +61,7 @@ const GOODS := [
 # seedling_ は小屋で育てた苗(1 鉢 = 1 区画ぶん)の買い取り値。
 # 保存食(Kitchen.RECIPES の id)は 1 瓶 / 1 個あたり。材料を生で売るよりおよそ 2 倍になるように置いた仮の数字
 const SELL_PRICES := {
-	"apple": 15, "cherry": 60, "plum": 40, "pear": 18, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
+	"apple": 15, "cherry": 60, "plum": 40, "pear": 18, "kaki": 20, "mikan": 12, "shikuwasa": 50, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
 	"seedling_tomato": 150, "seedling_cucumber": 120,
 	"jam": 75, "sauce": 150, "pickles": 35, "garlic_pickle": 120, "pirozhki": 12,
 	"cherry_jam": 80, "plum_jam": 90, "pear_compote": 120,
@@ -81,12 +95,20 @@ static func good(id: String) -> Dictionary:
 			return g
 	return {}
 
-# 1 つ買う。結果: bought / no_money / unknown。
+# この土地の市場に並ぶ品か(木の種・苗木と野菜の種は、その土地で育つものだけ)
+func sells(g: Dictionary) -> bool:
+	if g.form == "seed" or g.form == "sapling":
+		return forest.grows_here(g.species)
+	if g.form == "crop_seed":
+		return forest.climate().allows(Garden.CROPS[g.species])
+	return true
+
+# 1 つ買う。結果: bought / no_money / unknown(並んでいない品も)。
 # 増築と家具はほかに: no_cabin(小屋が未完成) / exists・owned(もう頼んだ・持っている) / no_room(増築した部屋がない) /
 # edge・center・pond・plot・tree・hive・feeder(増築する場所がふさがっている)
 func buy(id: String) -> String:
 	var g := good(id)
-	if g.is_empty():
+	if g.is_empty() or not sells(g):
 		return "unknown"
 	var problem := _cabin_problem(g)
 	if problem != "":
