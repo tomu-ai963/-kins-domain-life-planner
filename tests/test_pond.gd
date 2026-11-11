@@ -79,11 +79,15 @@ func _world(forest: Forest = null, remove_save := true) -> GameWorld:
 	return w
 
 # 掘り終えた池を作る
-func _dug(w: GameWorld) -> void:
+func _dug(w: GameWorld, spring := false) -> void:
 	w.pond_action(SPOT)
 	for i in range(w.pond.DIG_DAYS):
 		w.pond.last_dug = ""
 		w.pond_action(SPOT)
+	if not spring:
+		# 雨のたまり方を見るテストでは、湧き水を抜いて空の池から始める
+		w.pond.water = 0
+		w.pond.wet_since_day = -1
 
 # 1 日進める: 雨を数え直すところだけ前の日に戻す
 func _days_pass(w: GameWorld, days: int) -> void:
@@ -110,7 +114,8 @@ func _test_dig() -> void:
 		p.last_dug = ""
 		_check(w.pond_action(SPOT) == "dug", "%d 日目を掘る" % (i + 3))
 	p.last_dug = ""
-	_check(w.pond_action(SPOT) == "finished" and p.is_dug() and p.water == 0, "5 日目で掘り終える(水はまだない)")
+	_check(w.pond_action(SPOT) == "finished" and p.is_dug(), "5 日目で掘り終える")
+	_check(p.water == p.SPRING_FILL and p.wet_days() == 0, "掘り終えた日に湧き水で半分たまり、生き物を待つ日数が始まる")
 	p.last_dug = ""
 	_check(w.pond_action(SPOT) == "already" and p.days_dug == 5, "掘り終えたらそれ以上は掘れない")
 
@@ -233,6 +238,13 @@ func _test_creatures() -> void:
 	w.forest.season = "spring"
 	_check(not p.is_frozen(), "春には解ける")
 
+	# 湧き水だけで、雨を待たずに来る(晴れが続いても)
+	var w3 := _world(DryForest.new())
+	_dug(w3, true)
+	_check(w3.pond.water == 50 and w3.pond.present().is_empty(), "湧き水の日はまだ来ない")
+	_days_pass(w3, 2)
+	_check(w3.pond.water == 50 and w3.pond.present() == ["strider"] and w3.pond.last_arrivals == ["strider"], "雨がなくても 2 日後にアメンボが来る")
+
 	# 留守のあいだに来た生き物も、まとめて知らせる
 	var w2 := _world(RainForest.new())
 	_dug(w2)
@@ -335,6 +347,42 @@ func _test_save() -> void:
 	_check(p4.is_dug() and p4.water == 100, "前のセーブの池は掘り終えた満杯の池")
 	_check(p4.wet_days() == 0 and p4.present().is_empty(), "生き物はこれから来る")
 	_check(w4.quests.progress("pond") == [1, 1] and w4.quests.stage == 3, "クエストの達成はそのまま")
+
+	# 湧き水より前のセーブ: 掘り終えて空の池には、開いたときに 1 回だけ湧き水が入る
+	_remove_save()
+	var old_pond := {"days_dug": 5, "last_dug": "2026-11-10", "water": 0, "wet_since_day": -1, "last_checked_day": 100, "seen": []}
+	file = FileAccess.open(TEST_SAVE, FileAccess.WRITE)
+	file.store_string(JSON.stringify({"unit": "m", "last_day": "", "today_event": "", "trees": [],
+		"land": {"plots": [], "pond": [-12.5, 0]}, "pond": old_pond}))
+	file.close()
+	var w6 := _world(null, false)
+	w6.load_game()
+	_check(w6.pond.water == 50 and w6.pond.wet_days() == 0, "掘り終えた空の池に湧き水が入る")
+	w6.pond.water = 10
+	w6.save_game()
+	var w7 := _world(null, false)
+	w7.load_game()
+	_check(w7.pond.water == 10, "2 回目からは入らない(一度入れたら印が付く)")
+	_remove_save()
+	old_pond.days_dug = 3
+	file = FileAccess.open(TEST_SAVE, FileAccess.WRITE)
+	file.store_string(JSON.stringify({"unit": "m", "last_day": "", "today_event": "", "trees": [],
+		"land": {"plots": [], "pond": [-12.5, 0]}, "pond": old_pond}))
+	file.close()
+	var w8 := _world(null, false)
+	w8.load_game()
+	_check(w8.pond.water == 0 and not w8.pond.is_dug(), "掘っている途中の池には入らない(掘り終えた日に入る)")
+	old_pond.days_dug = 5
+	old_pond.water = 75
+	old_pond.wet_since_day = 90
+	_remove_save()
+	file = FileAccess.open(TEST_SAVE, FileAccess.WRITE)
+	file.store_string(JSON.stringify({"unit": "m", "last_day": "", "today_event": "", "trees": [],
+		"land": {"plots": [], "pond": [-12.5, 0]}, "pond": old_pond}))
+	file.close()
+	var w9 := _world(null, false)
+	w9.load_game()
+	_check(w9.pond.water == 75 and w9.pond.wet_since_day == 90, "もう水がある池はそのまま")
 
 	# 前のセーブで池がなければ、記録がなくても空
 	_remove_save()

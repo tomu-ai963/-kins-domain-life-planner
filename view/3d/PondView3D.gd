@@ -30,6 +30,9 @@ var _frog := Look.mat(Color(0.32, 0.62, 0.20))
 var _dragonfly := Look.mat(Color(0.85, 0.20, 0.15), true)
 var _duck := Look.mat(Color(0.52, 0.40, 0.28))
 var _duck_head := Look.mat(Color(0.12, 0.42, 0.26))
+var _reach_mat := Look.mat(Color(0.45, 0.72, 0.98, 0.75), true)  # まとめて水やりの範囲の輪(草にも雪にも見える水色)
+var _player: Node3D = null       # 3D のときだけ Main が渡す
+var _reach_ring: MeshInstance3D = null  # 池の中心から WATER_RADIUS の輪。池のそばに立ったときだけ見せる
 
 func setup(p: Pond) -> void:
 	pond = p
@@ -42,8 +45,14 @@ func setup(p: Pond) -> void:
 	pond.forest.changed.connect(_rebuild)  # 季節(氷・生き物)
 	_rebuild()
 
+func set_player(p: Node3D) -> void:
+	_player = p
+
 func _process(delta: float) -> void:
 	_t += delta
+	if _reach_ring != null:
+		# 池のそば(場所を決めただけでも)に立つと、まとめて水をやれる範囲が見える。凍っている冬は運べないので出さない
+		_reach_ring.visible = _player != null and pond.is_near(_player.ground_pos()) and not pond.is_frozen()
 	for m in _movers:
 		var a: float = _t * m.speed + m.phase
 		var n: Node3D = m.node
@@ -53,11 +62,18 @@ func _process(delta: float) -> void:
 func _rebuild() -> void:
 	Look.clear_children(self)
 	_movers.clear()
+	_reach_ring = null
 	if not pond.is_placed():
 		return
 	var spot := Node3D.new()
 	spot.position = Look.at(pond.land.pond)
 	add_child(spot)
+	# 輪は池の部品(spot)とは別に置く(池の段階ごとの部品の数を変えない)
+	_reach_ring = Look.ring(pond.land.pond, pond.WATER_RADIUS, 0.15, _reach_mat, 0.03)
+	_reach_ring.name = "ReachRing"
+	_reach_ring.layers = Look.GROUND_LAYER
+	_reach_ring.visible = false
+	add_child(_reach_ring)
 	var r: float = pond.land.POND_RADIUS
 	if pond.days_dug == 0:
 		_marks(spot, r)

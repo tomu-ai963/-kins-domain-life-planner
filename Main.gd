@@ -121,6 +121,7 @@ func _setup_3d_only() -> void:
 	$Player.shadow_light = $Sun
 	$Player.update_shadow_distance()
 	$Cabin.set_player($Player)
+	$Pond.set_player($Player)
 	$Cabin.set_kitchen(world.kitchen)
 	$Wildlife.setup(world.wildlife, $Player)
 	$Visitor.setup(world.visitors, $Player)
@@ -292,11 +293,30 @@ func feeder_line() -> String:
 		return ""
 	if not fd.can_feed_now():
 		return "餌台(餌を置くのは秋と冬)"
+	var birds := _feeder_birds_text(near)
 	if fd.fed_today(near):
-		return "餌台: 今日は餌を置いた"
+		return "餌台: 今日は餌を置いた" + birds
 	if fd.is_fed(near):
-		return "餌台: 餌が残っている(L で足す・白樺の種 %d粒)" % fd.FEED_SEEDS
+		return "餌台: 餌が残っている(L で足す・白樺の種 %d粒)" % fd.FEED_SEEDS + birds
 	return "餌台: 餌がない(L で白樺の種を %d粒置く)" % fd.FEED_SEEDS
+
+# 暗くて鳥が見えないときの、昼の様子(餌があるときだけ)。例: 「。昼のあいだにシジュウカラ 2羽が来ていた」
+# 冬は 17 時に暗くなるので、夕方からしか開けない人にも餌台の鳥が来ていることを知らせる
+func _feeder_birds_text(near: Dictionary) -> String:
+	var wl := world.wildlife
+	if not world.feeders.is_fed(near) or wl.is_daytime():
+		return ""
+	var names := PackedStringArray()
+	var birds: Dictionary = wl.feeder_birds()
+	for id in birds:
+		names.append("%s %d羽" % [wl.SPECIES[id].name, birds[id]])
+	if names.is_empty():
+		return ""
+	var who := "・".join(names)
+	# 夕方に置いた餌には、まだ来ていない(置いた時刻は持たないので、今日置いた餌は明日の昼に来る言い方にする)
+	if wl.is_afternoon() and not world.feeders.fed_today(near):
+		return "。昼のあいだに%sが来ていた" % who
+	return "。明るくなると%sが来る" % who
 
 # X: 足元の果樹を剪定する
 func _prune() -> void:
@@ -663,13 +683,13 @@ const PLOT_MESSAGES := {
 	"limit": "新しく耕せるのは1日%d区画まで(続きは明日)",
 }
 const POND_MESSAGES := {
-	"placed": "ここに池を掘ることにした(P で 1日1回 掘る。掘りはじめる前なら Z で取り消せる)",
+	"placed": "ここに池を掘ることにした(P で 1日1回 掘る)。水色の輪の中の畑と木には、池からまとめて水をやれる。掘りはじめる前なら Z で取り消せる",
 	"outside": "土地の外には掘れない",
 	"cabin": "小屋にかかる場所には掘れない",
 	"hive": "巣箱にかかる場所には掘れない",
 	"feeder": "餌台にかかる場所には掘れない",
 	"dug": "池を掘った(続きは明日)",
-	"finished": "池を掘り終えた。あとは雨で水がたまる",
+	"finished": "池を掘り終えた。底から水が湧いて、半分までたまった。あとは雨でたまる",
 	"far": "池はひとつまで(今の池の近くで P を押すと掘る)",
 	"already": "池はもう掘り終えた(水は雨でたまる)",
 	"done_today": "今日はもう掘った(1日1回)",
@@ -1154,7 +1174,12 @@ func _sow(pos: Vector2) -> void:
 		"sown":
 			_act("plant", world.land.plot_center(pos))
 			var verb := "の苗を植えた" if from_seedling else "をまいた"
-			$HUD.show_message("%s%s(毎日水をやれば%d日で収穫できる)" % [crop.name, verb, g.days_left(g.crop_at(pos))], 5.0)
+			var planted: Dictionary = g.crop_at(pos)
+			if g.misses_frost(planted):
+				# まくのは止めない。間に合わないことだけ知らせる
+				$HUD.show_message("%s%s。ただ、霜(12月1日)まであと%d日で、育ちきる(%d日)前に枯れてしまう" % [crop.name, verb, g.days_to_frost(), g.days_left(planted)], 7.0)
+			else:
+				$HUD.show_message("%s%s(毎日水をやれば%d日で収穫できる)" % [crop.name, verb, g.days_left(planted)], 5.0)
 		"needs_seedling":
 			$HUD.show_message("%sは苗から育てる(完成した小屋で H を押して鉢にまく)" % crop.name, 5.0)
 		"occupied":

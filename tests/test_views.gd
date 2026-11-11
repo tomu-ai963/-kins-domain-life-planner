@@ -1275,6 +1275,27 @@ func _test_winter_work() -> void:
 	_check(hud._message.contains("種を置いた") and figure.current_action() == "feed", "L で種を置く動きをする")
 	_check(view.get_child(0).find_children("FeederGrain*", "", true, false).size() == view.GRAINS, "台の上に種が見える")
 	_check(main.feeder_line().contains("今日は"), "案内が変わる")
+	# 暗いときは、昼の餌台の様子を知らせる(冬は 17 時に暗くなる)
+	var clock = w.clock
+	var at_hour := func(h: float) -> void:
+		clock.preview_hours = fposmod(h - clock.real_hours(), 24.0)
+	at_hour.call(13.0)
+	_check(not main.feeder_line().contains("羽"), "昼は鳥が見えるので知らせない")
+	at_hour.call(21.0)
+	_check(main.feeder_line().contains("明るくなるとシジュウカラ 2羽・ウソ 1羽が来る"), "夜に置いた餌には、明るくなると来る: " + main.feeder_line())
+	var fed_day: int = w.feeders.feeders[0].fed_day
+	w.feeders.feeders[0].fed_day = fed_day - 1
+	_check(main.feeder_line().contains("昼のあいだにシジュウカラ 2羽・ウソ 1羽が来ていた"), "前の日の餌が残っていれば、昼のあいだに来ていた: " + main.feeder_line())
+	at_hour.call(5.0)
+	_check(main.feeder_line().contains("明るくなると"), "夜明け前は、明るくなると来る")
+	w.feeders.feeders[0].fed_day = fed_day - 2
+	_check(not main.feeder_line().contains("羽"), "餌がなければ知らせない")
+	w.feeders.feeders[0].fed_day = fed_day
+	f.set_season("autumn")
+	at_hour.call(21.0)
+	_check(main.feeder_line().contains("シジュウカラ 2羽が") and not main.feeder_line().contains("ウソ"), "秋はシジュウカラだけ")
+	f.set_season("winter")
+	clock.preview_hours = 0.0
 	figure._process(10.0)
 	press.call(KEY_L)
 	_check(hud._message.contains("今日はもう"), "今日はもう置けない")
@@ -2665,6 +2686,9 @@ func _test_furniture() -> void:
 	player.global_position = Vector3(20, 0, 23)
 	view._process(0.1)
 
+func hud_has_ring_text(m) -> bool:
+	return m.get_node("HUD")._message.contains("水色の輪")
+
 func _test_3d_pond() -> void:
 	print("池")
 	var w = main.world
@@ -2676,6 +2700,15 @@ func _test_3d_pond() -> void:
 	player.global_position = Vector3(-20, 0, -20)
 	main._pond_action()
 	_check(pieces.call() == 9, "P で場所を決めると、縄の輪と杭 8 本が立つ")
+	var ring: MeshInstance3D = view.get_node("ReachRing")
+	view._process(0.1)
+	_check(ring.visible and absf((ring.mesh as TorusMesh).outer_radius - p.WATER_RADIUS) < 0.2, "場所を決めると、まとめて水やりの範囲(20m)の輪が見える")
+	_check(hud_has_ring_text(main), "場所を決めたときの知らせで輪のことを言う")
+	player.global_position = Vector3(-20, 0, -5)
+	view._process(0.1)
+	_check(not ring.visible, "池から離れると輪は消える")
+	player.global_position = Vector3(-20, 0, -20)
+	view._process(0.1)
 	player.global_position = Vector3(-20, 0, -20)
 	main._remove()
 	_check(not p.is_placed() and view.get_child_count() == 0, "掘りはじめる前なら Z で取り消せる")
@@ -2691,8 +2724,12 @@ func _test_3d_pond() -> void:
 	for i in range(3):
 		p.last_dug = ""
 		main._pond_action()
-	_check(p.is_dug() and pieces.call() == 2, "掘り終えると、岸と空の穴だけになる(水はまだ)")
-	_check(main.pond_line().contains("水 0%"), "HUD に水の量が出る")
+	_check(p.is_dug() and p.water == p.SPRING_FILL and pieces.call() == 4, "掘り終えると湧き水がたまり、岸・穴・水面(2 枚)になる")
+	_check(main.pond_line().contains("水 50%"), "HUD に水の量が出る")
+	_check(main.get_node("HUD")._message.contains("湧いて"), "湧き水を知らせる")
+	p.water = 0
+	p.changed.emit()
+	_check(pieces.call() == 2, "水がなければ、岸と空の穴だけ")
 
 	p.water = 25
 	p.changed.emit()
@@ -2784,9 +2821,18 @@ func _test_hud() -> void:
 	player.global_position = Vector3(30, 0, 30)
 	hud.inventory_open = false
 	hud.help_open = false
+	# 日によって出る行(訪問者は 5 日に 2 回)と、前のテストで作った丸太で出る巣箱の行を外して数える。
+	# 外さないと、テストの結果が今日の日付で変わる(レビュー C2)
+	var w = main.world
+	var keep_visit: Dictionary = w.visitors.visit
+	var keep_own: int = w.cabin.own_logs
+	w.visitors.visit = {}
+	w.cabin.own_logs = 0
 	var base: int = hud.status_text().split("\n").size()
 	print("    いつも出る行数: ", base)
 	_check(base <= 8, "いつも出るのは 8 行まで")
+	w.visitors.visit = keep_visit
+	w.cabin.own_logs = keep_own
 	var text: String = hud.status_text()
 	_check(text.contains("所持金") and text.contains("丸太") and text.contains("クエスト") and text.contains("小屋") and text.contains("池"), "所持金・丸太・クエスト・小屋・池はいつも出る")
 	_check(text.contains("植える: ") and text.contains("畑にまく: "), "選んでいるものはいつも出る")

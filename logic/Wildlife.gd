@@ -66,6 +66,23 @@ func _time_fits(time: String) -> bool:
 			return d >= NIGHT_DARKNESS
 	return true
 
+# 昼の生き物が出る明るさか
+func is_daytime() -> bool:
+	return _time_fits("day")
+
+# 午後か(暗いときに「昼のあいだに来ていた」か「明るくなると来る」かを分ける)。N のプレビューも含む
+func is_afternoon() -> bool:
+	return fposmod(clock.real_hours() + clock.preview_hours, 24.0) >= 12.0
+
+# 餌のある餌台 1 つに来る鳥の数 {id: 数}。時間帯は見ない(暗くて見えないときに、昼の様子を知らせる用)
+func feeder_birds() -> Dictionary:
+	var out := {}
+	var per := {"tit": TITS_PER_FEEDER, "bullfinch": BULLFINCHES_PER_FEEDER}
+	for id in per:
+		if forest.season in SPECIES[id].seasons:
+			out[id] = per[id]
+	return out
+
 # 根付いた木の数と、そのうち育った木の数 [根付いた木, 育った木]
 func _tree_counts() -> Array:
 	var all := 0

@@ -15,6 +15,12 @@ const SITE := Vector2(20, 20)
 var _failed := 0
 var _passed := 0
 
+# 今日の日付を決めた Forest
+class DateForest extends Forest:
+	var date := "2026-11-29"
+	func today() -> String:
+		return date
+
 func _initialize() -> void:
 	_test_planting()
 	_test_frost()
@@ -119,6 +125,31 @@ func _test_frost() -> void:
 	_check(not w4.garden.frost_is_near("2026-11-23"), "11 月 23 日はまだ予告しない")
 	_check(w4.garden.frost_is_near("2026-11-24") and w4.garden.frost_is_near("2026-11-30"), "11 月 24 日から月末まで予告する")
 	_check(not w4.garden.frost_is_near("2026-10-30") and not w4.garden.frost_is_near("2026-12-01"), "ほかの月は予告しない")
+
+	# まくときの知らせ: 毎日水をやっても霜の前に育ちきらないか
+	var w5 := _world("autumn")
+	var df := DateForest.new()
+	df.season = "autumn"
+	w5.forest = df
+	w5.garden.forest = df
+	var g5 := w5.garden
+	df.date = "2026-11-29"
+	_check(g5.days_to_frost() == 2, "11 月 29 日: 霜(12 月 1 日)まであと 2 日")
+	var r: Dictionary = _sown(w5, "radish")
+	_check(g5.misses_frost(r), "11 月 29 日のラディッシュ(3 日)は間に合わない")
+	df.date = "2026-11-28"
+	r.sown_day = g5.day_number()
+	_check(g5.days_to_frost() == 3 and g5.misses_frost(r), "11 月 28 日: 育ちきる日が霜の日なので間に合わない")
+	df.date = "2026-11-27"
+	r.sown_day = g5.day_number()
+	_check(not g5.misses_frost(r), "11 月 27 日なら 11 月 30 日に収穫できる")
+	df.date = "2026-11-29"
+	var gar: Dictionary = _sown(w5, "garlic", Vector2(10, 10))
+	_check(not g5.misses_frost(gar), "ニンニクは霜に強いので知らせない")
+	df.date = "2026-09-10"
+	_check(g5.days_to_frost() == 82, "9 月 10 日: 霜まで 82 日")
+	df.date = "2026-12-05"
+	_check(g5.days_to_frost() == 0, "冬のあいだは 0")
 
 # 1 日進める。cared なら、その日の世話もする
 func _pass_day(w: GameWorld, cared: bool) -> void:

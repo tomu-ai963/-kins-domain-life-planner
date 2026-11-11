@@ -2,7 +2,8 @@ extends RefCounted
 
 # ── 池の作り込み(描画を持たない) ───────────────────────────────
 # 池の場所は Land.pond。ここは掘る作業・水の量・来る生き物を持つ。
-# 場所を決める → 1 日 1 回掘る(5 日) → 雨で水がたまる → 水が半分を超えると生き物が順に来る。
+# 場所を決める → 1 日 1 回掘る(5 日) → 掘り終えると湧き水で半分まで入る → 雨で水がたまる
+# → 水が半分を超えると生き物が順に来る。
 # 雨と夏の蒸発は閉じているあいだの分も数える(天気は日付から決まる。Forest.roll_daily_event)。
 # 文言は Main、見た目は view/ が決める。座標の単位は m
 const Forest = preload("res://logic/Forest.gd")
@@ -17,6 +18,7 @@ const REACH := 2.0      # 池の縁からこの距離までなら作業できる
 const RAIN_FILL := 25   # 雨 1 回でたまる水(%)。4 回の雨で満杯
 const SUMMER_LOSS := 2  # 夏(6〜8 月)に 1 日で蒸発する水(%)。雨は平均で 1 日 6% ほどたまる
 const WET_WATER := 50   # 水がこの量(%)を超えると、生き物が来るようになる
+const SPRING_FILL := 50 # 掘り終えた日に湧き水でたまる水(%)。雨を待たずに生き物が来はじめる
 const WATER_RADIUS := 20.0  # 池の中心からこの距離(m)までの木と区画に、まとめて水をやれる
 const WATER_COST := 5       # まとめて水をやると減る水(%)。雨は 4 日に 1 回 25% なので、毎日使っても釣り合う
 
@@ -69,6 +71,10 @@ func _reset() -> void:
 func _is_near(pos: Vector2) -> bool:
 	return is_placed() and pos.distance_to(land.pond) <= land.POND_RADIUS + REACH
 
+# 池のそばか(場所を決めただけでも、縁から REACH まで)。まとめて水やりの範囲の輪を出す用
+func is_near(pos: Vector2) -> bool:
+	return _is_near(pos)
+
 # 足元で掘る。結果: dug / finished / none / far / already / done_today
 func dig(pos: Vector2) -> String:
 	if not is_placed():
@@ -85,6 +91,7 @@ func dig(pos: Vector2) -> String:
 	if is_dug():
 		result = "finished"
 		last_checked_day = forest.day_number()  # 掘り終えた次の雨からたまる
+		_fill_spring()
 	_commit()
 	return result
 
@@ -96,6 +103,12 @@ func cancel(pos: Vector2) -> bool:
 	_reset()
 	_commit()
 	return true
+
+# 湧き水で SPRING_FILL まで入れる(すでに多ければそのまま)
+func _fill_spring() -> void:
+	water = maxi(water, SPRING_FILL)
+	if water >= WET_WATER and wet_since_day < 0:
+		wet_since_day = forest.day_number()
 
 # 掘り終えた池のそばにいるか
 func is_beside(pos: Vector2) -> bool:
@@ -170,6 +183,7 @@ func to_save() -> Dictionary:
 	return {
 		"days_dug": days_dug, "last_dug": last_dug, "water": water,
 		"wet_since_day": wet_since_day, "last_checked_day": last_checked_day, "seen": seen,
+		"spring": true,
 	}
 
 # Land を読んだあとで呼ぶ
@@ -189,4 +203,7 @@ func from_save(d: Dictionary) -> void:
 			wet_since_day = int(d.get("wet_since_day", -1))
 			last_checked_day = int(d.get("last_checked_day", 0))
 			seen = Array(d.get("seen", []))
+			# 湧き水を入れる前(2026-11-11 より前)に掘り終えた池には、開いたときに 1 回だけ入れる
+			if not d.has("spring") and is_dug():
+				_fill_spring()
 	changed.emit()

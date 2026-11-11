@@ -281,6 +281,22 @@ func _winter_between(from: int, to: int) -> bool:
 			return true
 	return false
 
+# 今日から霜の日(冬の最初の日 = 12 月 1 日)までの日数。冬のあいだは 0
+func days_to_frost() -> int:
+	var today: int = day_number()
+	for d in range(today, today + 366):
+		var month := int(Forest.date_of_day(d).substr(5, 2))
+		if month == 12 or month <= 2:
+			return d - today
+	return 366
+
+# 毎日水をやっても、育ちきる前に霜で枯れるか(霜に強い野菜は枯れない)。
+# 育ちきった日が霜の日なら、その朝に枯れるので間に合わない
+func misses_frost(c: Dictionary) -> bool:
+	if CROPS[c.kind].get("hardy", false):
+		return false
+	return days_left(c) >= days_to_frost()
+
 # 霜が近いか(11 月 24 日から月末まで。霜に弱い野菜が畑にあるときだけ)。date は YYYY-MM-DD
 func frost_is_near(date: String) -> bool:
 	if int(date.substr(5, 2)) != 11 or int(date.substr(8, 2)) < 24:
