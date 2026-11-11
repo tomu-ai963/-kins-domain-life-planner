@@ -99,6 +99,8 @@ const SPECIES := {
 	},
 }
 
+var time = null  # WorldTime(GameWorld が設定する)。今日の日付と今の時刻はここから読む
+
 # [{pos: Vector2(m), species, form: "seed"/"sapling"/""(移行前の木), planted_at: int,
 #   start_age: float(苗木の樹齢), sprouts: bool(種が芽を出すか), last_harvest, last_watered, bonus_years,
 #   pruned_year: int(剪定が効く収穫の年。0 = まだ)}]
@@ -244,6 +246,10 @@ func nearest_index(pos: Vector2, max_dist: float, species: String) -> int:
 func check_new_day() -> String:
 	var t := today()
 	if last_day == t:
+		return ""
+	# 時計が前の日に戻ったとき(PC の時計を直したなど)は、新しい日にしない。戻した日の発見や種がもう一度起きないように
+	# (日付は YYYY-MM-DD なので、文字の順 = 日付の順)
+	if last_day != "" and t < last_day:
 		return ""
 	last_day = t
 	last_failed = {}
@@ -440,8 +446,9 @@ func prune_nearest(pos: Vector2, max_dist: float) -> String:
 	_commit()
 	return "pruned"
 
+# 今日(現地時間の YYYY-MM-DD)。GameWorld が渡す WorldTime から読む(なければ現実の時計)
 func today() -> String:
-	return Time.get_date_string_from_system()  # 現地時間の YYYY-MM-DD
+	return time.today() if time != null else Time.get_date_string_from_system()
 
 # 暦の日の通し番号(日付をまたぐと 1 増える。時刻によらない)
 func day_number() -> int:
@@ -457,7 +464,7 @@ static func date_of_day(n: int) -> String:
 	return Time.get_date_string_from_unix_time(n * 86400)
 
 func _now() -> int:
-	return int(Time.get_unix_time_from_system())
+	return time.now_unix() if time != null else int(Time.get_unix_time_from_system())
 
 # 伐ったときに採れる丸太の本数(判定は現実の樹齢。先送りプレビューでは増えない)
 func wood_yield(tree: Dictionary) -> int:

@@ -18,9 +18,12 @@ const MONTH_START_DAY := [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
 
 var preview_hours := 0.0  # N で先へ送った時間(0〜24 未満)。保存しない
 var fixed_now := {}       # テスト用: 空でなければ現実の時計の代わりに使う {month, day, hour, minute, second}
+var time = null           # WorldTime(GameWorld が設定する)。なければ現実の時計
 
 func _now() -> Dictionary:
-	return fixed_now if not fixed_now.is_empty() else Time.get_datetime_dict_from_system()
+	if not fixed_now.is_empty():
+		return fixed_now
+	return time.now_local() if time != null else Time.get_datetime_dict_from_system()
 
 # 現実の時刻(時間の小数)。プレビューは含まない
 func real_hours() -> float:

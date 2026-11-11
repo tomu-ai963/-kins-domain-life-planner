@@ -21,6 +21,7 @@ const Snow = preload("res://logic/Snow.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 const DayClock = preload("res://logic/DayClock.gd")
+const WorldTime = preload("res://logic/WorldTime.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
 const SAVE_UNIT := "m"           # セーブの座標の単位。この印がない古いセーブは px(40px = 1m)
@@ -48,6 +49,7 @@ var nest_boxes := NestBoxes.new()
 var snow := Snow.new()
 var quests := Quests.new()
 var market := Market.new()
+var time := WorldTime.new()      # ゲームの「今」。日付と時刻はここから読む(テストでは日付を進められる)
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
 var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
@@ -55,6 +57,8 @@ var backup_dir := ""             # 控えを置くフォルダ。空なら控え
 var load_notice := ""            # 読み込みで知らせることがあれば、その文(セーブが読めず控えから戻したときなど)
 
 func _init() -> void:
+	forest.time = time
+	clock.time = time
 	quests.forest = forest
 	quests.land = land
 	quests.pond = pond
@@ -203,7 +207,7 @@ static func season_for_month(m: int) -> String:
 	return "winter"
 
 func refresh_season() -> void:
-	forest.set_season(season_for_month(Time.get_datetime_dict_from_system().month))
+	forest.set_season(season_for_month(time.month()))
 
 # ── セーブ / ロード ──────────────────────────────────────────
 func save_game() -> void:

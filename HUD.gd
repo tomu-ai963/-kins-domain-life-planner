@@ -264,7 +264,7 @@ func status_text() -> String:
 
 # いつも見たいこと
 func _status_lines() -> PackedStringArray:
-	var dt: Dictionary = Time.get_datetime_dict_from_system()
+	var dt: Dictionary = _main.world.time.now_local()  # 検証で日付を進めたときも、その日付を出す
 	var season_jp: String = _main.SEASON_NAMES[_trees.season]
 	var offset := ""
 	if _trees.time_offset_years > 0.0:

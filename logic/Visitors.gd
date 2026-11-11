@@ -103,6 +103,8 @@ static func who_on(day: int) -> String:
 # 日付が変わっていたら、今日の訪問を決める。決めたら true
 func check_today() -> bool:
 	var day: int = forest.day_number()
+	if day < int(visit.get("day", -1)):
+		return false  # 時計が戻ったときは、前の日の訪問を作り直さない(お礼をもう一度もらえないように)
 	if int(visit.get("day", -1)) == day:
 		# 話すだけの予定だった人も、手詰まりなら助けてくれる(その日のうちに手詰まりになったとき)
 		if is_here() and visit.kind == "chat" and is_stuck():
@@ -378,4 +380,9 @@ func from_save(d: Dictionary) -> void:
 		visit.amount = int(visit.amount)
 	if visit.has("line"):
 		visit.line = int(visit.line)
+	# JSON から読むと数は小数になる。お礼の数も整数に戻す(保存し直したときに 1 → 1.0 と変わらないように)
+	if typeof(visit.get("reward")) == TYPE_DICTIONARY:
+		for key in ["count", "amount"]:
+			if visit.reward.has(key):
+				visit.reward[key] = int(visit.reward[key])
 	changed.emit()
