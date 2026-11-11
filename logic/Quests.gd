@@ -113,9 +113,9 @@ func advance() -> Array:
 	return now
 
 # ── 生き物の図鑑 ──
-# 図鑑に載る生き物の id(土地の生き物と池の生き物)
-static func guide_ids() -> Array:
-	var ids: Array = Wildlife.SPECIES.keys()
+# 図鑑に載る生き物の id(この土地にいる生き物と、池の生き物。県を選ぶ前は今までの生き物)
+func guide_ids() -> Array:
+	var ids: Array = wildlife.local_species() if wildlife != null else Wildlife.SPECIES.keys().filter(func(id): return not Wildlife.SPECIES[id].get("regional", false))
 	ids.append_array(Pond.CREATURES.keys())
 	return ids
 

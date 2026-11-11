@@ -10,6 +10,9 @@ const Forest = preload("res://logic/Forest.gd")
 const Garden = preload("res://logic/Garden.gd")
 const DayClock = preload("res://logic/DayClock.gd")
 const RegionPicker = preload("res://view/RegionPicker.gd")
+const Wildlife = preload("res://logic/Wildlife.gd")
+const WildlifeView = preload("res://view/3d/WildlifeView3D.gd")
+const Footprints = preload("res://view/3d/FootprintsView3D.gd")
 
 const TEST_SAVE := "user://test_region.json"
 const SPOT := Vector2(1, 1)   # 区画(1.5, 1.5)の中
@@ -35,6 +38,7 @@ func _initialize() -> void:
 	_test_save()
 	_test_sun()
 	_test_picker_text()
+	_test_wildlife()
 	_run_scene.call_deferred()
 
 func _check(cond: bool, label: String) -> void:
@@ -350,6 +354,63 @@ func _test_picker_text() -> void:
 	var ok := RegionPicker.describe("okinawa")
 	_check(ok.contains("霜も雪もない") and ok.contains("ガジュマル") and ok.contains("夏 5〜10月"), "沖縄の説明")
 
+func _test_wildlife() -> void:
+	print("生き物")
+	_check(Wildlife.SPECIES.values().all(func(s): return not s.has("zones") or s.zones.all(func(z): return Region.ZONES.has(z))), "生き物のいる気候区分は、どれもある区分")
+	_check(Wildlife.SPECIES.values().all(func(s): return Wildlife.SPECIES.has(s.get("role", "sparrow"))), "役割はある生き物の id")
+	for id in Wildlife.SPECIES:
+		var ok_move: bool = WildlifeView.MOVES.has(id) or WildlifeView.FLUTTERS.has(id) or id in ["butterfly", "bee"]
+		_check(ok_move and WildlifeView.DISPLAY_SCALE.has(id) and Main_hint(id), "%s: 動き・大きさ・会い方がある" % Wildlife.SPECIES[id].name)
+	var legacy := _world("", "2026-11-11")
+	_check(legacy.wildlife.local_species() == ["sparrow", "squirrel", "butterfly", "bee", "hare", "hedgehog", "migrant", "tit", "bullfinch", "woodpecker", "starling"], "選ぶ前は今までの 11 種")
+	_check(legacy.quests.guide_ids().size() == 16, "選ぶ前の図鑑は 16 種類のまま")
+	var expect := {
+		"hokkaido": {"has": ["ezo_squirrel", "snow_hare", "fox", "bullfinch", "woodpecker"], "not": ["squirrel", "hare", "tanuki", "hedgehog", "kuina"]},
+		"tokyo": {"has": ["squirrel", "hare", "tanuki", "yamagara", "kogera"], "not": ["ezo_squirrel", "fox", "bullfinch", "woodpecker", "hedgehog"]},
+		"fukuoka": {"has": ["hare", "tanuki", "yamagara", "kogera"], "not": ["squirrel", "hedgehog"]},
+		"okinawa": {"has": ["kuina", "fruit_bat", "mejiro", "kogera", "tit", "starling"], "not": ["squirrel", "hare", "tanuki", "hedgehog", "bullfinch", "yamagara"]},
+	}
+	for pref in expect:
+		var w := _world(pref, "2026-11-11")
+		var here: Array = w.wildlife.local_species()
+		_check(expect[pref].has.all(func(id): return id in here), "%s にいる: %s" % [pref, ", ".join(expect[pref].has)])
+		_check(expect[pref].not.all(func(id): return not (id in here)), "%s にいない: %s" % [pref, ", ".join(expect[pref].not)])
+	for zid in Region.ZONES:
+		var pref: String = Region.PREFS.keys().filter(func(p): return Region.PREFS[p].zone == zid)[0]
+		var w := _world(pref, "2026-11-11")
+		var here: Array = w.wildlife.local_species()
+		_check(not ("hedgehog" in here) and here.size() >= 10, "%s: 生き物 %d 種(ハリネズミはいない)" % [Region.ZONES[zid].name, here.size()])
+		_check(w.quests.guide_ids().size() == here.size() + 5, "%s: 図鑑はこの土地の生き物と池の 5 種" % Region.ZONES[zid].name)
+		var feeder_roles := here.filter(func(id): return Wildlife.role_of(id) == "bullfinch")
+		var woodpeckers := here.filter(func(id): return Wildlife.role_of(id) == "woodpecker")
+		_check(feeder_roles.size() == 1 and woodpeckers.size() == 1, "%s: 餌台の冬の鳥とキツツキが 1 種ずつ(%s・%s)" % [Region.ZONES[zid].name, feeder_roles, woodpeckers])
+		for id in here:
+			if w.region.has_snow() and Wildlife.role_of(id) in ["hare", "squirrel"]:
+				_check(Footprints.TRACKS.has(id), "%s: 雪の土地の %s は足跡が残る" % [Region.ZONES[zid].name, Wildlife.SPECIES[id].name])
+	# 土地の様子で来る: 沖縄の夜、育った木 3 本でオオコウモリ。リスは来ない
+	var ok := _world("okinawa", "2026-11-11")
+	for i in 3:
+		ok.forest.saplings.gajumaru = 1
+		ok.forest.add_tree(Vector2(-10 + i * 5, -10), "gajumaru", "sapling")
+		ok.forest.trees[-1].planted_at -= 86400 * 10
+	ok.clock.fixed_now = {"month": 11, "day": 11, "hour": 23, "minute": 0, "second": 0}
+	var night: Dictionary = ok.wildlife.counts()
+	_check(night.get("fruit_bat", 0) == 1, "沖縄の夜、育った木が 3 本あればオオコウモリが来る")
+	ok.clock.fixed_now = {"month": 11, "day": 11, "hour": 12, "minute": 0, "second": 0}
+	_check(not ok.wildlife.counts().has("squirrel") and not ok.wildlife.counts().has("fruit_bat"), "沖縄の昼: リスは来ない・オオコウモリもいない")
+	_check(ok.wildlife.home_for("fruit_bat", RandomNumberGenerator.new(), Vector2.ZERO).y == -10.0, "オオコウモリは育った木の上")
+	# 餌台の鳥
+	var tk := _world("tokyo", "2027-01-10")
+	_check(tk.wildlife.feeder_birds() == {"tit": 2, "yamagara": 1}, "東京の冬の餌台はシジュウカラとヤマガラ")
+	var hk := _world("hokkaido", "2026-12-10")
+	_check(hk.wildlife.feeder_birds() == {"tit": 2, "bullfinch": 1}, "北海道の冬の餌台はシジュウカラとウソ")
+	var ok2 := _world("okinawa", "2026-11-11")
+	_check(ok2.wildlife.feeder_birds() == {"tit": 2, "mejiro": 1}, "沖縄の秋の餌台はシジュウカラとメジロ")
+
+func Main_hint(id: String) -> bool:
+	return load("res://Main.gd").GUIDE_HINTS.has(id)
+
+
 # 画面: 選ぶ画面を開いて、地方 → 県 → 決める
 func _run_scene() -> void:
 	print("選ぶ画面")
@@ -428,6 +489,17 @@ func _run_scene() -> void:
 	_check(ground.look_season() == "winter_dry", "東京の冬の地面は枯れ草の色(雪で白くしない)")
 	main.world.guide.current = "winter"
 	_check(main.hint_text() == main.MILD_WINTER_TEXT, "東京の冬のヒントは霜のこと")
+	# 生き物の形: どの生き物も作れる(県を選んで足した生き物も)
+	var wv = main.get_node("Wildlife")
+	var built := 0
+	for id in Wildlife.SPECIES:
+		var a := {"wings": []}
+		var node: Node3D = wv._build(id, a)
+		if node.get_child_count() > 0:
+			built += 1
+		node.free()
+	_check(built == Wildlife.SPECIES.size(), "どの生き物も形を作れる(%d/%d)" % [built, Wildlife.SPECIES.size()])
+	_check(main._creature_name("yamagara") == "ヤマガラ" and main.local_text(main.GUIDE_HINTS.yamagara).contains("コナラの種"), "ヤマガラの会い方はコナラの種")
 	main.queue_free()
 	await process_frame
 	_remove_save()

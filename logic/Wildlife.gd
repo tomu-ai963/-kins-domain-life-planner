@@ -24,19 +24,38 @@ const CABIN_MARGIN := 0.4 # 小屋の周りでこの幅には行かない
 const ALL_YEAR := ["spring", "summer", "autumn", "winter"]
 const WARM := ["spring", "summer", "autumn"]
 
+# 気候区分(Region.ZONES)の組
+const COLD_ZONES := ["hokkaido", "tohoku", "snowy", "highland"]
+const WARM_ZONES := ["pacific", "setouchi", "south"]
+const HONSHU_TO_KYUSHU := ["tohoku", "snowy", "highland", "pacific", "setouchi", "south"]
+
 # seasons: 見られる季節 / time: day(昼) dusk(夕方〜朝) night(夜) any(いつでも) / fair: 雨や雪の日は出ない
+# role: 来る条件と住みか(_wanted・home_for)を、どの生き物と同じにするか(なければ自分の id)
+# zones: いる気候区分(なければどこにでもいる。空なら、県を選ぶ前の今までのルールでだけ出る)。現実の分布の目安から
+# regional: 県を選んでから出る生き物(選ぶ前の今までのルールには出てこない)
 const SPECIES := {
 	"sparrow": {"name": "小鳥", "seasons": ALL_YEAR, "time": "day", "fair": false},
-	"squirrel": {"name": "リス", "seasons": ALL_YEAR, "time": "day", "fair": false},
+	"squirrel": {"name": "リス", "seasons": ALL_YEAR, "time": "day", "fair": false,
+		"zones": ["tohoku", "snowy", "highland", "pacific", "setouchi"]},  # ニホンリス: 本州と四国(九州ではほとんど見られない。沖縄にはいない)
 	"butterfly": {"name": "チョウ", "seasons": WARM, "time": "day", "fair": true},
 	"bee": {"name": "ミツバチ", "seasons": WARM, "time": "day", "fair": true},
-	"hare": {"name": "ノウサギ", "seasons": ALL_YEAR, "time": "dusk", "fair": false},
-	"hedgehog": {"name": "ハリネズミ", "seasons": WARM, "time": "night", "fair": false},
+	"hare": {"name": "ノウサギ", "seasons": ALL_YEAR, "time": "dusk", "fair": false, "zones": HONSHU_TO_KYUSHU},
+	"hedgehog": {"name": "ハリネズミ", "seasons": WARM, "time": "night", "fair": false, "zones": []},  # 日本には野生のハリネズミがいない
 	"migrant": {"name": "渡り鳥", "seasons": ALL_YEAR, "time": "any", "fair": false},
 	"tit": {"name": "シジュウカラ", "seasons": ["autumn", "winter"], "time": "day", "fair": false},
-	"bullfinch": {"name": "ウソ", "seasons": ["winter"], "time": "day", "fair": false},
-	"woodpecker": {"name": "アカゲラ", "seasons": ["winter"], "time": "day", "fair": false},
+	"bullfinch": {"name": "ウソ", "seasons": ["winter"], "time": "day", "fair": false, "zones": COLD_ZONES},
+	"woodpecker": {"name": "アカゲラ", "seasons": ["winter"], "time": "day", "fair": false, "zones": COLD_ZONES},
 	"starling": {"name": "ムクドリ", "seasons": ["spring", "summer"], "time": "day", "fair": false},
+	# ── 県を選ぶようにして足した生き物(2026-11-11) ──
+	"ezo_squirrel": {"name": "エゾリス", "seasons": ALL_YEAR, "time": "day", "fair": false, "role": "squirrel", "zones": ["hokkaido"], "regional": true},
+	"snow_hare": {"name": "エゾユキウサギ", "seasons": ALL_YEAR, "time": "dusk", "fair": false, "role": "hare", "zones": ["hokkaido"], "regional": true},  # 冬は白い毛になる
+	"kuina": {"name": "ヤンバルクイナ", "seasons": ALL_YEAR, "time": "dusk", "fair": false, "role": "hare", "zones": ["nansei"], "regional": true},  # 飛べない鳥。朝夕に畑のまわりを歩く
+	"tanuki": {"name": "タヌキ", "seasons": ALL_YEAR, "time": "night", "fair": false, "role": "hedgehog", "zones": HONSHU_TO_KYUSHU, "regional": true},
+	"fox": {"name": "キタキツネ", "seasons": ALL_YEAR, "time": "dusk", "fair": false, "role": "hedgehog", "zones": ["hokkaido"], "regional": true},
+	"fruit_bat": {"name": "オリイオオコウモリ", "seasons": ALL_YEAR, "time": "night", "fair": false, "zones": ["nansei"], "regional": true},  # 夜、木の実や花の蜜を食べに来る
+	"yamagara": {"name": "ヤマガラ", "seasons": ["autumn", "winter"], "time": "day", "fair": false, "role": "bullfinch", "zones": WARM_ZONES, "regional": true},  # どんぐりが好き
+	"mejiro": {"name": "メジロ", "seasons": ["autumn", "winter"], "time": "day", "fair": false, "role": "bullfinch", "zones": ["nansei"], "regional": true},
+	"kogera": {"name": "コゲラ", "seasons": ["winter"], "time": "day", "fair": false, "role": "woodpecker", "zones": ["pacific", "setouchi", "south", "nansei"], "regional": true},
 }
 const TITS_PER_FEEDER := 2       # 餌のある餌台 1 つに来るシジュウカラ(秋と冬)
 const BULLFINCHES_PER_FEEDER := 1  # 餌のある餌台 1 つに来るウソ(冬だけ。雪の上で赤い胸が映える冬の鳥)
@@ -78,13 +97,29 @@ func is_daytime() -> bool:
 func is_afternoon() -> bool:
 	return fposmod(clock.real_hours() + clock.preview_hours, 24.0) >= 12.0
 
+# この土地にいる生き物か(県を選ぶ前は、今までの生き物だけ)
+func lives_here(id: String) -> bool:
+	var s: Dictionary = SPECIES[id]
+	if forest == null or forest.region == null:
+		return not s.get("regional", false)
+	return not s.has("zones") or forest.region.zone_id() in s.zones
+
+# 来る条件と住みかが同じ生き物の id(エゾリスならリス)
+static func role_of(id: String) -> String:
+	return str(SPECIES[id].get("role", id))
+
+# この土地にいる生き物の id(SPECIES の順)
+func local_species() -> Array:
+	return SPECIES.keys().filter(func(id): return lives_here(id))
+
 # 餌のある餌台 1 つに来る鳥の数 {id: 数}。時間帯は見ない(暗くて見えないときに、昼の様子を知らせる用)
 func feeder_birds() -> Dictionary:
 	var out := {}
 	var per := {"tit": TITS_PER_FEEDER, "bullfinch": BULLFINCHES_PER_FEEDER}
-	for id in per:
-		if forest.season in SPECIES[id].seasons:
-			out[id] = per[id]
+	for id in local_species():
+		var role := role_of(id)
+		if per.has(role) and forest.season in SPECIES[id].seasons:
+			out[id] = per[role]
 	return out
 
 # 根付いた木の数と、そのうち育った木の数 [根付いた木, 育った木]
@@ -104,7 +139,7 @@ func _wanted(id: String) -> int:
 	var trees: Array = _tree_counts()
 	var crops: int = garden.crops.size()
 	var plots: int = land.plots.size()
-	match id:
+	match role_of(id):
 		"sparrow":  # 木が 3 本あれば来る
 			return mini(6, ceili(trees[0] / 4.0)) if trees[0] >= 3 else 0
 		"squirrel":  # 育った木が 3 本あれば来る。杉の実を置いていった日は必ずいる
@@ -128,12 +163,14 @@ func _wanted(id: String) -> int:
 			return mini(2, 1 + int(trees[1] / 10.0)) if trees[1] >= 3 else 0
 		"starling":  # 掛けた巣箱 1 つにつがい 1 組
 			return nest_boxes.starlings() if nest_boxes != null else 0
+		"fruit_bat":  # 夜、育った木が 3 本あれば来る。10 本で 2 匹
+			return mini(3, 1 + int(trees[1] / 10.0)) if trees[1] >= 3 else 0
 	return 0
 
 # 今いる生き物の数 {id: 数}。いないものは入らない
 func counts() -> Dictionary:
 	var out := {}
-	for id in SPECIES:
+	for id in local_species():
 		var s: Dictionary = SPECIES[id]
 		if not (forest.season in s.seasons) or not _time_fits(s.time):
 			continue
@@ -173,7 +210,7 @@ func is_free(pos: Vector2) -> bool:
 
 # その生き物の住みか。木のそば・畑・区画など。near は足元(渡り鳥は足元の近くに降りる)
 func home_for(id: String, rng: RandomNumberGenerator, near: Vector2) -> Vector2:
-	match id:
+	match role_of(id):
 		"sparrow", "squirrel":
 			var spots := []
 			for t in forest.trees:
@@ -191,7 +228,7 @@ func home_for(id: String, rng: RandomNumberGenerator, near: Vector2) -> Vector2:
 			# 土地の内側へ少し離れたところ。足元が中心なら東へ
 			var inward: Vector2 = -near.normalized() if near.length() > 1.0 else Vector2.RIGHT
 			return near + inward * MIGRANT_NEAR
-		"woodpecker":  # 育った木の幹
+		"woodpecker", "fruit_bat":  # 育った木の幹 / 育った木の上
 			var big := []
 			for t in forest.trees:
 				if forest.is_established(t) and forest.real_age_years(t) >= MATURE_AGE:

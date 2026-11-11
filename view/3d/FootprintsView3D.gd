@@ -18,6 +18,11 @@ const TRACKS := {
 	"player": {"step": 0.6, "size": Vector2(0.18, 0.34), "side": 0.14, "pair": false, "life": PLAYER_LIFE},
 	"hare": {"step": 1.1, "size": Vector2(0.11, 0.26), "side": 0.08, "pair": true, "life": ANIMAL_LIFE},
 	"squirrel": {"step": 0.6, "size": Vector2(0.07, 0.11), "side": 0.06, "pair": true, "life": ANIMAL_LIFE},
+	# 県を選ぶようにして足した生き物(雪の積もる土地にいるもの)。キツネは足を一直線に置いて歩く
+	"snow_hare": {"step": 1.1, "size": Vector2(0.13, 0.30), "side": 0.09, "pair": true, "life": ANIMAL_LIFE},
+	"ezo_squirrel": {"step": 0.6, "size": Vector2(0.07, 0.11), "side": 0.06, "pair": true, "life": ANIMAL_LIFE},
+	"fox": {"step": 0.35, "size": Vector2(0.06, 0.08), "side": 0.0, "pair": false, "life": ANIMAL_LIFE},
+	"tanuki": {"step": 0.3, "size": Vector2(0.06, 0.07), "side": 0.05, "pair": false, "life": ANIMAL_LIFE},
 }
 
 var snow: Snow
