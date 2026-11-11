@@ -59,17 +59,23 @@ var selected_form := "seed"   # V で種 ⇄ 苗木
 var selected_crop := "radish" # 4〜8 で選ぶ。区画の上で SPACE を押すとまく
 
 # 市場のページ。買う列は品の種類(Market.GOODS の form)で、売る列は収穫物と保存食で分ける
+# 野菜の種は組(Garden.GROUPS)で 3 ページに分ける(2026-11-11。野菜が増えて 1 列 15 行を超えるため)
 const BUY_PAGES := [
 	{"name": "木の種と苗木", "forms": ["seed", "sapling"]},
-	{"name": "野菜の種", "forms": ["crop_seed"]},
+	{"name": "根菜といもの種", "forms": ["crop_seed"], "groups": ["root", "imo"]},
+	{"name": "実もの野菜の種と苗", "forms": ["crop_seed"], "groups": ["fruit"]},
+	{"name": "葉もの・豆・香味野菜の種", "forms": ["crop_seed"], "groups": ["leaf", "bean", "aroma"]},
 	{"name": "丸太", "forms": ["material"]},
 	{"name": "小屋", "forms": ["extension", "furniture"]},
 ]
 const FURNITURE_NAMES := {"shelf": "保存食の棚", "rocking_chair": "揺り椅子", "rug": "じゅうたん", "lamp": "ランプ", "clock": "掛け時計"}
-const SELL_PAGES := ["果物", "野菜", "保存食"]  # 果物ははちみつも。野菜は苗も(県を選ぶようにして果樹が増えたので 3 つに分けた)
+# 売る列のページ。果物ははちみつも、実もの野菜は苗も。野菜の組は SELL_GROUPS(果樹と野菜が増えて 1 列 15 行を超えるため分けた)
+const SELL_PAGES := ["果物", "根菜といも", "実もの野菜と苗", "葉もの・豆・香味野菜", "保存食"]
+const SELL_GROUPS := {"root": 1, "imo": 1, "fruit": 2, "leaf": 3, "bean": 3, "aroma": 3}
 
-# 野菜を選ぶキー(HUD の並びもこの順)
-const CROP_KEYS := {KEY_4: "radish", KEY_5: "carrot", KEY_6: "cucumber", KEY_7: "potato", KEY_8: "garlic", KEY_9: "tomato"}
+# 野菜の組を選ぶキー(押すたびに、その組のうちこの土地で育つ次の野菜。HUD の並びもこの順)
+const CROP_KEYS := {KEY_4: "root", KEY_5: "imo", KEY_6: "fruit", KEY_7: "leaf", KEY_8: "bean", KEY_9: "aroma"}
+const CROP_GROUP_NAMES := {"root": "根菜", "imo": "いも", "fruit": "実もの", "leaf": "葉もの", "bean": "豆・穀物", "aroma": "香味"}
 
 var _season_timer := 0.0
 var _fell_pending := {}      # Z を 1 回押して確認中の木(Forest.trees の要素)
@@ -1047,7 +1053,7 @@ func _cabin_action() -> void:
 		"stage_done":
 			$HUD.show_message("%sができた(丸太 -%d本)。明日から%s" % [CABIN_STAGE_NAMES[s.id], s.logs_per_day, CABIN_STAGE_NAMES[c.current_stage().id]], 5.0)
 		"finished":
-			$HUD.show_message("小屋が建った。南のドアから入れる。窓辺で苗づくり(トマト [9] か きゅうり [6] を選んで H)、ストーブで料理、ベッドで日記", 8.0)
+			$HUD.show_message("小屋が建った。南のドアから入れる。窓辺で苗づくり(トマト か きゅうり [6] を選んで H)、ストーブで料理、ベッドで日記", 8.0)
 		"far":
 			$HUD.show_message("小屋の場所まで行って作業する(%.0fm以内)" % c.REACH)
 		"inside":
@@ -1088,7 +1094,7 @@ func _seedling_action(pos: Vector2) -> void:
 		"far":
 			$HUD.show_message("小屋まで行って作業する(%.0fm以内)" % world.cabin.REACH)
 		"not_seedling":
-			$HUD.show_message("苗にできるのはトマト [9] と きゅうり [6]")
+			$HUD.show_message("苗にできるのはトマト と きゅうり [6]")
 		"full":
 			$HUD.show_message("窓辺はいっぱい(%d鉢)。今日の世話は済んだ" % sl.max_pots())
 		"no_seed":
@@ -1520,12 +1526,32 @@ func orders_text(orders: Dictionary) -> String:
 		parts.append("%s %d" % [world.garden.CROPS[kind].name, int(orders[kind])])
 	return "・".join(parts)
 
+# 持ち物の野菜の種: この土地で育つ野菜と、持っている野菜(組の順)
 func crop_seeds_line() -> String:
 	var parts := PackedStringArray()
-	for key in CROP_KEYS:
-		var kind: String = CROP_KEYS[key]
-		parts.append("%s %d" % [world.garden.CROPS[kind].name, world.garden.seeds[kind]])
-	return _rows(parts, 3)
+	var g := world.garden
+	for group in g.GROUPS:
+		for kind in g.CROPS:
+			if g.CROPS[kind].group == group and (g.grows_here(kind) or int(g.seeds[kind]) > 0):
+				parts.append("%s %d" % [g.CROPS[kind].name, g.seeds[kind]])
+	return _rows(parts, 4)
+
+# 4〜9: 押すたびに、その組のうちこの土地で育つ次の野菜を選ぶ
+func _select_next_crop(group: String) -> void:
+	var order: Array = world.garden.crops_in(group)
+	if order.is_empty():
+		$HUD.show_message("この土地で育つ%sは、まだない" % CROP_GROUP_NAMES[group])
+		return
+	var i: int = order.find(selected_crop)
+	selected_crop = order[(i + 1) % order.size()] if i >= 0 else order[0]
+
+# 操作説明の、野菜の組のキー。例: 「[4]根菜 [5]いも …」
+func crop_keys_text() -> String:
+	var parts := PackedStringArray()
+	var keys := ["[4]", "[5]", "[6]", "[7]", "[8]", "[9]"]
+	for i in range(world.garden.GROUPS.size()):
+		parts.append(keys[i] + CROP_GROUP_NAMES[world.garden.GROUPS[i]])
+	return " ".join(parts) + "(押すたびに次の野菜)"
 
 # HUD に出す、持っている収穫物(持っているものだけ。苗は seedlings_line、保存食は food_line)
 func produce_line() -> String:
@@ -1643,17 +1669,21 @@ func shop_rows() -> Array:
 	var rows := []
 	var buy_next: int = (_buy_page + 1) % BUY_PAGES.size()
 	rows.append({"id": "page_buy", "text": "買う品: %s(押すと次: %s)" % [BUY_PAGES[_buy_page].name, BUY_PAGES[buy_next].name], "column": 0})
+	var ordering: Array = m.orderable() if m.can_order() else []
 	for g in m.GOODS:
 		if not m.sells(g):
 			continue  # この土地で育たない木と野菜は並ばない
+		var page := _buy_page_of(g)
+		if g.form == "crop_seed" and g.species in ordering and not world.garden.can_sow_now(g.species) \
+				and not (g.species in world.seedlings.SEEDLING_CROPS):
+			# 冬は、春の種を安く注文できる(冬が終わった月の 1 日に届く。今までのルールでは 3 月 1 日)。
+			# 今まけない野菜は、買う行の代わりに注文の行を出す(小屋で苗にする野菜は、冬も買える)
+			rows.append(_order_row(g.species, page))
+			continue
 		var label: String = "済: %s" % good_name(g) if m.is_owned(g) else "買う: %s  %d₽" % [good_name(g), g.price]
-		rows.append({"id": g.id, "text": label, "column": 0, "page": _buy_page_of(g)})
-	# 冬は、春の種を安く注文できる(冬が終わった月の 1 日に届く。今までのルールでは 3 月 1 日)。野菜の種のページに並べる
-	if m.can_order():
-		for kind in m.orderable():
-			var ordered: int = int(m.orders.get(kind, 0))
-			var note := "・注文済み %d" % ordered if ordered > 0 else ""
-			rows.append({"id": "order_" + kind, "text": "注文: %s(%d/1に届く%s)  %d₽" % [world.garden.CROPS[kind].seed_name, world.region.winter_end_month(), note, m.order_price(kind)], "column": 0, "page": 1})
+		rows.append({"id": g.id, "text": label, "column": 0, "page": page})
+		if g.form == "crop_seed" and g.species in ordering:
+			rows.append(_order_row(g.species, page))
 	var sell_next: int = (_sell_page + 1) % SELL_PAGES.size()
 	rows.append({"id": "page_sell", "text": "売る品: %s(押すと次: %s %d種類)" % [SELL_PAGES[_sell_page], SELL_PAGES[sell_next], _held_kinds(sell_next)], "column": 1})
 	for item in m.SELL_PRICES:
@@ -1665,16 +1695,25 @@ func shop_rows() -> Array:
 	rows.append({"id": "close", "text": "閉じる(B / Esc)", "column": 1})
 	return rows
 
+# 春の種の注文の行
+func _order_row(kind: String, page: int) -> Dictionary:
+	var m := world.market
+	var ordered: int = int(m.orders.get(kind, 0))
+	var note := "・注文済み %d" % ordered if ordered > 0 else ""
+	return {"id": "order_" + kind, "text": "注文: %s(%d/1に届く%s)  %d₽" % [world.garden.CROPS[kind].seed_name, world.region.winter_end_month(), note, m.order_price(kind)], "column": 0, "page": page}
+
 func _buy_page_of(g: Dictionary) -> int:
 	for i in range(BUY_PAGES.size()):
-		if g.form in BUY_PAGES[i].forms:
+		if g.form in BUY_PAGES[i].forms and (g.form != "crop_seed" or world.garden.CROPS[g.species].group in BUY_PAGES[i].groups):
 			return i
 	return 0
 
 func _sell_page_of(item: String) -> int:
 	if world.kitchen.RECIPES.has(item):
-		return 2
-	return 0 if world.forest.FRUITS.has(item) or item == "honey" else 1
+		return SELL_PAGES.size() - 1
+	if world.forest.FRUITS.has(item) or item == "honey":
+		return 0
+	return SELL_GROUPS[world.garden.CROPS[item.trim_prefix("seedling_")].group]
 
 # そのページで持っている品の種類の数
 func _held_kinds(page: int) -> int:
@@ -2005,7 +2044,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_close_shop()
 		return
 	if CROP_KEYS.has(event.keycode):
-		selected_crop = CROP_KEYS[event.keycode]
+		_select_next_crop(CROP_KEYS[event.keycode])
 		return
 	match event.keycode:
 		KEY_TAB:

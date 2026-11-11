@@ -15,6 +15,11 @@ const RIPE := {
 	"cucumber": Color(0.62, 0.82, 0.28),
 	"potato": Color(0.76, 0.62, 0.38),
 	"garlic": Color(0.95, 0.92, 0.84),
+	# 県を選ぶようにして足した野菜(3D の LOOKS の ripe と同じ色)
+	"daikon": Color(0.96, 0.96, 0.92), "kabu": Color(0.97, 0.97, 0.94), "sweet_potato": Color(0.62, 0.22, 0.36), "taro": Color(0.50, 0.40, 0.30),
+	"eggplant": Color(0.30, 0.12, 0.36), "pepper": Color(0.18, 0.56, 0.14), "pumpkin": Color(0.26, 0.40, 0.22), "goya": Color(0.42, 0.72, 0.26),
+	"cabbage": Color(0.74, 0.88, 0.58), "hakusai": Color(0.90, 0.94, 0.76), "spinach": Color(0.20, 0.52, 0.20), "komatsuna": Color(0.28, 0.60, 0.24),
+	"edamame": Color(0.52, 0.72, 0.30), "corn": Color(0.96, 0.84, 0.30), "onion": Color(0.80, 0.58, 0.30), "negi": Color(0.95, 0.95, 0.90),
 }
 
 var garden: Garden

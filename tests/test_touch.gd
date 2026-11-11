@@ -121,7 +121,7 @@ func _test_wording() -> void:
 	var keyboard := RegEx.create_from_string("WASD|矢印|ホイール|クリック|Enter|Esc|Tab|F1|SPACE|\\[[0-9A-Z]\\]|(?<![A-Za-z0-9])[A-Z] (で|を)")
 	for path in ["res://Main.gd", "res://HUD.gd"]:
 		for line in FileAccess.get_file_as_string(path).split("\n"):
-			if line.strip_edges().begins_with("#") or line.contains("func _help_lines") or line.contains("Tab:%s") or line.contains("group_keys_text(\"broadleaf\")"):
+			if line.strip_edges().begins_with("#") or line.contains("func _help_lines") or line.contains("Tab:%s") or line.contains("group_keys_text(\"broadleaf\")") or line.contains("var keys := [\"[4]\""):
 				continue
 			for m in strings.search_all(line):
 				var shown: String = TouchText.convert(m.get_string(1).replace("\\n", "\n"))
@@ -269,8 +269,9 @@ func _test_menu() -> void:
 	await _tap("cedar")
 	_check(main.selected_species == "cedar" and tc.menu_open, "木を選んでも開いたまま")
 	_check(_pad("cedar").on and not _pad("birch").on, "選んでいるものは色が変わる")
-	await _tap("carrot")
-	_check(main.selected_crop == "carrot" and _pad("carrot").on, "野菜を選べる")
+	main.selected_crop = "radish"
+	await _tap("crop_root")
+	_check(main.selected_crop == "carrot" and _pad("crop_root").on and _pad("crop_root").text == "にんじん", "野菜を選べる(ラディッシュのとき根菜を押すと にんじん)")
 	await _tap("form")
 	_check(main.selected_form == "sapling" and _pad("form").text == "苗木で植える", "種と苗木を切り替えられて、文字も変わる")
 	await _tap("form")

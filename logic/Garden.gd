@@ -20,14 +20,39 @@ const NEW_PLOTS_PER_DAY := 2  # 1 日に新しく耕せる区画の数(手で耕
 # yield_kg: 1 区画(9m²)の収量。現実の 1m² あたりの目安 × 9
 # seedling_only: 苗からしか育てない(小屋で苗にする) / hardy: 霜で枯れない
 # keep_days: 収穫できるようになってから傷むまでの日数。すぎると収量が半分になる(現実の持ちの目安)
+# group: 選ぶキーの組(GROUPS。4〜9 を押すたびに、その組のうちこの土地で育つ次の野菜)
+# warm: 暑さを好む(霜の降りない土地でも、冬にはまけない)
+# zones: 育つ気候区分(Region.ZONES。なければどこでも) / regional: 県を選んでから育てられる野菜(選ぶ前の今までのルールには出てこない)
 const CROPS := {
-	"tomato": {"name": "トマト", "seed_name": "トマトの種", "seasons": ["spring", "summer"], "grow_days": 7, "yield_kg": 30, "keep_days": 4, "seedling_only": true},  # 現実 定植から約 60 日
-	"radish": {"name": "ラディッシュ", "seed_name": "ラディッシュの種", "seasons": ["spring", "autumn"], "grow_days": 3, "yield_kg": 6, "keep_days": 3},  # 現実 約 25 日
-	"carrot": {"name": "にんじん", "seed_name": "にんじんの種", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 20, "keep_days": 7},     # 現実 約 90 日
-	"cucumber": {"name": "きゅうり", "seed_name": "きゅうりの種", "seasons": ["spring", "summer"], "grow_days": 5, "yield_kg": 18, "keep_days": 3},  # 現実 約 55 日
-	"potato": {"name": "じゃがいも", "seed_name": "じゃがいもの種いも", "seasons": ["spring"], "grow_days": 7, "yield_kg": 25, "keep_days": 10},       # 現実 約 90 日
-	"garlic": {"name": "ニンニク", "seed_name": "ニンニクの種球", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 5, "keep_days": 10, "hardy": true},  # 現実 約 9 か月(秋に植えて翌夏)
+	"tomato": {"name": "トマト", "seed_name": "トマトの種", "seasons": ["spring", "summer"], "grow_days": 7, "yield_kg": 30, "keep_days": 4, "seedling_only": true, "group": "fruit"},  # 現実 定植から約 60 日
+	"radish": {"name": "ラディッシュ", "seed_name": "ラディッシュの種", "seasons": ["spring", "autumn"], "grow_days": 3, "yield_kg": 6, "keep_days": 3, "group": "root"},  # 現実 約 25 日
+	"carrot": {"name": "にんじん", "seed_name": "にんじんの種", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 20, "keep_days": 7, "group": "root"},     # 現実 約 90 日
+	"cucumber": {"name": "きゅうり", "seed_name": "きゅうりの種", "seasons": ["spring", "summer"], "grow_days": 5, "yield_kg": 18, "keep_days": 3, "group": "fruit"},  # 現実 約 55 日
+	"potato": {"name": "じゃがいも", "seed_name": "じゃがいもの種いも", "seasons": ["spring"], "grow_days": 7, "yield_kg": 25, "keep_days": 10, "group": "imo"},       # 現実 約 90 日
+	"garlic": {"name": "ニンニク", "seed_name": "ニンニクの種球", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 5, "keep_days": 10, "hardy": true, "group": "aroma"},  # 現実 約 9 か月(秋に植えて翌夏)
+	# ── 県を選ぶようにして足した野菜(2026-11-11 とむの選択。日数は現実を今の野菜と同じく 3〜7 日に縮めた。収量・値段は仮の数字) ──
+	"daikon": {"name": "ダイコン", "seed_name": "ダイコンの種", "seasons": ["spring", "autumn"], "grow_days": 6, "yield_kg": 30, "keep_days": 7, "group": "root", "regional": true},  # 現実 約 60〜90 日
+	"kabu": {"name": "カブ", "seed_name": "カブの種", "seasons": ["spring", "autumn"], "grow_days": 4, "yield_kg": 15, "keep_days": 4, "group": "root", "regional": true},  # 現実 約 45 日
+	"sweet_potato": {"name": "サツマイモ", "seed_name": "サツマイモの苗(つる)", "seasons": ["spring", "summer"], "grow_days": 7, "yield_kg": 18, "keep_days": 14, "group": "imo", "regional": true, "warm": true,
+		"zones": ["tohoku", "snowy", "highland", "pacific", "setouchi", "south", "nansei"]},  # 現実 約 120 日。暖かいところの作物で、北海道ではほとんど作らない
+	"taro": {"name": "サトイモ", "seed_name": "サトイモの種いも", "seasons": ["spring"], "grow_days": 7, "yield_kg": 15, "keep_days": 10, "group": "imo", "regional": true, "warm": true,
+		"zones": ["tohoku", "snowy", "highland", "pacific", "setouchi", "south", "nansei"]},  # 現実 約 150〜180 日
+	"eggplant": {"name": "ナス", "seed_name": "ナスの苗", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 18, "keep_days": 3, "group": "fruit", "regional": true},  # 現実 定植から約 60 日。苗を買って植える
+	"pepper": {"name": "ピーマン", "seed_name": "ピーマンの苗", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 12, "keep_days": 5, "group": "fruit", "regional": true},  # 現実 定植から約 60 日
+	"pumpkin": {"name": "カボチャ", "seed_name": "カボチャの種", "seasons": ["spring"], "grow_days": 7, "yield_kg": 15, "keep_days": 20, "group": "fruit", "regional": true},  # 現実 約 100 日。何か月も持つ
+	"goya": {"name": "ゴーヤ", "seed_name": "ゴーヤの種", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 12, "keep_days": 3, "group": "fruit", "regional": true, "warm": true,
+		"zones": ["pacific", "setouchi", "south", "nansei"]},  # 現実 約 80 日。暑いところの野菜
+	"cabbage": {"name": "キャベツ", "seed_name": "キャベツの種", "seasons": ["spring", "autumn"], "grow_days": 7, "yield_kg": 25, "keep_days": 7, "group": "leaf", "regional": true},  # 現実 約 90 日
+	"hakusai": {"name": "ハクサイ", "seed_name": "ハクサイの種", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 35, "keep_days": 7, "hardy": true, "group": "leaf", "regional": true},  # 現実 約 80 日。霜に当たると甘くなる
+	"spinach": {"name": "ホウレンソウ", "seed_name": "ホウレンソウの種", "seasons": ["spring", "autumn"], "grow_days": 3, "yield_kg": 5, "keep_days": 3, "hardy": true, "group": "leaf", "regional": true},  # 現実 約 40 日。寒さに強い
+	"komatsuna": {"name": "コマツナ", "seed_name": "コマツナの種", "seasons": ["spring", "summer", "autumn"], "grow_days": 3, "yield_kg": 7, "keep_days": 3, "hardy": true, "group": "leaf", "regional": true},  # 現実 約 30 日
+	"edamame": {"name": "エダマメ", "seed_name": "エダマメの種", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 6, "keep_days": 2, "group": "bean", "regional": true},  # 現実 約 80 日。採りどきが短い
+	"corn": {"name": "トウモロコシ", "seed_name": "トウモロコシの種", "seasons": ["spring"], "grow_days": 7, "yield_kg": 9, "keep_days": 2, "group": "bean", "regional": true},  # 現実 約 90 日。採ってすぐ甘みが落ちる
+	"onion": {"name": "タマネギ", "seed_name": "タマネギの苗", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 30, "keep_days": 20, "hardy": true, "group": "aroma", "regional": true},  # 現実 秋に植えて翌初夏(約 7 か月)
+	"negi": {"name": "ネギ", "seed_name": "ネギの種", "seasons": ["spring", "autumn"], "grow_days": 7, "yield_kg": 15, "keep_days": 10, "hardy": true, "group": "aroma", "regional": true},  # 現実 約 4 か月以上
 }
+# 選ぶキーの組(4〜9 の順)
+const GROUPS := ["root", "imo", "fruit", "leaf", "bean", "aroma"]
 const SPOILED_YIELD := 0.5  # 傷んだ野菜の収量の割合
 
 var land: Land      # GameWorld が設定する
@@ -97,9 +122,21 @@ func sow(pos: Vector2, kind: String, from_seedling := false) -> String:
 	_commit()
 	return "sown"
 
+# この土地で育てられる野菜か(県を選ぶ前は、今までの野菜だけ)
+func grows_here(kind: String) -> bool:
+	if not CROPS.has(kind):
+		return false
+	if forest.region == null:
+		return not CROPS[kind].get("regional", false)
+	return forest.region.allows(CROPS[kind])
+
+# その組で、この土地で育てられる野菜(CROPS の順)
+func crops_in(group: String) -> Array:
+	return CROPS.keys().filter(func(k): return CROPS[k].group == group and grows_here(k))
+
 # その季節にまける(苗を植えられる)か。土地の気候で変わる(霜の降りない土地は、春か秋の野菜を冬にもまける)
 func can_sow_in(kind: String, season: String) -> bool:
-	return forest.climate().can_sow(CROPS[kind], season)
+	return grows_here(kind) and forest.climate().can_sow(CROPS[kind], season)
 
 func can_sow_now(kind: String) -> bool:
 	return can_sow_in(kind, forest.season)

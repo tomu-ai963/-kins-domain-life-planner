@@ -185,7 +185,7 @@ func _test_spoiling() -> void:
 	for kind in expected:
 		if int(w.garden.CROPS[kind].keep_days) != expected[kind]:
 			ok = false
-	_check(ok and expected.size() == w.garden.CROPS.size(), "どの野菜にも、傷むまでの日数がある")
+	_check(ok and w.garden.CROPS.values().all(func(c): return int(c.keep_days) > 0), "どの野菜にも、傷むまでの日数がある")
 	var w3 := _world()
 	var c3 := _grown(w3, "garlic", 7, 7)
 	c3.sown_day -= 10

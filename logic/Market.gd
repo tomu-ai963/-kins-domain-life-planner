@@ -48,6 +48,23 @@ const GOODS := [
 	{"id": "potato_seed", "species": "potato", "form": "crop_seed", "amount": 1, "price": 150},
 	{"id": "garlic_seed", "species": "garlic", "form": "crop_seed", "amount": 1, "price": 250},
 	{"id": "tomato_seed", "species": "tomato", "form": "crop_seed", "amount": 1, "price": 80},
+	# 県を選ぶようにして足した野菜(2026-11-11。値段は仮の数字)。ナス・ピーマン・タマネギ・サツマイモは苗を買って植える
+	{"id": "daikon_seed", "species": "daikon", "form": "crop_seed", "amount": 1, "price": 50},
+	{"id": "kabu_seed", "species": "kabu", "form": "crop_seed", "amount": 1, "price": 40},
+	{"id": "sweet_potato_seed", "species": "sweet_potato", "form": "crop_seed", "amount": 1, "price": 150},
+	{"id": "taro_seed", "species": "taro", "form": "crop_seed", "amount": 1, "price": 200},
+	{"id": "eggplant_seed", "species": "eggplant", "form": "crop_seed", "amount": 1, "price": 150},
+	{"id": "pepper_seed", "species": "pepper", "form": "crop_seed", "amount": 1, "price": 120},
+	{"id": "pumpkin_seed", "species": "pumpkin", "form": "crop_seed", "amount": 1, "price": 60},
+	{"id": "goya_seed", "species": "goya", "form": "crop_seed", "amount": 1, "price": 80},
+	{"id": "cabbage_seed", "species": "cabbage", "form": "crop_seed", "amount": 1, "price": 60},
+	{"id": "hakusai_seed", "species": "hakusai", "form": "crop_seed", "amount": 1, "price": 60},
+	{"id": "spinach_seed", "species": "spinach", "form": "crop_seed", "amount": 1, "price": 50},
+	{"id": "komatsuna_seed", "species": "komatsuna", "form": "crop_seed", "amount": 1, "price": 40},
+	{"id": "edamame_seed", "species": "edamame", "form": "crop_seed", "amount": 1, "price": 60},
+	{"id": "corn_seed", "species": "corn", "form": "crop_seed", "amount": 1, "price": 60},
+	{"id": "onion_seed", "species": "onion", "form": "crop_seed", "amount": 1, "price": 150},
+	{"id": "negi_seed", "species": "negi", "form": "crop_seed", "amount": 1, "price": 60},
 	{"id": "logs", "species": "log", "form": "material", "amount": 5, "price": 1500},
 	# 小屋(2026-11-11 とむ決定。値段は仮の数字)。増築は窓ガラス・かまど・釘の代金で、丸太(14 本)は別に要る。家具は増築した部屋に置く
 	{"id": "cabin_extension", "species": "extension", "form": "extension", "amount": 1, "price": 8000},
@@ -62,6 +79,8 @@ const GOODS := [
 # 保存食(Kitchen.RECIPES の id)は 1 瓶 / 1 個あたり。材料を生で売るよりおよそ 2 倍になるように置いた仮の数字
 const SELL_PRICES := {
 	"apple": 15, "cherry": 60, "plum": 40, "pear": 18, "kaki": 20, "mikan": 12, "shikuwasa": 50, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
+	"daikon": 15, "kabu": 25, "sweet_potato": 35, "taro": 40, "eggplant": 35, "pepper": 50, "pumpkin": 30, "goya": 50,
+	"cabbage": 20, "hakusai": 15, "spinach": 60, "komatsuna": 40, "edamame": 80, "corn": 60, "onion": 20, "negi": 40,
 	"seedling_tomato": 150, "seedling_cucumber": 120,
 	"jam": 75, "sauce": 150, "pickles": 35, "garlic_pickle": 120, "pirozhki": 12,
 	"cherry_jam": 80, "plum_jam": 90, "pear_compote": 120,
@@ -100,7 +119,7 @@ func sells(g: Dictionary) -> bool:
 	if g.form == "seed" or g.form == "sapling":
 		return forest.grows_here(g.species)
 	if g.form == "crop_seed":
-		return forest.climate().allows(Garden.CROPS[g.species])
+		return garden.grows_here(g.species)
 	return true
 
 # 1 つ買う。結果: bought / no_money / unknown(並んでいない品も)。
@@ -162,12 +181,12 @@ func is_owned(g: Dictionary) -> bool:
 		return cabin.has_furniture(g.species)
 	return false
 
-# 注文できる野菜(春にまけて、苗からでなく種でまけるもの)
-static func orderable() -> Array:
+# 注文できる野菜(この土地で育ち、春にまけて、苗からでなく種でまけるもの)
+func orderable() -> Array:
 	var list := []
 	for kind in Garden.CROPS:
 		var crop: Dictionary = Garden.CROPS[kind]
-		if "spring" in crop.seasons and not crop.get("seedling_only", false):
+		if "spring" in crop.seasons and not crop.get("seedling_only", false) and garden.grows_here(kind):
 			list.append(kind)
 	return list
 

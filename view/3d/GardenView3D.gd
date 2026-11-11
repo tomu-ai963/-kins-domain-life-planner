@@ -21,6 +21,23 @@ const LOOKS := {
 	"cucumber": {"leaf": Color(0.22, 0.50, 0.20), "size": Vector3(0.50, 0.60, 0.50), "ball": true, "ripe": Color(0.62, 0.82, 0.28), "ripe_size": Vector3(0.12, 0.30, 0.12)},
 	"potato": {"leaf": Color(0.28, 0.52, 0.22), "size": Vector3(0.55, 0.45, 0.55), "ball": true, "ripe": Color(0.76, 0.62, 0.38), "ripe_size": Vector3(0.22, 0.16, 0.18)},
 	"garlic": {"leaf": Color(0.45, 0.68, 0.35), "size": Vector3(0.12, 0.60, 0.12), "ball": false, "ripe": Color(0.95, 0.92, 0.84), "ripe_size": Vector3(0.20, 0.18, 0.20)},
+	# ── 県を選ぶようにして足した野菜(2026-11-11) ──
+	"daikon": {"leaf": Color(0.32, 0.60, 0.24), "size": Vector3(0.42, 0.35, 0.42), "ball": true, "ripe": Color(0.96, 0.96, 0.92), "ripe_size": Vector3(0.14, 0.30, 0.14)},
+	"kabu": {"leaf": Color(0.36, 0.62, 0.26), "size": Vector3(0.32, 0.25, 0.32), "ball": true, "ripe": Color(0.97, 0.97, 0.94), "ripe_size": Vector3(0.20, 0.17, 0.20)},
+	"sweet_potato": {"leaf": Color(0.24, 0.50, 0.22), "size": Vector3(0.62, 0.22, 0.62), "ball": true, "ripe": Color(0.62, 0.22, 0.36), "ripe_size": Vector3(0.24, 0.14, 0.16)},  # 地をはうつる
+	"taro": {"leaf": Color(0.28, 0.56, 0.30), "size": Vector3(0.55, 0.65, 0.55), "ball": true, "ripe": Color(0.50, 0.40, 0.30), "ripe_size": Vector3(0.18, 0.18, 0.18)},  # 大きな葉
+	"eggplant": {"leaf": Color(0.24, 0.46, 0.22), "size": Vector3(0.45, 0.70, 0.45), "ball": false, "ripe": Color(0.30, 0.12, 0.36), "ripe_size": Vector3(0.12, 0.24, 0.12)},
+	"pepper": {"leaf": Color(0.26, 0.52, 0.20), "size": Vector3(0.40, 0.55, 0.40), "ball": false, "ripe": Color(0.18, 0.56, 0.14), "ripe_size": Vector3(0.14, 0.16, 0.14)},
+	"pumpkin": {"leaf": Color(0.28, 0.54, 0.22), "size": Vector3(0.68, 0.32, 0.68), "ball": true, "ripe": Color(0.26, 0.40, 0.22), "ripe_size": Vector3(0.32, 0.24, 0.32)},
+	"goya": {"leaf": Color(0.24, 0.54, 0.22), "size": Vector3(0.45, 0.85, 0.45), "ball": false, "ripe": Color(0.42, 0.72, 0.26), "ripe_size": Vector3(0.10, 0.30, 0.10)},  # 棚に絡むつる
+	"cabbage": {"leaf": Color(0.56, 0.74, 0.42), "size": Vector3(0.45, 0.30, 0.45), "ball": true, "ripe": Color(0.74, 0.88, 0.58), "ripe_size": Vector3(0.30, 0.24, 0.30)},
+	"hakusai": {"leaf": Color(0.48, 0.70, 0.36), "size": Vector3(0.40, 0.45, 0.40), "ball": true, "ripe": Color(0.90, 0.94, 0.76), "ripe_size": Vector3(0.24, 0.34, 0.24)},
+	"spinach": {"leaf": Color(0.18, 0.48, 0.18), "size": Vector3(0.30, 0.20, 0.30), "ball": true, "ripe": Color(0.20, 0.52, 0.20), "ripe_size": Vector3(0.22, 0.10, 0.22)},
+	"komatsuna": {"leaf": Color(0.22, 0.52, 0.22), "size": Vector3(0.28, 0.28, 0.28), "ball": true, "ripe": Color(0.28, 0.60, 0.24), "ripe_size": Vector3(0.18, 0.14, 0.18)},
+	"edamame": {"leaf": Color(0.32, 0.56, 0.22), "size": Vector3(0.40, 0.55, 0.40), "ball": true, "ripe": Color(0.52, 0.72, 0.30), "ripe_size": Vector3(0.14, 0.08, 0.14)},
+	"corn": {"leaf": Color(0.36, 0.62, 0.24), "size": Vector3(0.20, 1.30, 0.20), "ball": false, "ripe": Color(0.96, 0.84, 0.30), "ripe_size": Vector3(0.10, 0.24, 0.10)},  # 背が高い
+	"onion": {"leaf": Color(0.40, 0.64, 0.30), "size": Vector3(0.10, 0.50, 0.10), "ball": false, "ripe": Color(0.80, 0.58, 0.30), "ripe_size": Vector3(0.20, 0.18, 0.20)},
+	"negi": {"leaf": Color(0.36, 0.62, 0.30), "size": Vector3(0.10, 0.70, 0.10), "ball": false, "ripe": Color(0.95, 0.95, 0.90), "ripe_size": Vector3(0.08, 0.14, 0.08)},
 }
 
 var garden: Garden

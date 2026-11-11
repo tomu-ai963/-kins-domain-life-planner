@@ -39,6 +39,7 @@ func _initialize() -> void:
 	_test_sun()
 	_test_picker_text()
 	_test_wildlife()
+	_test_crops()
 	_run_scene.call_deferred()
 
 func _check(cond: bool, label: String) -> void:
@@ -407,6 +408,47 @@ func _test_wildlife() -> void:
 	var ok2 := _world("okinawa", "2026-11-11")
 	_check(ok2.wildlife.feeder_birds() == {"tit": 2, "mejiro": 1}, "沖縄の秋の餌台はシジュウカラとメジロ")
 
+func _test_crops() -> void:
+	print("畑の作物")
+	var GardenView = load("res://view/3d/GardenView3D.gd")
+	var GardenView2D = load("res://view/2d/GardenView.gd")
+	var Visitors = load("res://logic/Visitors.gd")
+	var Market = load("res://logic/Market.gd")
+	for kind in Garden.CROPS:
+		var c: Dictionary = Garden.CROPS[kind]
+		var ok: bool = c.group in Garden.GROUPS and int(c.grow_days) >= 3 and int(c.grow_days) <= 7 and int(c.keep_days) > 0
+		ok = ok and (not c.has("zones") or c.zones.all(func(z): return Region.ZONES.has(z)))
+		ok = ok and not Market.good(kind + "_seed").is_empty() and Market.SELL_PRICES.has(kind) and GardenView.LOOKS.has(kind) and GardenView2D.RIPE.has(kind) and Visitors.ASK.has(kind)
+		_check(ok, "%s: 組・3〜7 日・種・買い取り値・見た目・頼みごとがある" % c.name)
+	var legacy := _world("", "2026-11-11")
+	_check(Garden.CROPS.keys().filter(func(k): return legacy.garden.grows_here(k)) == ["tomato", "radish", "carrot", "cucumber", "potato", "garlic"], "選ぶ前は今までの 6 種類")
+	_check(legacy.market.orderable() == ["radish", "carrot", "cucumber", "potato"], "選ぶ前の注文は今までの 4 種類")
+	for zid in Region.ZONES:
+		var pref: String = Region.PREFS.keys().filter(func(p): return Region.PREFS[p].zone == zid)[0]
+		var w := _world(pref, "2026-11-11")
+		var n := Garden.CROPS.keys().filter(func(k): return w.garden.grows_here(k)).size()
+		_check(Garden.GROUPS.all(func(g): return not w.garden.crops_in(g).is_empty()), "%s: どの組にも育つ野菜がある(%d 種類)" % [Region.ZONES[zid].name, n])
+	var hk := _world("hokkaido", "2026-11-11")
+	_check(not hk.garden.grows_here("sweet_potato") and not hk.garden.grows_here("taro") and not hk.garden.grows_here("goya") and hk.garden.grows_here("corn"), "北海道: サツマイモ・サトイモ・ゴーヤはなく、トウモロコシはある")
+	_check(hk.garden.crops_in("imo") == ["potato"], "北海道のいもは、じゃがいもだけ")
+	var ok := _world("okinawa", "2027-01-10")
+	_check(ok.garden.grows_here("goya") and ok.garden.crops_in("fruit").has("goya"), "沖縄: ゴーヤが育つ")
+	_check(ok.garden.can_sow_now("cabbage") and ok.garden.can_sow_now("daikon") and not ok.garden.can_sow_now("goya"), "沖縄の冬: キャベツ・ダイコンはまけて、暑さを好むゴーヤはまけない")
+	var tk := _world("tokyo", "2026-11-25")
+	_check(tk.garden.crops_in("fruit") == ["tomato", "cucumber", "eggplant", "pepper", "pumpkin", "goya"], "東京の実もの(%s)" % str(tk.garden.crops_in("fruit")))
+	for kind in ["hakusai", "spinach", "daikon"]:
+		tk.garden.seeds[kind] = 1
+	var spots := {"hakusai": Vector2(1, 1), "spinach": Vector2(4, 1), "daikon": Vector2(7, 1)}
+	for kind in spots:
+		tk.land.plots.append(tk.land.plot_center(spots[kind]))
+		tk.garden.sow(spots[kind], kind)
+	tk.time.set_today("2026-12-02")
+	tk.refresh_season()
+	tk.garden.apply_frost()
+	var left: Array = tk.garden.crops.map(func(c): return c.kind)
+	_check(left.has("hakusai") and left.has("spinach") and not left.has("daikon"), "霜に強いハクサイ・ホウレンソウは残り、ダイコンは枯れる(%s)" % str(left))
+	_check(tk.market.orderable().has("sweet_potato") and tk.market.orderable().has("corn") and not tk.market.orderable().has("hakusai"), "春の野菜を注文できる(秋のハクサイは除く)")
+
 func Main_hint(id: String) -> bool:
 	return load("res://Main.gd").GUIDE_HINTS.has(id)
 
@@ -482,6 +524,35 @@ func _run_scene() -> void:
 	main.world.forest.today_event = "rain"
 	_check(main.daily_message("rain").begins_with("雨が降った"), "東京の冬は雨(雪にならない)")
 	_check(not main.world.snow.can_clear_now(), "東京の冬は雪かきのボタンを出さない")
+	# 野菜の組: 6 を押すたびに東京の実ものを順に
+	main.selected_crop = "radish"
+	var picked := []
+	for i in 6:
+		var k6 := InputEventKey.new()
+		k6.keycode = KEY_6
+		k6.pressed = true
+		main._unhandled_input(k6)
+		picked.append(main.selected_crop)
+	_check(picked == ["tomato", "cucumber", "eggplant", "pepper", "pumpkin", "goya"], "6 を押すたびに実もの野菜が順に変わる(%s)" % str(picked))
+	_check(main.crop_seeds_line().contains("ゴーヤ 0") and main.crop_keys_text().begins_with("[4]根菜 [5]いも [6]実もの"), "持ち物と操作説明に新しい野菜")
+	# 冬の市場: どのページも 15 行まで。今まけない春の野菜は注文の行になり、小屋で苗にするきゅうりは買える
+	main._panel = "market"
+	var tallest := 0
+	var seen := {}
+	for bp in main.BUY_PAGES.size():
+		main._buy_page = bp
+		for sp in main.SELL_PAGES.size():
+			main._sell_page = sp
+			var rows: Array = main.visible_shop_rows()
+			for r in rows:
+				seen[r.id] = true
+			tallest = maxi(tallest, rows.filter(func(r): return r.column == 0).size())
+			tallest = maxi(tallest, rows.filter(func(r): return r.column == 1).size())
+	_check(tallest <= 15, "東京の冬の市場は 1 列 15 行まで(%d 行)" % tallest)
+	_check(seen.has("order_daikon") and not seen.has("daikon_seed") and seen.has("cucumber_seed") and seen.has("order_cucumber"), "冬はダイコンは注文だけ、きゅうりは買えて注文もできる")
+	_check(seen.has("hakusai_seed") and not seen.has("order_hakusai"), "ハクサイ(秋にまく)は冬も店で買えて、注文はない")
+	var missing: Array = main.world.market.GOODS.filter(func(g): return main.world.market.sells(g) and not seen.has(g.id) and not seen.has("order_" + g.species)).map(func(g): return g.id)
+	_check(missing.is_empty(), "冬もどの品にもたどり着ける(足りない: %s)" % str(missing))
 	var weather = main.get_node("Weather")
 	weather.refresh(true)
 	_check(not weather._snow.emitting and weather._rain.emitting, "東京の冬の雨は雨粒で降る")

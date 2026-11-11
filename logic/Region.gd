@@ -202,13 +202,14 @@ func allows(plant: Dictionary) -> bool:
 		return true
 	return zone_id() in plant.zones
 
-# 野菜をその季節にまけるか。霜の降りない土地では、春か秋にまける野菜を冬にもまける(沖縄は冬が野菜の季節)
+# 野菜をその季節にまけるか。霜の降りない土地では、春か秋にまける野菜を冬にもまける(沖縄は冬が野菜の季節。暑さを好む野菜は除く)
 func can_sow(crop: Dictionary, season: String) -> bool:
 	if not allows(crop):
 		return false
 	if season in crop.seasons:
 		return true
-	return season == WI and not has_frost() and (SP in crop.seasons or AU in crop.seasons)
+	# 暑さを好む野菜(warm)は、霜がなくても冬には育たない
+	return season == WI and not has_frost() and not crop.get("warm", false) and (SP in crop.seasons or AU in crop.seasons)
 
 func wind_seed() -> String:
 	return str(zone().wind_seed)

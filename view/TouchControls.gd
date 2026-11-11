@@ -32,8 +32,8 @@ const MENU := [
 		["form", "種/苗木", KEY_V, true],
 	],
 	[
-		["radish", "ラディッシュ", KEY_4, true], ["carrot", "にんじん", KEY_5, true], ["cucumber", "きゅうり", KEY_6, true],
-		["potato", "じゃがいも", KEY_7, true], ["garlic", "ニンニク", KEY_8, true], ["tomato", "トマト", KEY_9, true],
+		["crop_root", "根菜", KEY_4, true], ["crop_imo", "いも", KEY_5, true], ["crop_fruit", "実もの", KEY_6, true],
+		["crop_leaf", "葉もの", KEY_7, true], ["crop_bean", "豆・穀物", KEY_8, true], ["crop_aroma", "香味", KEY_9, true],
 	],
 	[
 		["items", "持ち物", KEY_TAB, false], ["help", "操作", KEY_F1, false], ["sound", "音量", KEY_M, true],
@@ -195,6 +195,13 @@ const TREE_GROUPS := {"birch": "broadleaf", "fruit": "fruit", "cedar": "conifer"
 func _menu_text(id: String, text: String) -> String:
 	if id == "form":
 		return "苗木で植える" if _main.selected_form == "sapling" else "種で植える"
+	if id.begins_with("crop_"):
+		# 選んでいる野菜、なければその組でこの土地で最初に育つ野菜の名前
+		var g = _main.world.garden
+		if _is_selected(id):
+			return g.CROPS[_main.selected_crop].name
+		var crops: Array = g.crops_in(id.trim_prefix("crop_"))
+		return g.CROPS[crops[0]].name if not crops.is_empty() else text
 	if id == "birch" or id == "cedar":
 		# 選んでいる木、なければその土地で最初に育つ木の名前(県を選ぶ前は 白樺・シベリア杉)
 		var f = _main.world.forest
@@ -210,8 +217,8 @@ func _is_selected(id: String) -> bool:
 		"birch", "cedar", "fruit":
 			var f = _main.world.forest
 			return f.SPECIES.has(_main.selected_species) and f.SPECIES[_main.selected_species].group == TREE_GROUPS[id]
-		"radish", "carrot", "cucumber", "potato", "garlic", "tomato":
-			return _main.selected_crop == id
+		"crop_root", "crop_imo", "crop_fruit", "crop_leaf", "crop_bean", "crop_aroma":
+			return _main.world.garden.CROPS[_main.selected_crop].group == id.trim_prefix("crop_")
 	return false
 
 func _pad_at(pos: Vector2) -> Dictionary:

@@ -638,7 +638,7 @@ func _test_extension_view() -> void:
 	w.forest.trees = w.forest.trees.filter(func(t): return not c.ext_rect().grow(1.0).has_point(t.pos))
 	m.money = 50000
 	main._panel = "market"
-	main._buy_page = 3
+	main._buy_page = main.BUY_PAGES.map(func(p): return p.name).find("小屋")
 	var rows: Array = main.visible_shop_rows()
 	_check(rows.any(func(r): return r.text.contains("小屋の増築")) and rows.any(func(r): return r.text.contains("揺り椅子")), "市場の「小屋」のページに増築と家具が並ぶ")
 	main._on_shop_action("furniture_rug")
@@ -2050,8 +2050,8 @@ func _test_market_pages() -> void:
 		if not seen.has("sell_" + item):
 			missing.append(item)
 	_check(missing.is_empty(), "どの品にもたどり着ける(足りない: %s)" % str(missing))
-	_check(hud._shop_columns[0].get_child(0).text.contains("押すと次: 野菜の種"), "1 行目で次のページが分かる")
-	_check(hud._shop_columns[1].get_child(0).text.contains("野菜 8種類"), "次のページに持っている数が分かる")
+	_check(hud._shop_columns[0].get_child(0).text.contains("押すと次: 根菜といもの種"), "1 行目で次のページが分かる")
+	_check(hud._shop_columns[1].get_child(0).text.contains("根菜といも 7種類"), "次のページに持っている数が分かる(持っていれば、県を選ぶ前の土地に育たない野菜も売れる)")
 	# 押すと買う列が変わる。フォーカスはページの行に残る
 	hud._shop_columns[0].get_child(0).grab_focus()
 	main._on_shop_action("page_buy")
