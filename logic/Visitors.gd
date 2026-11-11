@@ -41,7 +41,7 @@ const ORDER := ["nina", "fyodor", "tanya", "pavel"]  # 来る順番
 
 # 1 回に頼む量(リンゴは個、野菜は kg、保存食は瓶 / 個)
 const ASK := {
-	"apple": 5, "cherry": 1, "plum": 2, "pear": 4, "kaki": 4, "mikan": 5, "shikuwasa": 1, "cherry_jam": 1, "plum_jam": 1, "pear_compote": 1,
+	"apple": 5, "cherry": 1, "plum": 2, "pear": 4, "kaki": 4, "mikan": 5, "shikuwasa": 1, "ume": 2, "kuri": 2, "mango": 3, "papaya": 3, "cherry_jam": 1, "plum_jam": 1, "pear_compote": 1,
 	"radish": 3, "carrot": 5, "cucumber": 5, "potato": 5, "garlic": 1, "tomato": 5,
 	"daikon": 5, "kabu": 3, "sweet_potato": 5, "taro": 3, "eggplant": 3, "pepper": 3, "pumpkin": 3, "goya": 2,
 	"cabbage": 3, "hakusai": 3, "spinach": 2, "komatsuna": 2, "edamame": 2, "corn": 2, "onion": 5, "negi": 2,

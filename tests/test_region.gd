@@ -185,8 +185,8 @@ func _test_planting() -> void:
 	var f := tk.forest
 	_check(f.plant_problem("birch", "seed") == "not_here" and f.plant_problem("cedar", "sapling") == "not_here", "東京では白樺とシベリア杉は育たない")
 	_check(f.can_plant("konara", "seed") and f.can_plant("sugi", "seed") and f.can_plant("mikan", "sapling"), "東京ではコナラ・スギ・ミカンが育つ")
-	_check(f.species_in("broadleaf") == ["konara"] and f.species_in("conifer") == ["sugi"], "東京のキー 1・3 で選べる木")
-	_check(f.species_in("fruit") == ["plum", "pear", "kaki", "mikan"], "東京の果樹(%s)" % str(f.species_in("fruit")))
+	_check(f.species_in("broadleaf") == ["konara", "keyaki", "kunugi"] and f.species_in("conifer") == ["sugi", "hinoki"], "東京のキー 1・3 で選べる木(%s・%s)" % [f.species_in("broadleaf"), f.species_in("conifer")])
+	_check(f.species_in("fruit") == ["plum", "pear", "kaki", "mikan", "ume", "kuri"], "東京の果樹(%s)" % str(f.species_in("fruit")))
 	f.seeds.birch = 1
 	_check(f.add_tree(TREE_SPOT, "birch", "seed"), "持っている種は add_tree では植えられる(画面で止めるのは Main)")
 	tk.time.set_today("2027-01-10")
@@ -197,7 +197,11 @@ func _test_planting() -> void:
 	_check(hk.forest.can_plant("birch", "seed"), "北海道の冬も白樺の種はまける")
 	_check(hk.forest.plant_problem("sugi", "seed") == "not_here" and hk.forest.grows_here("ezomatsu"), "北海道はスギでなくエゾマツ")
 	var ok := _world("okinawa", "2026-11-11")
-	_check(ok.forest.species_in("broadleaf") == ["gajumaru"] and ok.forest.species_in("conifer") == ["ryukyu_pine"] and ok.forest.species_in("fruit") == ["shikuwasa"], "沖縄はガジュマル・リュウキュウマツ・シークヮーサー")
+	_check(ok.forest.species_in("broadleaf") == ["gajumaru", "deigo", "fukugi"] and ok.forest.species_in("conifer") == ["ryukyu_pine"] and ok.forest.species_in("fruit") == ["shikuwasa", "mango", "papaya"], "沖縄: ガジュマル・デイゴ・フクギ / リュウキュウマツ / シークヮーサー・マンゴー・パパイヤ")
+	_check(ok.forest.species_in("broadleaf").size() + ok.forest.species_in("fruit").size() + ok.forest.species_in("conifer").size() == 7, "沖縄の木は 7 種類")
+	_check(Forest.SPECIES.size() == 23, "木は全部で 23 種類")
+	_check(Forest.FRUIT_ORDER.all(func(sp): return Forest.FRUITS[sp].first * Market_price(sp) <= 300 and Forest.FRUITS[sp].most * Market_price(sp) <= 300), "どの果樹も 1 本 1 日 300₽ まで")
+	_check(ok.forest.SPECIES.papaya.wood_max == 0, "パパイヤからは丸太が採れない")
 	var legacy := _world("", "2026-11-11")
 	_check(legacy.forest.species_in("broadleaf") == ["birch"] and legacy.forest.species_in("conifer") == ["cedar"], "選ぶ前は今までの木だけ")
 	_check(legacy.forest.species_in("fruit") == ["apple", "cherry", "plum", "pear"], "選ぶ前の果樹も今までのまま")
@@ -278,8 +282,11 @@ func _test_market() -> void:
 	for zid in Region.ZONES:
 		var pref: String = Region.PREFS.keys().filter(func(p): return Region.PREFS[p].zone == zid)[0]
 		var w := _world(pref, "2026-11-11")
-		var trees := w.market.GOODS.filter(func(g): return (g.form == "seed" or g.form == "sapling") and w.market.sells(g))
-		_check(trees.size() + 1 <= 15, "%s: 木の種と苗木のページは 15 行まで(%d 品)" % [Region.ZONES[zid].name, trees.size()])
+		var sold: Array = w.market.GOODS.filter(func(g): return w.market.sells(g))
+		var seeds := sold.filter(func(g): return g.form == "seed").size()
+		var forest_saplings := sold.filter(func(g): return g.form == "sapling" and Forest.SPECIES[g.species].group != "fruit").size()
+		var fruit_saplings := sold.filter(func(g): return g.form == "sapling" and Forest.SPECIES[g.species].group == "fruit").size()
+		_check(maxi(seeds, maxi(forest_saplings, fruit_saplings)) + 1 <= 15, "%s: 木の種 %d・森の木の苗木 %d・果樹の苗木 %d(どのページも 15 行まで)" % [Region.ZONES[zid].name, seeds, forest_saplings, fruit_saplings])
 		_check(Market_fruits_ok(w), "%s: 育つ果物には買い取り値がある" % Region.ZONES[zid].name)
 
 func Market_fruits_ok(w: GameWorld) -> bool:
@@ -449,6 +456,9 @@ func _test_crops() -> void:
 	_check(left.has("hakusai") and left.has("spinach") and not left.has("daikon"), "霜に強いハクサイ・ホウレンソウは残り、ダイコンは枯れる(%s)" % str(left))
 	_check(tk.market.orderable().has("sweet_potato") and tk.market.orderable().has("corn") and not tk.market.orderable().has("hakusai"), "春の野菜を注文できる(秋のハクサイは除く)")
 
+func Market_price(sp: String) -> int:
+	return int(load("res://logic/Market.gd").SELL_PRICES[sp])
+
 func Main_hint(id: String) -> bool:
 	return load("res://Main.gd").GUIDE_HINTS.has(id)
 
@@ -496,10 +506,10 @@ func _run_scene() -> void:
 	_check(text.contains("コナラ 3") and not text.contains("白樺"), "持ち物はこの土地の木で並ぶ")
 	hud.inventory_open = false
 	hud.help_open = true
-	_check(hud.status_text().contains("[1]コナラ") and hud.status_text().contains("[3]スギ"), "操作説明の 1・3 はこの土地の木")
+	_check(hud.status_text().contains("[1]広葉樹(コナラ/ケヤキ/クヌギ)") and hud.status_text().contains("[3]針葉樹(スギ/ヒノキ)"), "操作説明の 1・3 はこの土地の木")
 	hud.help_open = false
 	main._unhandled_input(ev)
-	_check(main.selected_species == "konara", "1 を押してもコナラのまま(東京の広葉樹は 1 種類)")
+	_check(main.selected_species == "keyaki", "1 を押すと東京の次の広葉樹(ケヤキ)")
 	ev.keycode = KEY_2
 	main._unhandled_input(ev)
 	_check(main.selected_species == "plum" and main.selected_form == "sapling", "2 で東京の最初の果樹(スモモの苗木)")

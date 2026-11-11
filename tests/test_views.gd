@@ -2050,12 +2050,12 @@ func _test_market_pages() -> void:
 		if not seen.has("sell_" + item):
 			missing.append(item)
 	_check(missing.is_empty(), "どの品にもたどり着ける(足りない: %s)" % str(missing))
-	_check(hud._shop_columns[0].get_child(0).text.contains("押すと次: 根菜といもの種"), "1 行目で次のページが分かる")
+	_check(hud._shop_columns[0].get_child(0).text.contains("押すと次: 森の木の苗木"), "1 行目で次のページが分かる")
 	_check(hud._shop_columns[1].get_child(0).text.contains("根菜といも 7種類"), "次のページに持っている数が分かる(持っていれば、県を選ぶ前の土地に育たない野菜も売れる)")
 	# 押すと買う列が変わる。フォーカスはページの行に残る
 	hud._shop_columns[0].get_child(0).grab_focus()
 	main._on_shop_action("page_buy")
-	_check(hud._shop_columns[0].get_child(1).text.contains("種(") or hud._shop_columns[0].get_child(1).text.contains("種いも") or hud._shop_columns[0].get_child(1).text.contains("ラディッシュ"), "野菜の種のページになる")
+	_check(hud._shop_columns[0].get_child(1).text.contains("の苗木(樹齢"), "森の木の苗木のページになる")
 	_check(hud._shop_columns[0].get_child(0).has_focus(), "続けて押せるように、フォーカスが残る")
 	# ほかの画面にページの行は出ない
 	main._panel = "kitchen"

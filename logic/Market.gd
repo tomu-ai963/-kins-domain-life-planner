@@ -42,6 +42,21 @@ const GOODS := [
 	{"id": "kaki_sapling", "species": "kaki", "form": "sapling", "amount": 1, "price": 900},
 	{"id": "mikan_sapling", "species": "mikan", "form": "sapling", "amount": 1, "price": 900},
 	{"id": "shikuwasa_sapling", "species": "shikuwasa", "form": "sapling", "amount": 1, "price": 800},
+	# 2026-11-11 に足した木(2 回目)
+	{"id": "keyaki_seed", "species": "keyaki", "form": "seed", "amount": 10, "price": 80},
+	{"id": "kunugi_seed", "species": "kunugi", "form": "seed", "amount": 10, "price": 60},
+	{"id": "hinoki_seed", "species": "hinoki", "form": "seed", "amount": 10, "price": 120},
+	{"id": "deigo_seed", "species": "deigo", "form": "seed", "amount": 10, "price": 80},
+	{"id": "fukugi_seed", "species": "fukugi", "form": "seed", "amount": 10, "price": 80},
+	{"id": "keyaki_sapling", "species": "keyaki", "form": "sapling", "amount": 1, "price": 600},
+	{"id": "kunugi_sapling", "species": "kunugi", "form": "sapling", "amount": 1, "price": 400},
+	{"id": "hinoki_sapling", "species": "hinoki", "form": "sapling", "amount": 1, "price": 700},
+	{"id": "deigo_sapling", "species": "deigo", "form": "sapling", "amount": 1, "price": 600},
+	{"id": "fukugi_sapling", "species": "fukugi", "form": "sapling", "amount": 1, "price": 700},
+	{"id": "ume_sapling", "species": "ume", "form": "sapling", "amount": 1, "price": 700},
+	{"id": "kuri_sapling", "species": "kuri", "form": "sapling", "amount": 1, "price": 800},
+	{"id": "mango_sapling", "species": "mango", "form": "sapling", "amount": 1, "price": 1200},
+	{"id": "papaya_sapling", "species": "papaya", "form": "sapling", "amount": 1, "price": 500},
 	{"id": "radish_seed", "species": "radish", "form": "crop_seed", "amount": 1, "price": 40},
 	{"id": "carrot_seed", "species": "carrot", "form": "crop_seed", "amount": 1, "price": 50},
 	{"id": "cucumber_seed", "species": "cucumber", "form": "crop_seed", "amount": 1, "price": 60},
@@ -78,7 +93,7 @@ const GOODS := [
 # seedling_ は小屋で育てた苗(1 鉢 = 1 区画ぶん)の買い取り値。
 # 保存食(Kitchen.RECIPES の id)は 1 瓶 / 1 個あたり。材料を生で売るよりおよそ 2 倍になるように置いた仮の数字
 const SELL_PRICES := {
-	"apple": 15, "cherry": 60, "plum": 40, "pear": 18, "kaki": 20, "mikan": 12, "shikuwasa": 50, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
+	"apple": 15, "cherry": 60, "plum": 40, "pear": 18, "kaki": 20, "mikan": 12, "shikuwasa": 50, "ume": 50, "kuri": 60, "mango": 30, "papaya": 20, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
 	"daikon": 15, "kabu": 25, "sweet_potato": 35, "taro": 40, "eggplant": 35, "pepper": 50, "pumpkin": 30, "goya": 50,
 	"cabbage": 20, "hakusai": 15, "spinach": 60, "komatsuna": 40, "edamame": 80, "corn": 60, "onion": 20, "negi": 40,
 	"seedling_tomato": 150, "seedling_cucumber": 120,

@@ -67,9 +67,46 @@ const KINDS := {
 		"leaf": Color(0.10, 0.32, 0.22), "leaf_autumn": Color(0.10, 0.32, 0.22), "trunk": Color(0.34, 0.26, 0.20),
 		"shape": "cone", "trunk_h": 0.6, "trunk_w": 0.12, "crown_h": 4.2, "crown_y": -0.2,
 	},
+	"hinoki": {
+		"leaf": Color(0.12, 0.38, 0.20), "leaf_autumn": Color(0.12, 0.38, 0.20), "trunk": Color(0.50, 0.30, 0.20),
+		"shape": "cone", "trunk_h": 0.9, "trunk_w": 0.13, "crown_h": 4.6, "crown_y": -0.2,
+	},
 	"ryukyu_pine": {
 		"leaf": Color(0.20, 0.46, 0.22), "leaf_autumn": Color(0.20, 0.46, 0.22), "trunk": Color(0.46, 0.28, 0.18),
 		"shape": "sphere", "trunk_h": 1.8, "trunk_w": 0.12, "crown_h": 1.4, "crown_y": 0.5,  # 高い幹の上に、平たい樹冠
+	},
+	# ── 2026-11-11 に足した木(2 回目) ──
+	"keyaki": {
+		"leaf": Color(0.38, 0.62, 0.26), "leaf_autumn": Color(0.84, 0.46, 0.18), "trunk": Color(0.52, 0.46, 0.40), "twig": Color(0.40, 0.34, 0.30),
+		"shape": "sphere", "trunk_h": 1.6, "trunk_w": 0.12, "crown_h": 2.0, "crown_y": 0.9,
+	},
+	"kunugi": {
+		"leaf": Color(0.34, 0.56, 0.22), "leaf_autumn": Color(0.66, 0.46, 0.20), "trunk": Color(0.36, 0.30, 0.24), "twig": Color(0.32, 0.26, 0.20),
+		"shape": "sphere", "trunk_h": 1.4, "trunk_w": 0.13, "crown_h": 2.2, "crown_y": 0.8,
+	},
+	"deigo": {
+		"leaf": Color(0.30, 0.56, 0.24), "leaf_autumn": Color(0.30, 0.56, 0.24), "trunk": Color(0.56, 0.50, 0.42), "twig": Color(0.50, 0.44, 0.36),
+		"shape": "sphere", "trunk_h": 1.0, "trunk_w": 0.14, "crown_h": 1.6, "crown_y": 0.6,
+	},
+	"fukugi": {
+		"leaf": Color(0.12, 0.40, 0.18), "leaf_autumn": Color(0.12, 0.40, 0.18), "trunk": Color(0.40, 0.34, 0.28),
+		"shape": "sphere", "trunk_h": 0.6, "trunk_w": 0.10, "crown_h": 3.0, "crown_y": 0.5,  # 細く高い
+	},
+	"ume": {
+		"leaf": Color(0.30, 0.56, 0.24), "leaf_autumn": Color(0.70, 0.60, 0.24), "trunk": Color(0.26, 0.20, 0.18), "twig": Color(0.26, 0.20, 0.18),
+		"shape": "sphere", "trunk_h": 0.7, "trunk_w": 0.13, "crown_h": 1.4, "crown_y": 0.5,
+	},
+	"kuri": {
+		"leaf": Color(0.30, 0.54, 0.20), "leaf_autumn": Color(0.78, 0.60, 0.20), "trunk": Color(0.34, 0.26, 0.20), "twig": Color(0.34, 0.26, 0.20),
+		"shape": "sphere", "trunk_h": 1.0, "trunk_w": 0.14, "crown_h": 1.9, "crown_y": 0.7,
+	},
+	"mango": {
+		"leaf": Color(0.14, 0.40, 0.18), "leaf_autumn": Color(0.14, 0.40, 0.18), "trunk": Color(0.38, 0.30, 0.24),
+		"shape": "sphere", "trunk_h": 0.7, "trunk_w": 0.13, "crown_h": 1.8, "crown_y": 0.6,
+	},
+	"papaya": {
+		"leaf": Color(0.30, 0.58, 0.22), "leaf_autumn": Color(0.30, 0.58, 0.22), "trunk": Color(0.62, 0.60, 0.50),
+		"shape": "sphere", "trunk_h": 2.0, "trunk_w": 0.07, "crown_h": 0.9, "crown_y": 0.3,  # 細い幹の上に葉
 	},
 }
 const BLOSSOM := Color(1.0, 0.80, 0.74)  # 空の光で青みが足されるので、暖かい色にしておく
@@ -83,6 +120,10 @@ const FRUIT_LOOKS := {
 	"kaki": {"color": Color(0.95, 0.48, 0.10), "scale": 1.1},
 	"mikan": {"color": Color(0.98, 0.58, 0.08), "scale": 0.95},
 	"shikuwasa": {"color": Color(0.46, 0.66, 0.16), "scale": 0.6},  # 小さく青いうちに採る
+	"ume": {"color": Color(0.72, 0.80, 0.30), "scale": 0.7},     # 青梅
+	"kuri": {"color": Color(0.62, 0.56, 0.22), "scale": 1.0},    # いが
+	"mango": {"color": Color(0.92, 0.40, 0.20), "scale": 1.2},
+	"papaya": {"color": Color(0.56, 0.70, 0.24), "scale": 1.1},
 }
 # 春の花の色(花の咲く果樹だけ)。花をどれだけ前に出すか
 const BLOSSOMS := {
@@ -91,6 +132,9 @@ const BLOSSOMS := {
 	"plum": {"color": Color(1.0, 0.95, 0.90), "amount": 0.9},
 	"pear": {"color": Color(1.0, 0.97, 0.92), "amount": 0.85},
 	"mikan": {"color": Color(1.0, 0.98, 0.94), "amount": 0.35},  # 白い小さな花が葉のあいだに咲く
+	"ume": {"color": Color(1.0, 0.82, 0.88), "amount": 0.95},
+	"kuri": {"color": Color(0.96, 0.94, 0.80), "amount": 0.4},   # 初夏の白っぽい穂
+	"deigo": {"color": Color(0.90, 0.20, 0.16), "amount": 0.75}, # 赤い花
 }
 const LEAF_SHADE := 0.06  # 木ごとの葉の色の違い(明るい・そのまま・暗いの 3 通り)
 const SPROUT_SCALE := 0.45

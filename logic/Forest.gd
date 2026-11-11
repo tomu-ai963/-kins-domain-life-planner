@@ -37,11 +37,16 @@ const FRUITS := {
 	"kaki": {"seasons": ["autumn"], "age": 6.0, "first": 4, "step": 4, "most": 15, "unit": "個"},
 	"mikan": {"seasons": ["autumn", "winter"], "age": 5.0, "first": 5, "step": 5, "most": 20, "unit": "個"},
 	"shikuwasa": {"seasons": ["autumn", "winter"], "age": 4.0, "first": 1, "step": 1, "most": 5, "unit": "kg"},
+	# 2026-11-11 に足した果樹。クリは「桃栗三年」で樹齢 3 年から。ウメは初夏(ゲームでは夏)に青い実を採る。パパイヤは一年中実る
+	"ume": {"seasons": ["summer"], "age": 4.0, "first": 1, "step": 1, "most": 5, "unit": "kg"},
+	"kuri": {"seasons": ["autumn"], "age": 3.0, "first": 1, "step": 1, "most": 5, "unit": "kg"},
+	"mango": {"seasons": ["summer"], "age": 4.0, "first": 2, "step": 2, "most": 10, "unit": "個"},
+	"papaya": {"seasons": ["spring", "summer", "autumn", "winter"], "age": 2.0, "first": 2, "step": 2, "most": 8, "unit": "個"},
 }
-const FRUIT_ORDER := ["apple", "cherry", "plum", "pear", "kaki", "mikan", "shikuwasa"]  # 果樹を選ぶ順番(キーの 2)
+const FRUIT_ORDER := ["apple", "cherry", "plum", "pear", "kaki", "mikan", "shikuwasa", "ume", "kuri", "mango", "papaya"]  # 果樹を選ぶ順番(キーの 2)
 # 収穫してから次に実るまでの日数(2026-11-11 とむ決定。前は毎日採れて、季節の売上が野菜の区画並みだった。仮の数字)
 const FRUIT_INTERVAL := 3
-const SAPLING_ONLY := ["cherry", "plum", "pear", "kaki", "mikan", "shikuwasa"]  # 接ぎ木の苗木から育てる(現実でも、種からだと親と同じ実にならない)
+const SAPLING_ONLY := ["cherry", "plum", "pear", "kaki", "mikan", "shikuwasa", "ume", "kuri", "mango", "papaya"]  # 接ぎ木の苗木から育てる(現実でも、種からだと親と同じ実にならない)
 const GERMINATION_YEARS := 1.0  # 種から芽が出るまで(= 1 日)
 # 剪定: 葉の落ちた冬に果樹の枝を切ると、次の収穫が増える(現実でも果樹の剪定は冬の仕事)。1 本につきひと冬 1 回
 const PRUNE_BONUS := 1.25  # 剪定した木の収穫の倍率(仮の数字)
@@ -168,6 +173,70 @@ const SPECIES := {
 		"germination": 0.4, "sapling_age": 4.0,
 		"seed_age": 30.0, "seed_seasons": ["autumn"], "seed_drop": 5,
 		"wood_age": 35.0, "wood_years": 8.0, "wood_max": 8,
+	},
+	# ── 2026-11-11 に足した木(2 回目。関東より西と沖縄が手薄だったので) ──
+	"keyaki": {  # ケヤキ: 本州から九州。扇のように広がる大きな木。材は丈夫
+		"group": "broadleaf", "zones": HONSHU_TO_KYUSHU, "regional": true,
+		"name": "ケヤキ", "max_r": 5.0, "tau": 12.0, "p": 2.2, "evergreen": false,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 20.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 25.0, "wood_years": 6.0, "wood_max": 8,
+	},
+	"kunugi": {  # クヌギ: 本州から九州の雑木林。10〜15 年ごとに伐って薪やしいたけの原木にしてきた。コナラより早く太る
+		"group": "broadleaf", "zones": HONSHU_TO_KYUSHU, "regional": true,
+		"name": "クヌギ", "max_r": 4.0, "tau": 8.0, "p": 2.2, "evergreen": false,
+		"germination": 0.6, "sapling_age": 2.0,
+		"seed_age": 12.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 12.0, "wood_years": 4.0, "wood_max": 6,
+	},
+	"deigo": {  # デイゴ: 沖縄の県の花。春に赤い花が咲く。冬に葉を落とす
+		"group": "broadleaf", "zones": ["nansei"], "regional": true,
+		"name": "デイゴ", "max_r": 4.5, "tau": 8.0, "p": 2.0, "evergreen": false,
+		"germination": 0.5, "sapling_age": 2.0,
+		"seed_age": 8.0, "seed_seasons": ["summer", "autumn"], "seed_drop": 5,
+		"wood_age": 20.0, "wood_years": 8.0, "wood_max": 3,
+	},
+	"fukugi": {  # フクギ: 沖縄で家のまわりに植える防風林の木。細く高く、葉が厚い。育つのはゆっくり
+		"group": "broadleaf", "zones": ["nansei"], "regional": true,
+		"name": "フクギ", "max_r": 2.5, "tau": 15.0, "p": 2.0, "evergreen": true,
+		"germination": 0.5, "sapling_age": 2.0,
+		"seed_age": 15.0, "seed_seasons": ["summer"], "seed_drop": 5,
+		"wood_age": 30.0, "wood_years": 10.0, "wood_max": 5,
+	},
+	"ume": {
+		"group": "fruit", "zones": NOT_ISLANDS, "regional": true,
+		"name": "ウメ", "max_r": 2.4, "tau": 5.0, "p": 2.0, "evergreen": false,
+		"germination": 0.0, "sapling_age": 1.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 25.0, "wood_years": 10.0, "wood_max": 2,
+	},
+	"kuri": {
+		"group": "fruit", "zones": NOT_ISLANDS, "regional": true,
+		"name": "クリ", "max_r": 3.5, "tau": 6.0, "p": 2.0, "evergreen": false,
+		"germination": 0.0, "sapling_age": 1.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 20.0, "wood_years": 8.0, "wood_max": 4,
+	},
+	"mango": {
+		"group": "fruit", "zones": ["nansei"], "regional": true,
+		"name": "マンゴー", "max_r": 3.0, "tau": 6.0, "p": 2.0, "evergreen": true,
+		"germination": 0.0, "sapling_age": 1.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 25.0, "wood_years": 10.0, "wood_max": 2,
+	},
+	"papaya": {  # パパイヤ: 幹が木にならない大きな草のような木。植えて 1〜2 年で実り、一年中採れる。丸太は採れない
+		"group": "fruit", "zones": ["nansei"], "regional": true,
+		"name": "パパイヤ", "max_r": 1.6, "tau": 2.0, "p": 1.5, "evergreen": true,
+		"germination": 0.0, "sapling_age": 1.0,
+		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
+		"wood_age": 5.0, "wood_years": 10.0, "wood_max": 0,
+	},
+	"hinoki": {  # ヒノキ: 東北の南から九州。スギより育つのが遅いが、材はいちばん上等
+		"group": "conifer", "zones": HONSHU_TO_KYUSHU, "regional": true,
+		"name": "ヒノキ", "max_r": 2.8, "tau": 20.0, "p": 2.0, "evergreen": true,
+		"germination": 0.3, "sapling_age": 3.0,
+		"seed_age": 20.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 25.0, "wood_years": 6.0, "wood_max": 8,
 	},
 	"ryukyu_pine": {  # リュウキュウマツ: 沖縄の松。やせた土地でも速く育つ
 		"group": "conifer", "zones": ["nansei"], "regional": true,

@@ -40,6 +40,15 @@ const COLORS := {
 	"sugi": {"leaf": Color(0.14, 0.36, 0.16, 0.65), "leaf_autumn": Color(0.14, 0.36, 0.16, 0.65), "trunk": Color(0.42, 0.24, 0.14)},
 	"ezomatsu": {"leaf": Color(0.10, 0.32, 0.22, 0.65), "leaf_autumn": Color(0.10, 0.32, 0.22, 0.65), "trunk": Color(0.34, 0.26, 0.20)},
 	"ryukyu_pine": {"leaf": Color(0.20, 0.46, 0.22, 0.65), "leaf_autumn": Color(0.20, 0.46, 0.22, 0.65), "trunk": Color(0.46, 0.28, 0.18)},
+	"keyaki": {"leaf": Color(0.38, 0.62, 0.26, 0.70), "leaf_autumn": Color(0.84, 0.46, 0.18, 0.70), "trunk": Color(0.52, 0.46, 0.40)},
+	"kunugi": {"leaf": Color(0.34, 0.56, 0.22, 0.70), "leaf_autumn": Color(0.66, 0.46, 0.20, 0.70), "trunk": Color(0.36, 0.30, 0.24)},
+	"deigo": {"leaf": Color(0.30, 0.56, 0.24, 0.70), "leaf_autumn": Color(0.30, 0.56, 0.24, 0.70), "trunk": Color(0.56, 0.50, 0.42)},
+	"fukugi": {"leaf": Color(0.12, 0.40, 0.18, 0.70), "leaf_autumn": Color(0.12, 0.40, 0.18, 0.70), "trunk": Color(0.40, 0.34, 0.28)},
+	"ume": {"leaf": Color(0.30, 0.56, 0.24, 0.85), "leaf_autumn": Color(0.70, 0.60, 0.24, 0.85), "trunk": Color(0.26, 0.20, 0.18)},
+	"kuri": {"leaf": Color(0.30, 0.54, 0.20, 0.85), "leaf_autumn": Color(0.78, 0.60, 0.20, 0.85), "trunk": Color(0.34, 0.26, 0.20)},
+	"mango": {"leaf": Color(0.14, 0.40, 0.18, 0.85), "leaf_autumn": Color(0.14, 0.40, 0.18, 0.85), "trunk": Color(0.38, 0.30, 0.24)},
+	"papaya": {"leaf": Color(0.30, 0.58, 0.22, 0.85), "leaf_autumn": Color(0.30, 0.58, 0.22, 0.85), "trunk": Color(0.62, 0.60, 0.50)},
+	"hinoki": {"leaf": Color(0.12, 0.38, 0.20, 0.65), "leaf_autumn": Color(0.12, 0.38, 0.20, 0.65), "trunk": Color(0.50, 0.30, 0.20)},
 }
 
 var forest: Forest

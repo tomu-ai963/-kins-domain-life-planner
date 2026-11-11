@@ -61,7 +61,9 @@ var selected_crop := "radish" # 4〜8 で選ぶ。区画の上で SPACE を押�
 # 市場のページ。買う列は品の種類(Market.GOODS の form)で、売る列は収穫物と保存食で分ける
 # 野菜の種は組(Garden.GROUPS)で 3 ページに分ける(2026-11-11。野菜が増えて 1 列 15 行を超えるため)
 const BUY_PAGES := [
-	{"name": "木の種と苗木", "forms": ["seed", "sapling"]},
+	{"name": "木の種", "forms": ["seed"]},
+	{"name": "森の木の苗木", "forms": ["sapling"], "tree_groups": ["broadleaf", "conifer"]},  # 木が増えて 1 列 15 行を超えるため分けた
+	{"name": "果樹の苗木", "forms": ["sapling"], "tree_groups": ["fruit"]},
 	{"name": "根菜といもの種", "forms": ["crop_seed"], "groups": ["root", "imo"]},
 	{"name": "実もの野菜の種と苗", "forms": ["crop_seed"], "groups": ["fruit"]},
 	{"name": "葉もの・豆・香味野菜の種", "forms": ["crop_seed"], "groups": ["leaf", "bean", "aroma"]},
@@ -1704,7 +1706,8 @@ func _order_row(kind: String, page: int) -> Dictionary:
 
 func _buy_page_of(g: Dictionary) -> int:
 	for i in range(BUY_PAGES.size()):
-		if g.form in BUY_PAGES[i].forms and (g.form != "crop_seed" or world.garden.CROPS[g.species].group in BUY_PAGES[i].groups):
+		if g.form in BUY_PAGES[i].forms and (g.form != "crop_seed" or world.garden.CROPS[g.species].group in BUY_PAGES[i].groups) \
+				and (g.form != "sapling" or world.forest.SPECIES[g.species].group in BUY_PAGES[i].tree_groups):
 			return i
 	return 0
 

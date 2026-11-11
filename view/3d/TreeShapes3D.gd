@@ -24,6 +24,14 @@ const ROUND := {
 	"mikan": {"count": 10, "size": [0.16, 0.22], "core": 0.36, "branches": 5, "branch_thick": 0.02},  # 丸く刈り込んだ低い木
 	"shikuwasa": {"count": 10, "size": [0.15, 0.21], "core": 0.34, "branches": 5, "branch_thick": 0.018},
 	"ryukyu_pine": {"count": 6, "size": [0.20, 0.28], "core": 0.22, "branches": 5, "branch_thick": 0.02},  # 松: まばらな葉のかたまりが段になる
+	"keyaki": {"count": 14, "size": [0.14, 0.20], "core": 0.34, "branches": 8, "branch_thick": 0.014},  # 細かい葉が扇のように広がる
+	"kunugi": {"count": 11, "size": [0.16, 0.22], "core": 0.32, "branches": 6, "branch_thick": 0.016},
+	"deigo": {"count": 10, "size": [0.16, 0.23], "core": 0.30, "branches": 6, "branch_thick": 0.02},
+	"fukugi": {"count": 12, "size": [0.12, 0.18], "core": 0.34, "branches": 6, "branch_thick": 0.02},  # 細く高い、つまった樹冠
+	"ume": {"count": 9, "size": [0.15, 0.21], "core": 0.28, "branches": 7, "branch_thick": 0.02},
+	"kuri": {"count": 11, "size": [0.17, 0.23], "core": 0.32, "branches": 6, "branch_thick": 0.02},
+	"mango": {"count": 12, "size": [0.15, 0.21], "core": 0.36, "branches": 6, "branch_thick": 0.02},
+	"papaya": {"count": 6, "size": [0.18, 0.24], "core": 0.22, "branches": 4, "branch_thick": 0.02},  # 細い幹の上に大きな葉が集まる
 }
 # 針葉樹の段: 下から上へ、段ごとに細くなる
 #   tiers: 段の数 / base・top: いちばん下・上の段の半径 / wave: 縁の波 / droop: 縁の波に合わせて上下にも揺らす(枝先が垂れて見える)
@@ -31,6 +39,7 @@ const TIERED := {
 	"cedar": {"tiers": 5, "base": 0.44, "top": 0.15, "wave": 0.07, "droop": 0.018},
 	"sugi": {"tiers": 7, "base": 0.40, "top": 0.10, "wave": 0.05, "droop": 0.010},     # スギ: 細く尖った円錐
 	"ezomatsu": {"tiers": 6, "base": 0.46, "top": 0.10, "wave": 0.08, "droop": 0.030},  # エゾマツ: 枝先が垂れる
+	"hinoki": {"tiers": 8, "base": 0.40, "top": 0.10, "wave": 0.05, "droop": 0.008},  # ヒノキ: スギより枝が平たく重なる
 }
 const CEDAR_RIM_WAVE := 0.07    # _add_tier の既定(シベリア杉と同じ)
 const CEDAR_RIM_DROOP := 0.018
