@@ -130,16 +130,40 @@ func _test_3d_quest_marks() -> void:
 	print("クエストの目印")
 	var w = main.world
 	var marks: Node3D = main.get_node("Quests")
-	_check(marks.get_child_count() == 80, "生垣の 40 区画に、まだの印(輪と杭)が出ている")
+	_check(marks.get_child_count() == 81, "生垣の 40 区画のまだの印(輪と杭)と、家族の杉の中心 5m の輪が出ている")
 	w.forest.saplings["birch"] = 50
 	w.forest.add_tree(w.quests.segment_center(0), "birch", "sapling")  # 根付いた木だけ数える
-	_check(marks.get_child_count() == 79, "1 区画埋めると、その印が緑の丸(1 つ)に変わる")
-	w.quests.stage = 3
+	_check(marks.get_child_count() == 80, "1 区画埋めると、その印が緑の丸(1 つ)に変わる")
+	w.quests.done = ["hedge", "garden", "pond"]
 	w.quests.changed.emit()
-	_check(marks.get_child_count() == 1, "家族の杉の段階では中心 5m の輪だけ")
-	w.quests.stage = 4
+	_check(marks.get_child_count() == 1, "家族の杉だけ残ると、中心 5m の輪だけ")
+	w.quests.done = ["hedge", "garden", "pond", "family_cedar"]
 	w.quests.changed.emit()
 	_check(marks.get_child_count() == 9, "完成すると光の輪 5 つと金色の縁 4 辺")
+	# HUD のクエストの行(どれからでも達成)
+	w.quests.done = ["garden", "pond"]
+	var line: String = main.quest_line()
+	_check(line.begins_with("クエスト 2/4 済: 境界を生垣で囲む") and line.contains("ほかに 家族の杉"), "まだのいちばん前を詳しく、ほかは名前だけ: " + line)
+	w.quests.done = ["hedge", "garden", "pond", "family_cedar"]
+	line = main.quest_line()
+	_check(line.begins_with("愛の空間: 図鑑 ") and line.contains("木の節目 ") and line.contains("(次: "), "完成のあとは図鑑と木の節目と、次に会える生き物: " + line)
+	var keep_wild: Array = w.wildlife.seen.duplicate()
+	var keep_pond: Array = w.pond.seen.duplicate()
+	w.wildlife.seen = w.wildlife.SPECIES.keys()
+	w.pond.seen = w.pond.CREATURES.keys()
+	_check(main.quest_line().contains("16/16"), "図鑑がそろうと 16/16")
+	w.wildlife.seen = keep_wild
+	w.pond.seen = keep_pond
+	w.quests.changed.emit()
+	# 木の節目の知らせは、出ている知らせ(今日の発見など)を消さない
+	var hud = main.get_node("HUD")
+	hud.show_message("今日の発見: テスト", 10.0)
+	w.forest.trees.append({"pos": Vector2(-44, -44), "species": "pear", "form": "sapling", "planted_at": w.forest._now(), "start_age": 11.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0, "pruned_year": 0})
+	main._check_quests()
+	_check(hud._message.begins_with("今日の発見: テスト") and hud._message.contains("ナシが樹齢10年になった"), "節目の知らせは、出ている知らせの後ろに並ぶ: " + hud._message.replace("
+", " / "))
+	w.forest.trees.pop_back()
+	w.forest.changed.emit()
 
 func _test_3d_seasons_and_growth() -> void:
 	print("季節と成長")
@@ -3076,7 +3100,7 @@ func _test_hud() -> void:
 	w.visitors.visit = keep_visit
 	w.cabin.own_logs = keep_own
 	var text: String = hud.status_text()
-	_check(text.contains("所持金") and text.contains("丸太") and text.contains("クエスト") and text.contains("小屋") and text.contains("池"), "所持金・丸太・クエスト・小屋・池はいつも出る")
+	_check(text.contains("所持金") and text.contains("丸太") and (text.contains("クエスト") or text.contains("愛の空間")) and text.contains("小屋") and text.contains("池"), "所持金・丸太・クエスト・小屋・池はいつも出る")
 	_check(text.contains("植える: ") and text.contains("畑にまく: "), "選んでいるものはいつも出る")
 	_check(not text.contains("苗木:") and not text.contains("SPACE"), "持ち物と操作説明はふだん出さない")
 

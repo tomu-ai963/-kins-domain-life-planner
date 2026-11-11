@@ -62,6 +62,7 @@ func _init() -> void:
 	quests.forest = forest
 	quests.land = land
 	quests.pond = pond
+	quests.wildlife = wildlife
 	pond.forest = forest
 	pond.land = land
 	pond.garden = garden
@@ -354,9 +355,9 @@ func load_game() -> void:
 	nest_boxes.from_save(nbd)
 	snow.from_save(snow_data)
 	sound_level = clampi(int(data.get("sound_level", 3)), 0, 3)
-	quests.from_save(qd)
 	market.from_save(md)
 	forest.from_save(data)
+	quests.from_save(qd)  # 木を読んだあと(木の節目を数えるため)
 
 # 読めないセーブを別名で残し、書きかけの .tmp か、いちばん新しい読める控えから戻す。
 # 戻せたらその中身を本物のセーブに書き、戻せなければ null(新しいゲームになる)。

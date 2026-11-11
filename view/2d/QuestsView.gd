@@ -28,15 +28,17 @@ func _draw() -> void:
 			draw_line(c[i], c[(i + 1) % 4], Color(1.0, 0.95, 0.70, 0.5), 48)  # 外側のにじみ
 			draw_line(c[i], c[(i + 1) % 4], Color(1.0, 0.78, 0.10, 1.0), 20)
 		return
-	match quests.current_id():
-		"hedge":
-			# 40 区画の印: 埋まった区画は緑の丸、まだの区画は白い輪(土地全体に引いても見える大きさ)
-			var filled: Array = quests.hedge_filled()
-			for i in range(quests.HEDGE_SEGMENTS):
-				if filled[i]:
-					draw_circle(quests.segment_center(i) * PX, 30.0, Color(0.10, 0.50, 0.12, 0.9))
-				else:
-					draw_arc(quests.segment_center(i) * PX, 30.0, 0, TAU, 24, Color(1, 1, 1, 0.9), 8.0)
-		"family_cedar":
-			# 中心 5m の目印
-			draw_arc(Vector2.ZERO, quests.FAMILY_CEDAR_RADIUS * PX, 0, TAU, 48, Color(1.0, 0.95, 0.6, 0.9), 3.0)
+	# まだのクエストの印をどれも出す(どれからでも達成できる)
+	for id in quests.remaining():
+		match id:
+			"hedge":
+				# 40 区画の印: 埋まった区画は緑の丸、まだの区画は白い輪(土地全体に引いても見える大きさ)
+				var filled: Array = quests.hedge_filled()
+				for i in range(quests.HEDGE_SEGMENTS):
+					if filled[i]:
+						draw_circle(quests.segment_center(i) * PX, 30.0, Color(0.10, 0.50, 0.12, 0.9))
+					else:
+						draw_arc(quests.segment_center(i) * PX, 30.0, 0, TAU, 24, Color(1, 1, 1, 0.9), 8.0)
+			"family_cedar":
+				# 中心 5m の目印
+				draw_arc(Vector2.ZERO, quests.FAMILY_CEDAR_RADIUS * PX, 0, TAU, 48, Color(1.0, 0.95, 0.6, 0.9), 3.0)

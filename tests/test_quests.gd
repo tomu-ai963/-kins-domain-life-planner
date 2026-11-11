@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_sequential_stages()
 	_test_family_cedar_rules()
 	_test_save_and_old_format()
+	_test_guide_and_milestones()
 	_remove_save()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -101,20 +102,21 @@ func _test_land_toggles() -> void:
 	_check(l.toggle_pond(Vector2(47.5, 0)) == "outside", "境界にかかる池は掘れない")
 
 func _test_sequential_stages() -> void:
-	print("順番に進む")
+	print("どれからでも達成(2026-11-11 とむ決定)")
 	var w := _world()
 	var q := w.quests
-	_check(q.current_id() == "hedge" and q.advance().is_empty(), "はじめは生垣。条件を満たすまで進まない")
+	_check(q.current_id() == "hedge" and q.advance().is_empty(), "はじめは何も達成していない(いちばん前は生垣)")
 
-	# 菜園を先に作っておく(段階 2 に来たときにすぐ達成するはず)
+	# 生垣より先に菜園を作る
 	for x in [0.0, 3.0, 6.0, 9.0]:
 		w.land.toggle_plot(Vector2(x + 0.25, 10))
-	_check(q.advance().is_empty() and q.stage == 0, "生垣が先。菜園だけでは進まない")
+	_check(q.advance() == ["garden"] and q.is_done("garden") and q.done.size() == 1, "生垣の前でも、菜園を作れば達成")
+	_check(q.current_id() == "hedge" and q.remaining() == ["hedge", "pond", "family_cedar"], "残りは生垣・池・家族の杉")
 
 	_plant_hedge(w)
 	var done: Array = q.advance()
-	_check(done == ["hedge", "garden"], "生垣を達成すると、先に作った菜園もすぐ達成")
-	_check(q.current_id() == "pond", "次は池")
+	_check(done == ["hedge"], "生垣を達成")
+	_check(q.current_id() == "pond", "残りのいちばん前は池")
 
 	w.pond_action(Vector2(-15, -15))
 	_check(q.advance().is_empty(), "場所を決めただけでは達成しない")
@@ -151,20 +153,20 @@ func _test_save_and_old_format() -> void:
 	var w := _world()
 	w.land.toggle_plot(Vector2(0.25, 0.25))
 	w.land.toggle_pond(Vector2(-12.5, 0))
-	w.quests.stage = 2
+	w.quests.done = ["garden", "hedge"]
 	w.save_game()
 	var w2 := _world(false)
 	w2.load_game()
 	_check(w2.land.plots == [Vector2(1.5, 1.5)], "菜園の区画が保存・復元される")
 	_check(w2.land.pond == Vector2(-12.5, 0), "池が保存・復元される")
-	_check(w2.quests.stage == 2, "クエストの段階が保存・復元される")
+	_check(w2.quests.done == ["garden", "hedge"], "達成したクエストが保存・復元される")
 
 	# 2-2 時点のセーブ(菜園・池・クエストの記録なし)
 	_write_save({"seeds": {"birch": 1, "apple": 0, "cedar": 0}, "last_day": "", "today_event": "", "trees": []})
 	var w3 := _world(false)
 	w3.land.plots.append(Vector2(1, 1))  # 読み込みで消えることを見る
 	w3.load_game()
-	_check(w3.land.plots.is_empty() and w3.land.pond == null and w3.quests.stage == 0, "旧セーブは菜園・池なし・段階0から")
+	_check(w3.land.plots.is_empty() and w3.land.pond == null and w3.quests.done.is_empty(), "旧セーブは菜園・池なし・クエストはまだ")
 
 	# Godot 3 版(2-3)のセーブ: 菜園・池の座標は px
 	_write_save({"seeds": {"birch": 1, "apple": 0, "cedar": 0}, "last_day": "", "today_event": "", "trees": [],
@@ -173,4 +175,43 @@ func _test_save_and_old_format() -> void:
 	w4.load_game()
 	_check(w4.land.plots == [Vector2(1.5, 1.5), Vector2(-46.5, 7.5)], "px のセーブの菜園は m に直す")
 	_check(w4.land.pond == Vector2(-12.5, 0), "px のセーブの池は m に直す")
-	_check(w4.quests.stage == 3, "px のセーブでもクエストの段階はそのまま")
+	_check(w4.quests.done == ["hedge", "garden", "pond"], "順番に進めていたころのセーブ(段階 3)は、前の 3 つを達成済みにする")
+
+func _test_guide_and_milestones() -> void:
+	print("生き物の図鑑と木の節目(2026-11-11)")
+	var w := _world()
+	var q := w.quests
+	_check(q.guide_ids().size() == 16 and q.guide_seen().is_empty(), "図鑑は 16 種類(土地 11・池 5)。はじめは 0")
+	w.wildlife.seen = ["sparrow", "woodpecker"]
+	w.pond.seen = ["strider"]
+	_check(q.guide_seen() == ["sparrow", "woodpecker", "strider"] and q.guide_missing().size() == 13, "土地と池で見かけた生き物を数える")
+	_check(not q.take_guide_complete(), "そろうまでは知らせない")
+	w.wildlife.seen = w.wildlife.SPECIES.keys()
+	w.pond.seen = w.pond.CREATURES.keys()
+	_check(q.take_guide_complete() and not q.take_guide_complete(), "そろったら 1 回だけ知らせる")
+
+	_check(q.milestone_total() == 24, "木の節目は 6 樹種 × 樹齢 10・25・50・100 年 = 24")
+	w.forest.trees.append({"pos": Vector2(10, 10), "species": "birch", "form": "sapling", "planted_at": w.forest._now(), "start_age": 12.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	w.forest.trees.append({"pos": Vector2(12, 10), "species": "cedar", "form": "sapling", "planted_at": w.forest._now(), "start_age": 4.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	var reached: Array = q.check_milestones()
+	_check(reached == [{"species": "birch", "age": 10}] and q.milestones == ["birch:10"], "白樺(樹齢 12 年)が 10 年の節目を迎える")
+	_check(q.check_milestones().is_empty(), "同じ節目は 2 度知らせない")
+	var next: Dictionary = q.next_milestone()
+	_check(next.species == "cedar" and next.age == 10 and next.days == 6, "次の節目は シベリア杉 10 年まで あと 6 日")
+	w.forest.trees[0].start_age = 60.0
+	_check(q.check_milestones().size() == 2 and q.milestones == ["birch:10", "birch:25", "birch:50"], "一度に 2 つ迎えることもある")
+
+	# 保存
+	q.done = ["garden"]
+	q.guide_done = true
+	w.save_game()
+	var w2 := _world(false)
+	w2.load_game()
+	_check(w2.quests.milestones == ["birch:10", "birch:25", "birch:50"] and w2.quests.guide_done and w2.quests.done == ["garden"], "節目と図鑑の知らせが保存される")
+	# 節目の記録がない古いセーブは、もう迎えた節目を黙って記録する
+	_write_save({"unit": "m", "last_day": "", "today_event": "", "quests": {"stage": 1},
+		"trees": [{"x": 10, "y": 10, "species": "birch", "form": "sapling", "planted_at": int(Time.get_unix_time_from_system()), "start_age": 30.0}]})
+	var w3 := _world(false)
+	w3.load_game()
+	_check(w3.quests.milestones == ["birch:10", "birch:25"] and w3.quests.check_milestones().is_empty(), "古いセーブを開いても、昔の節目をまとめて知らせない")
+	_check(w3.quests.done == ["hedge"], "段階 1 のセーブは生垣を達成済み")

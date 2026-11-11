@@ -348,7 +348,7 @@ func _test_save() -> void:
 	var p4 := w4.pond
 	_check(p4.is_dug() and p4.water == 100, "前のセーブの池は掘り終えた満杯の池")
 	_check(p4.wet_days() == 0 and p4.present().is_empty(), "生き物はこれから来る")
-	_check(w4.quests.progress("pond") == [1, 1] and w4.quests.stage == 3, "クエストの達成はそのまま")
+	_check(w4.quests.progress("pond") == [1, 1] and w4.quests.done.size() == 3, "クエストの達成はそのまま")
 
 	# 湧き水より前のセーブ: 掘り終えて空の池には、開いたときに 1 回だけ湧き水が入る
 	_remove_save()

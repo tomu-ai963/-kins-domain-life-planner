@@ -337,7 +337,8 @@ func _inventory_lines() -> PackedStringArray:
 		"苗: " + _main.seedlings_line(),
 		"収穫物: " + _main.produce_line(),
 		"保存食: " + _main.food_line(),
-		"見かけた生き物: " + _main.creatures_line(),
+		"生き物の図鑑: " + _main.creatures_line(),
+		"木の節目: " + _main.milestones_line(),
 		"近所の人: " + _main.neighbors_line(),
 		"植えた木: %d本   いる場所: X %.0fm  Y %.0fm" % [_trees.trees.size(), pos.x, pos.y],
 	])

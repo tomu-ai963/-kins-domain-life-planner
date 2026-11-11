@@ -45,27 +45,29 @@ func _rebuild() -> void:
 		for i in range(4):
 			add_child(Look.strip(c[i], c[(i + 1) % 4], 0.6, 0.04, gold))
 		return
-	match quests.current_id():
-		"hedge":
-			# 40 区画の印: 埋まった区画は緑の丸、まだの区画は白い輪と杭(引いても見えるように)
-			var filled: Array = quests.hedge_filled()
-			for i in range(quests.HEDGE_SEGMENTS):
-				var p: Vector2 = quests.segment_center(i)
-				if filled[i]:
-					var disc := CylinderMesh.new()
-					disc.top_radius = MARK_R
-					disc.bottom_radius = MARK_R
-					disc.height = 0.04
-					disc.radial_segments = 24
-					add_child(Look.mesh_node(disc, _done_mat, Look.at(p, 0.03)))
-				else:
-					add_child(Look.ring(p, MARK_R, 0.2, _todo_mat))
-					var stake := CylinderMesh.new()
-					stake.top_radius = 0.06
-					stake.bottom_radius = 0.08
-					stake.height = 1.2
-					stake.radial_segments = 6
-					add_child(Look.mesh_node(stake, _stake_mat, Look.at(p, 0.6)))
-		"family_cedar":
-			# 中心 5m の目印
-			add_child(Look.ring(Vector2.ZERO, quests.FAMILY_CEDAR_RADIUS, 0.15, _guide_mat))
+	# まだのクエストの印をどれも出す(どれからでも達成できる)
+	for id in quests.remaining():
+		match id:
+			"hedge":
+				# 40 区画の印: 埋まった区画は緑の丸、まだの区画は白い輪と杭(引いても見えるように)
+				var filled: Array = quests.hedge_filled()
+				for i in range(quests.HEDGE_SEGMENTS):
+					var p: Vector2 = quests.segment_center(i)
+					if filled[i]:
+						var disc := CylinderMesh.new()
+						disc.top_radius = MARK_R
+						disc.bottom_radius = MARK_R
+						disc.height = 0.04
+						disc.radial_segments = 24
+						add_child(Look.mesh_node(disc, _done_mat, Look.at(p, 0.03)))
+					else:
+						add_child(Look.ring(p, MARK_R, 0.2, _todo_mat))
+						var stake := CylinderMesh.new()
+						stake.top_radius = 0.06
+						stake.bottom_radius = 0.08
+						stake.height = 1.2
+						stake.radial_segments = 6
+						add_child(Look.mesh_node(stake, _stake_mat, Look.at(p, 0.6)))
+			"family_cedar":
+				# 中心 5m の目印
+				add_child(Look.ring(Vector2.ZERO, quests.FAMILY_CEDAR_RADIUS, 0.15, _guide_mat))

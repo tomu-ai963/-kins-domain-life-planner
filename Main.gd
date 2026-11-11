@@ -674,12 +674,12 @@ func check_wildlife() -> void:
 
 # HUD に出す、見かけた生き物(土地と池)
 func creatures_line() -> String:
+	var q := world.quests
 	var names := PackedStringArray()
-	for id in world.wildlife.seen:
-		names.append(world.wildlife.SPECIES[id].name)
-	for id in world.pond.seen:
-		names.append(world.pond.CREATURES[id].name)
-	return _rows(names, 6) if not names.is_empty() else "まだ見ていない"
+	for id in q.guide_seen():
+		names.append(_creature_name(id))
+	var head := "%d/%d" % [names.size(), q.guide_ids().size()]
+	return "%s  %s" % [head, _rows(names, 6)] if not names.is_empty() else "%s  まだ見ていない" % head
 
 # 足元に落ちている種を拾う(歩いて近づくだけ)
 func _collect_pickups() -> void:
@@ -738,10 +738,29 @@ const DAILY_MESSAGES := {
 
 # 段階クエスト(Quests.QUESTS の id)ごとの名前と進み具合の単位
 const QUEST_TEXTS := {
-	"hedge": {"name": "境界を生垣で囲む", "unit": "区画", "hint": "境界から3m以内に、10mごとに1本"},
-	"garden": {"name": "菜園を作る", "unit": "区画", "hint": "F で3m四方の区画を置く・1日2区画まで"},
-	"pond": {"name": "池を掘る", "unit": "", "hint": "P で場所を決めて、1日1回 5日かけて掘る"},
-	"family_cedar": {"name": "中心に家族の杉を植える", "unit": "", "hint": "中心から5m以内にシベリア杉"},
+	"hedge": {"name": "境界を生垣で囲む", "short": "生垣", "unit": "区画", "hint": "境界から3m以内に、10mごとに1本"},
+	"garden": {"name": "菜園を作る", "short": "菜園", "unit": "区画", "hint": "F で3m四方の区画を置く・1日2区画まで"},
+	"pond": {"name": "池を掘る", "short": "池", "unit": "", "hint": "P で場所を決めて、1日1回 5日かけて掘る"},
+	"family_cedar": {"name": "中心に家族の杉を植える", "short": "家族の杉", "unit": "", "hint": "中心から5m以内にシベリア杉"},
+}
+# 生き物の図鑑で、まだ見ていない生き物の会い方(愛の空間の完成後、HUD に 1 つずつ出す)
+const GUIDE_HINTS := {
+	"sparrow": "木が3本あれば昼に来る",
+	"squirrel": "育った木が3本あれば昼に来る",
+	"butterfly": "春〜秋の晴れた昼、畑に野菜があれば来る",
+	"bee": "春〜秋の晴れた昼、畑に野菜があれば来る",
+	"hare": "区画が4つあれば夕方から朝に来る",
+	"hedgehog": "春〜秋の夜、区画か木が多ければ来る",
+	"migrant": "「渡り鳥」の発見の日に来る",
+	"tit": "秋と冬、餌台に白樺の種を置くと来る",
+	"bullfinch": "冬、餌台に白樺の種を置くと来る",
+	"woodpecker": "冬の昼、育った木が3本あれば来る",
+	"starling": "春と夏、ムクドリの巣箱を掛けると来る",
+	"strider": "池の水が半分を超えて2日(春〜秋)",
+	"reed": "池の水が半分を超えて5日",
+	"frog": "池の水が半分を超えて7日(春と夏)",
+	"dragonfly": "池の水が半分を超えて10日(夏と秋)",
+	"duck": "池の水が半分を超えて14日(春〜秋)",
 }
 
 # 菜園・池の結果コード(GameWorld.toggle_plot / pond_action)ごとの文言
@@ -1285,7 +1304,7 @@ func _pond_action() -> void:
 		_act("dig", world.land.pond)
 	if result == "placed" or result == "finished":
 		world.save_game()
-		_check_quests()
+		_check_quests(POND_MESSAGES[result])
 
 # HUD に出す、池のそばでの案内。そばにいなければ ""
 func pond_beside_line() -> String:
@@ -1659,32 +1678,88 @@ func _after_land_change(result: String) -> void:
 		_check_quests()
 
 # クエストを判定し、達成があれば知らせて保存する
-func _check_quests() -> void:
-	var done: Array = world.quests.advance()
-	if done.is_empty():
+# クエスト・木の節目・図鑑に新しいことがあれば知らせる。prefix は、その前に出ていた知らせ(上書きして消さないように前に並べる)
+func _check_quests(prefix := "") -> void:
+	var q := world.quests
+	var done: Array = q.advance()
+	var reached: Array = q.check_milestones()
+	var guide_full: bool = q.take_guide_complete()
+	if done.is_empty() and reached.is_empty() and not guide_full:
 		return
 	world.save_game()
+	var lines := PackedStringArray()
+	if prefix == "" and $HUD.is_message_visible():
+		prefix = $HUD._message  # 今日の発見など、出ている知らせは消さずに前に残す
+	if prefix != "":
+		lines.append(prefix)
 	if done.has("complete"):
-		$HUD.show_message("愛の空間が完成した", 12.0)
-		return
-	var names := []
-	for id in done:
-		names.append(QUEST_TEXTS[id].name)
-	var next: String = world.quests.current_id()
-	$HUD.show_message("達成: %s → 次は「%s」" % ["・".join(PackedStringArray(names)), QUEST_TEXTS[next].name], 8.0)
+		lines.append("愛の空間が完成した。これからは、生き物の図鑑をそろえ、木の節目を迎えていこう")
+	elif not done.is_empty():
+		var names := PackedStringArray()
+		for id in done:
+			names.append(QUEST_TEXTS[id].name)
+		var left := PackedStringArray()
+		for id in q.remaining():
+			left.append(QUEST_TEXTS[id].short)
+		lines.append("達成: %s(%d/%d。残り: %s)" % ["・".join(names), q.done.size(), q.QUESTS.size(), "・".join(left)])
+	for m in reached:
+		lines.append(milestone_text(m))
+	if guide_full:
+		lines.append("生き物の図鑑がそろった(%d種類)" % q.guide_ids().size())
+	$HUD.show_message("
+".join(lines), 12.0 if done.has("complete") else 8.0)
+
+# 「家族の杉が樹齢10年になった」のような、木の節目の文言
+func milestone_text(m: Dictionary) -> String:
+	return "木の節目: いちばん年上の%sが樹齢%d年になった" % [world.forest.SPECIES[m.species].name, m.age]
 
 # HUD に出すクエストの 1 行
 func quest_line() -> String:
 	var q := world.quests
 	if q.is_complete():
-		return "クエスト: 愛の空間が完成した"
+		return "愛の空間: 図鑑 %d/%d・木の節目 %d/%d%s" % [q.guide_seen().size(), q.guide_ids().size(), q.milestones.size(), q.milestone_total(), _next_goal_text()]
+	# まだのうち、いちばん前のものを詳しく。ほかは名前だけ
 	var id: String = q.current_id()
 	var t: Dictionary = QUEST_TEXTS[id]
 	var p: Array = q.progress(id)
 	var count := ""
 	if t.unit != "":
 		count = " %d/%d%s" % [p[0], p[1], t.unit]
-	return "クエスト %d/%d: %s%s(%s)" % [q.stage + 1, q.QUESTS.size(), t.name, count, t.hint]
+	var others := PackedStringArray()
+	for other in q.remaining():
+		if other != id:
+			others.append(QUEST_TEXTS[other].short)
+	var rest := "・ほかに %s" % "・".join(others) if not others.is_empty() else ""
+	return "クエスト %d/%d 済: %s%s(%s)%s" % [q.done.size(), q.QUESTS.size(), t.name, count, t.hint, rest]
+
+# 完成のあとの次の目標: まだ見ていない生き物 1 つと、次の木の節目
+func _next_goal_text() -> String:
+	var q := world.quests
+	var missing: Array = q.guide_missing()
+	if not missing.is_empty():
+		return "(次: %s・%s)" % [_creature_name(missing[0]), GUIDE_HINTS[missing[0]]]
+	var m: Dictionary = q.next_milestone()
+	if not m.is_empty():
+		return "(次の節目: %s 樹齢%d年まで あと%d日)" % [world.forest.SPECIES[m.species].name, m.age, m.days]
+	return ""
+
+func _creature_name(id: String) -> String:
+	if world.wildlife.SPECIES.has(id):
+		return world.wildlife.SPECIES[id].name
+	return world.pond.CREATURES[id].name
+
+# 持ち物に出す、木の節目(樹種ごとに迎えた樹齢)。例: 「白樺 10・25年 / シベリア杉 10年」
+func milestones_line() -> String:
+	var q := world.quests
+	var parts := PackedStringArray()
+	for sp in world.forest.SPECIES:
+		var ages := PackedStringArray()
+		for age in q.MILESTONE_AGES:
+			if "%s:%d" % [sp, age] in q.milestones:
+				ages.append(str(age))
+		if not ages.is_empty():
+			parts.append("%s %s年" % [world.forest.SPECIES[sp].name, "・".join(ages)])
+	return "%d/%d  %s" % [q.milestones.size(), q.milestone_total(), " / ".join(parts)] if not parts.is_empty() else "まだない"
 
 func _harvest() -> void:
 	var g := world.garden
