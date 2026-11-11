@@ -69,6 +69,10 @@ func grown_tomorrow() -> int:
 			n += 1
 	return n
 
+# 置ける鉢の数。小屋を増築すると、西の部屋の窓辺にも置ける(2026-11-11)
+func max_pots() -> int:
+	return POTS * 2 if cabin.has_extension() else POTS
+
 # まだ今日世話をしていない鉢があるか
 func needs_care() -> bool:
 	for p in pots:
@@ -102,7 +106,7 @@ func act(pos: Vector2, kind: String) -> String:
 		return "tended"
 	if not (kind in SEEDLING_CROPS):
 		return "not_seedling"
-	if pots.size() >= POTS:
+	if pots.size() >= max_pots():
 		return "full"
 	if int(garden.seeds.get(kind, 0)) <= 0:
 		return "no_seed"

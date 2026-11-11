@@ -9,6 +9,8 @@ const WorkEffects = preload("res://view/3d/WorkEffects3D.gd")
 
 const SPEED := 5.0        # m/s(設計作業がしやすい速さ。2D と同じ)
 const TURN_SPEED := 12.0  # 向きを変える速さ
+const ROCK_SPEED := 1.8   # 揺り椅子で揺れる速さ(rad/s)。CabinView3D の椅子と同じ
+const ROCK_ANGLE := 0.08  # 揺れる角度(rad)
 const ICE_GRIP := 1.8     # 氷の上で、思った速さに近づく割合(1 秒あたり)。小さいほど滑る
 
 # カメラ: 斜め上から見下ろす。ホイールで距離を変える(寄ると足元、引くと土地全体)
@@ -41,6 +43,8 @@ const WORK_REACH := 1.0      # 作業で物が飛ぶ場所は、体からこの�
 @onready var _lantern_light: OmniLight3D = $LanternLight
 
 var speed_scale := 1.0    # 歩く速さの倍率(雪かき。Main が毎フレーム決める)
+var _rocking := false     # 揺り椅子で揺れている
+var _rock_t := 0.0
 var slippery := false     # 凍った池の上にいる(Main が毎フレーム決める)。止まるのも曲がるのもゆっくりになる
 var move_input := Vector2.ZERO  # タッチのスティックの傾き(長さ 0〜1。上 = 北 = -y)
 var _cam_dist := 28.0
@@ -94,6 +98,9 @@ func _physics_process(delta: float) -> void:
 		_body.rotation.y = lerp_angle(_body.rotation.y, target, minf(1.0, TURN_SPEED * delta))
 
 func _process(delta: float) -> void:
+	if _rocking:
+		_rock_t += delta
+		_body.rotation.x = sin(_rock_t * ROCK_SPEED) * ROCK_ANGLE
 	# 市場を開いている間(物理が止まる)や、壁に当たって進めないときは足を止める
 	_figure.moving = is_physics_processing() and get_real_velocity().length() > 0.1
 	if not _posing:
@@ -181,6 +188,13 @@ func sit_down(seat: Vector3, yaw: float) -> void:
 	_figure.sitting = true
 	_apply_lantern()
 	_move_pose(seat - Vector3(0.0, _figure.HIP_Y, 0.0) - global_position, Basis(Vector3.UP, yaw), SIT_SECONDS)
+
+# 揺り椅子で揺れる / 止まる
+func set_rocking(on: bool) -> void:
+	_rocking = on
+	_rock_t = 0.0
+	if not on:
+		_body.rotation.x = 0.0
 
 func stand_up() -> void:
 	_figure.sitting = false

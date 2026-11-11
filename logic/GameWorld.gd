@@ -103,6 +103,7 @@ func _init() -> void:
 	feeders.bees = bees
 	bees.taken_nearby = feeders.covers
 	wildlife.feeders = feeders
+	market.feeders = feeders
 	visitors.feeders = feeders
 	guide.feeders = feeders
 	nest_boxes.forest = forest

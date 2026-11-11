@@ -50,7 +50,14 @@ var garden: Garden  # GameWorld が設定する(野菜の持ち物は Garden に
 var cabin: Cabin    # GameWorld が設定する(丸太の持ち物は Cabin にある)
 var bees: Bees      # GameWorld が設定する(はちみつの持ち物は Bees にある)
 
-var pot := {}       # 鍋の中身 {recipe, start_day: int}。空なら {}
+# 鍋の中身 {recipe, start_day: int}。空なら {}。[0] = 母屋のストーブ、[1] = 増築した部屋のかまど(2026-11-11)
+var pots := [{}, {}]
+var active := 0     # いま使っている鍋(Main が、ストーブとかまどのどちらの前かで決める)
+var pot: Dictionary:  # いま使っている鍋の中身
+	get:
+		return pots[active]
+	set(value):
+		pots[active] = value
 var stock := {}     # できた保存食の数 {recipe: 数}
 var firewood := 0   # 割ってある薪(回分)
 var cooked := false # 一度でも仕込んだか(ヒント用。薪は剪定の枝でも増えるので、薪では分からない)
@@ -85,6 +92,25 @@ func input_count(id: String) -> int:
 
 func is_empty() -> bool:
 	return pot.is_empty()
+
+# どの鍋も空か(手詰まりの判定用)
+func all_empty() -> bool:
+	return pots.all(func(p): return p.is_empty())
+
+# 鍋 i を使う間だけ active を切り替えて f を呼ぶ(日記や画面で、両方の鍋を順に見る用)
+func with_pot(i: int, f: Callable):
+	var keep := active
+	active = i
+	var result = f.call()
+	active = keep
+	return result
+
+# 仕込んでいる鍋があるか(音用)
+func any_cooking() -> bool:
+	for i in range(pots.size()):
+		if with_pot(i, func(): return not is_empty() and days_left() > 0):
+			return true
+	return false
 
 # 鍋の中身ができるまで、あと何日か(空なら 0)
 func days_left() -> int:
@@ -205,9 +231,14 @@ func collect() -> String:
 	_commit()
 	return "collected"
 
+static func _read_pot(p) -> Dictionary:
+	if typeof(p) == TYPE_DICTIONARY and RECIPES.has(str(p.get("recipe", ""))):
+		return {"recipe": str(p.recipe), "start_day": int(p.get("start_day", 0))}
+	return {}
+
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
-	return {"pot": pot, "stock": stock, "firewood": firewood, "log_left": log_left, "cooked": cooked, "ate_day": ate_day, "ate_foods": ate_foods}
+	return {"pot": pots[0], "pot2": pots[1], "stock": stock, "firewood": firewood, "log_left": log_left, "cooked": cooked, "ate_day": ate_day, "ate_foods": ate_foods}
 
 func from_save(d: Dictionary) -> void:
 	firewood = int(d.get("firewood", 0))
@@ -224,10 +255,8 @@ func from_save(d: Dictionary) -> void:
 	if typeof(saved) == TYPE_DICTIONARY:
 		for k in RECIPES:
 			stock[k] = int(saved.get(k, 0))
-	pot = {}
-	var p = d.get("pot", {})
-	if typeof(p) == TYPE_DICTIONARY and RECIPES.has(str(p.get("recipe", ""))):
-		pot = {"recipe": str(p.recipe), "start_day": int(p.get("start_day", 0))}
+	active = 0
+	pots = [_read_pot(d.get("pot", {})), _read_pot(d.get("pot2", {}))]  # かまどの記録がないセーブは、かまどは空
 	# 記録がないセーブは、薪があれば(当時は仕込むときにしか割らなかった)仕込んだことがある
-	cooked = bool(d.get("cooked", firewood > 0 or not pot.is_empty()))
+	cooked = bool(d.get("cooked", firewood > 0 or not pots[0].is_empty()))
 	changed.emit()

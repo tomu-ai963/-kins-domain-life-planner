@@ -192,5 +192,5 @@ func update_ambient() -> void:
 	_loops.leaves.goal = 0.24 * minf(1.0, leafy_trees_near(pos) / LEAF_FULL_TREES) * outside * (0.6 if raining else 1.0)
 	_loops.brook.goal = BROOK_LEVEL * outside if brook_on else 0.0
 	_loops.rain.goal = (0.3 if raining else 0.0) * outside
-	var cooking: bool = world.kitchen.days_left() > 0
+	var cooking: bool = world.kitchen.any_cooking()
 	_loops.fire.goal = 0.25 if inside and cooking else 0.0

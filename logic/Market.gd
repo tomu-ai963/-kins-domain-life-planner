@@ -34,6 +34,13 @@ const GOODS := [
 	{"id": "garlic_seed", "species": "garlic", "form": "crop_seed", "amount": 1, "price": 250},
 	{"id": "tomato_seed", "species": "tomato", "form": "crop_seed", "amount": 1, "price": 80},
 	{"id": "logs", "species": "log", "form": "material", "amount": 5, "price": 1500},
+	# 小屋(2026-11-11 とむ決定。値段は仮の数字)。増築は窓ガラス・かまど・釘の代金で、丸太(14 本)は別に要る。家具は増築した部屋に置く
+	{"id": "cabin_extension", "species": "extension", "form": "extension", "amount": 1, "price": 8000},
+	{"id": "furniture_shelf", "species": "shelf", "form": "furniture", "amount": 1, "price": 2500},
+	{"id": "furniture_rocking_chair", "species": "rocking_chair", "form": "furniture", "amount": 1, "price": 4000},
+	{"id": "furniture_rug", "species": "rug", "form": "furniture", "amount": 1, "price": 1500},
+	{"id": "furniture_lamp", "species": "lamp", "form": "furniture", "amount": 1, "price": 1200},
+	{"id": "furniture_clock", "species": "clock", "form": "furniture", "amount": 1, "price": 2000},
 ]
 # 買い取り値(リンゴは 1 個あたり、野菜は 1kg あたりの ₽)。店頭の値段の半分くらい
 # seedling_ は小屋で育てた苗(1 鉢 = 1 区画ぶん)の買い取り値。
@@ -62,6 +69,7 @@ var cabin: Cabin    # GameWorld が設定する(丸太の持ち物は Cabin に�
 var seedlings: Seedlings  # GameWorld が設定する(苗の持ち物は Seedlings にある)
 var kitchen: Kitchen  # GameWorld が設定する(保存食の持ち物は Kitchen にある)
 var bees: Bees        # GameWorld が設定する(はちみつの持ち物は Bees にある)
+var feeders = null    # GameWorld が設定する(増築する場所に餌台がないか見る)
 
 func is_near(pos: Vector2) -> bool:
 	return pos.distance_to(POS) <= REACH
@@ -72,14 +80,27 @@ static func good(id: String) -> Dictionary:
 			return g
 	return {}
 
-# 1 つ買う。結果: bought / no_money / unknown
+# 1 つ買う。結果: bought / no_money / unknown。
+# 増築と家具はほかに: no_cabin(小屋が未完成) / exists・owned(もう頼んだ・持っている) / no_room(増築した部屋がない) /
+# edge・center・pond・plot・tree・hive・feeder(増築する場所がふさがっている)
 func buy(id: String) -> String:
 	var g := good(id)
 	if g.is_empty():
 		return "unknown"
+	var problem := _cabin_problem(g)
+	if problem != "":
+		return problem
 	if money < int(g.price):
 		return "no_money"
 	money -= int(g.price)
+	if g.form == "extension":
+		cabin.start_extension()
+		changed.emit()
+		return "bought"
+	if g.form == "furniture":
+		cabin.add_furniture(g.species)
+		changed.emit()
+		return "bought"
 	var stock: Dictionary = forest.seeds
 	if g.form == "sapling":
 		stock = forest.saplings
@@ -91,6 +112,32 @@ func buy(id: String) -> String:
 	changed.emit()
 	forest.changed.emit()
 	return "bought"
+
+# 増築・家具を今買えない理由("" なら買える)
+func _cabin_problem(g: Dictionary) -> String:
+	if g.form == "extension":
+		var p: String = cabin.ext_problem()
+		if p != "":
+			return p
+		var r: Rect2 = cabin.ext_rect()
+		if bees != null and bees.hives.any(func(h): return r.grow(bees.CLEARANCE).has_point(h.pos)):
+			return "hive"
+		if feeders != null and feeders.feeders.any(func(f): return r.grow(bees.CLEARANCE).has_point(f.pos)):
+			return "feeder"
+	elif g.form == "furniture":
+		if not cabin.has_extension():
+			return "no_room"
+		if cabin.has_furniture(g.species):
+			return "owned"
+	return ""
+
+# 増築・家具をもう買ったか(画面で「済」を出す用)
+func is_owned(g: Dictionary) -> bool:
+	if g.form == "extension":
+		return cabin.ext_started()
+	if g.form == "furniture":
+		return cabin.has_furniture(g.species)
+	return false
 
 # 注文できる野菜(春にまけて、苗からでなく種でまけるもの)
 static func orderable() -> Array:

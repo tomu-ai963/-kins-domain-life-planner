@@ -133,7 +133,7 @@ func is_stuck() -> bool:
 			return false
 	if not seedlings.pots.is_empty():
 		return false
-	if kitchen != null and not kitchen.is_empty():
+	if kitchen != null and not kitchen.all_empty():
 		return false
 	return forest.fruiting_in(forest.season) == 0
 

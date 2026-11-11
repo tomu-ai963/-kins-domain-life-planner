@@ -32,6 +32,28 @@ const CHOP_OFFSET := Vector2(3.4, 0.7)
 const CHOP_REACH := 1.4   # 薪割り台の中心からこの距離までなら割れる
 const YARD_RECT := Rect2(2.0, -1.5, 2.2, 3.0)  # 小屋の中心からの範囲。区画や木を置かない
 
+# ── 増築(2026-11-11 とむ決定) ──
+# 完成した小屋の西に、もう 1 部屋(3m × 3m)を建て足す。市場で頼む(窓ガラス・かまど・釘の代金)と西に杭が立ち、
+# 西の外から H で 1 日 1 回、丸太を使って建てる。できると小屋は 7m × 3m になり、窓辺の鉢が 12 に、鍋が 2 つ(かまど)になる。
+# 家具(市場で買う)は新しい部屋(居間)に置く
+const EXT_WIDTH := 3.0    # 増築する部屋の東西の幅(m)
+const EXT_STAGES := [
+	{"id": "foundation", "days": 1, "logs_per_day": 3},
+	{"id": "walls", "days": 2, "logs_per_day": 4},
+	{"id": "roof", "days": 1, "logs_per_day": 3},
+]
+const PASS_Z := -0.05     # 母屋と新しい部屋のあいだの出入り口の中心(南北。ベッドとテーブルのあいだ)
+const PASS_W := 0.8       # 出入り口の幅(m)
+const KAMADO_OFFSET := Vector2(-4.45, -1.0)  # 新しい部屋の北西のかまど(2 つ目の鍋)
+const KAMADO_SIZE := Vector2(0.7, 0.7)
+const KAMADO_REACH := 1.0
+const CHAIR_OFFSET := Vector2(-3.0, 0.75)    # 揺り椅子
+const CHAIR_REACH := 0.6
+const SHELF_OFFSET := Vector2(-3.1, -1.22)   # 保存食の棚(北の壁際)
+const SHELF_SIZE := Vector2(1.3, 0.3)
+# 買える家具(市場の GOODS の species と同じ id)。新しい部屋ができてから置ける
+const FURNITURE := ["shelf", "rocking_chair", "rug", "lamp", "clock"]
+
 # days: 作業する日数 / logs_per_day: 1 回の作業で使う丸太(1 本 = 長さ 3m・径 20cm ほど = 約 0.1m³)
 const STAGES := [
 	{"id": "foundation", "days": 2, "logs_per_day": 3},
@@ -48,6 +70,10 @@ var days_done := 0       # いまの段階で作業した日数
 var last_worked := ""    # 最後に作業した日(YYYY-MM-DD)
 var materials := {"log": 0}  # 丸太の本数(市場の GOODS から買い足せるよう Dictionary にする)
 var own_logs := 0            # そのうち、自分の木を伐った丸太の本数(巣箱に使う)。小屋や薪には市場の丸太を先に使う
+var ext_stage := -1          # 増築の段階。-1 = 頼んでいない / 0〜2 = 建てている / 3 = できた
+var ext_days_done := 0       # 増築のいまの段階で作業した日数
+var ext_last_worked := ""    # 増築の作業をした最後の日
+var furniture := []          # 置いた家具の id(FURNITURE のうち)
 
 static func total_logs() -> int:
 	var n := 0
@@ -158,9 +184,11 @@ func work(pos: Vector2) -> String:
 func is_near(pos: Vector2) -> bool:
 	return site != null and rect().grow(REACH).has_point(pos)
 
-# 完成した小屋の中にいるか(南のドアから歩いて入る)
+# 完成した小屋の中にいるか(南のドアから歩いて入る)。西の部屋はできてから
 func is_inside(pos: Vector2) -> bool:
-	return is_complete() and covers(pos)
+	if not is_complete():
+		return false
+	return rect().has_point(pos) or (has_extension() and ext_rect().has_point(pos))
 
 # 中でストーブの前にいるか
 func is_at_stove(pos: Vector2) -> bool:
@@ -189,20 +217,138 @@ func in_yard(pos: Vector2) -> bool:
 func door_pos() -> Vector2:
 	return site + Vector2(0.0, DEPTH * 0.5)
 
-# 足元に立っているのが小屋の敷地か(木は植えられない)
+# 足元に立っているのが小屋の敷地か(木は植えられない)。増築を頼んだら西の部屋の場所も含む
 func covers(pos: Vector2) -> bool:
-	return site != null and rect().has_point(pos)
+	if site == null:
+		return false
+	return rect().has_point(pos) or (ext_started() and ext_rect().has_point(pos))
+
+# 小屋が占める長方形(増築を頼んだら西の部屋も)。ほかの物を置かない範囲を調べる用
+func footprints() -> Array:
+	if site == null:
+		return []
+	return [rect(), ext_rect()] if ext_started() else [rect()]
+
+# ── 増築 ──
+func ext_started() -> bool:
+	return ext_stage >= 0
+
+func has_extension() -> bool:
+	return ext_stage >= EXT_STAGES.size()
+
+func ext_building() -> bool:
+	return ext_started() and not has_extension()
+
+func ext_rect() -> Rect2:
+	return Rect2(site + Vector2(-WIDTH * 0.5 - EXT_WIDTH, -DEPTH * 0.5), Vector2(EXT_WIDTH, DEPTH))
+
+func ext_current_stage() -> Dictionary:
+	return EXT_STAGES[ext_stage] if ext_building() else {}
+
+static func ext_total_logs() -> int:
+	var n := 0
+	for s in EXT_STAGES:
+		n += int(s.days) * int(s.logs_per_day)
+	return n
+
+# 西の部屋を建てられない理由(建てられるなら "")。小屋が完成していないなら no_cabin、もう頼んでいれば exists。
+# 巣箱・餌台など Cabin が知らない物は Market が調べる
+func ext_problem() -> String:
+	if not is_complete():
+		return "no_cabin"
+	if ext_started():
+		return "exists"
+	var r := ext_rect()
+	var limit := land.HALF - EDGE_MARGIN
+	if r.position.x < -limit:
+		return "edge"
+	if _distance(r, Vector2.ZERO) < CENTER_CLEAR:
+		return "center"
+	if land.pond != null and _distance(r, land.pond) < land.POND_RADIUS:
+		return "pond"
+	for p in land.plots:
+		if r.intersects(_plot_rect(p)):
+			return "plot"
+	for t in forest.trees:
+		if _distance(r, t.pos) < TREE_CLEARANCE:
+			return "tree"
+	return ""
+
+# 増築を頼む(お金は Market が払う)。西の部屋の場所に杭が立つ
+func start_extension() -> void:
+	ext_stage = 0
+	ext_days_done = 0
+	ext_last_worked = ""
+	_commit()
+
+# 西の外で、増築の作業ができる場所か(西の部屋のまわり REACH 以内で、母屋の外)
+func is_at_ext_site(pos: Vector2) -> bool:
+	return ext_building() and ext_rect().grow(REACH).has_point(pos) and not rect().has_point(pos)
+
+# 増築の作業。結果: worked / stage_done / finished / none / inside / done_today / no_wood
+func work_extension(pos: Vector2) -> String:
+	if not ext_building():
+		return "none"
+	if ext_rect().grow(BODY_MARGIN).has_point(pos):
+		return "inside"
+	if ext_last_worked == forest.today():
+		return "done_today"
+	var s: Dictionary = EXT_STAGES[ext_stage]
+	if int(materials.log) < int(s.logs_per_day):
+		return "no_wood"
+	materials.log -= int(s.logs_per_day)
+	clamp_own_logs()
+	ext_last_worked = forest.today()
+	ext_days_done += 1
+	var result := "worked"
+	if ext_days_done >= int(s.days):
+		ext_stage += 1
+		ext_days_done = 0
+		result = "finished" if has_extension() else "stage_done"
+	_commit()
+	return result
+
+# 西の部屋の壁まで建っているか(当たり判定を付ける)
+func ext_has_walls() -> bool:
+	return ext_stage >= 2
+
+# 中で、かまどの前にいるか
+func is_at_kamado(pos: Vector2) -> bool:
+	return has_extension() and is_inside(pos) and pos.distance_to(site + KAMADO_OFFSET) <= KAMADO_REACH
+
+func has_furniture(id: String) -> bool:
+	return id in furniture
+
+# 家具を置く(お金は Market が払う)。結果: placed / no_room / owned / unknown
+func add_furniture(id: String) -> String:
+	if not (id in FURNITURE):
+		return "unknown"
+	if not has_extension():
+		return "no_room"
+	if has_furniture(id):
+		return "owned"
+	furniture.append(id)
+	_commit()
+	return "placed"
+
+# 中で、揺り椅子のそばにいるか
+func is_at_chair(pos: Vector2) -> bool:
+	return has_furniture("rocking_chair") and is_inside(pos) and pos.distance_to(site + CHAIR_OFFSET) <= CHAIR_REACH
 
 # 区画(中心 c)を置くと小屋にかかるか
 func blocks_plot(c: Vector2) -> bool:
 	if site == null:
 		return false
+	if ext_started() and ext_rect().intersects(_plot_rect(c)):
+		return true
 	return rect().intersects(_plot_rect(c)) or Rect2(site + YARD_RECT.position, YARD_RECT.size).intersects(_plot_rect(c))
 
 # 池(中心 c)を掘ると小屋(東の庭を含む)にかかるか
 func blocks_pond(c: Vector2) -> bool:
 	if site == null:
 		return false
+	if ext_started() and _distance(ext_rect(), c) < land.POND_RADIUS:
+		return true
 	return _distance(rect(), c) < land.POND_RADIUS or _distance(Rect2(site + YARD_RECT.position, YARD_RECT.size), c) < land.POND_RADIUS
 
 # 作業を始める前なら、場所を取り消せる(丸太を使っていないので損はない)。取り消したら true
@@ -227,7 +373,8 @@ func fell(pos: Vector2, max_dist: float) -> int:
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
-	var d := {"stage": stage, "days_done": days_done, "last_worked": last_worked, "logs": materials.log, "own_logs": own_logs}
+	var d := {"stage": stage, "days_done": days_done, "last_worked": last_worked, "logs": materials.log, "own_logs": own_logs,
+		"ext_stage": ext_stage, "ext_days_done": ext_days_done, "ext_last_worked": ext_last_worked, "furniture": furniture}
 	if site != null:
 		d["site"] = [site.x, site.y]
 	return d
@@ -242,4 +389,14 @@ func from_save(d: Dictionary) -> void:
 	last_worked = str(d.get("last_worked", ""))
 	materials = {"log": int(d.get("logs", 0))}
 	own_logs = int(d.get("own_logs", 0))  # 記録がないセーブの丸太は、どこから来たか分からないので自分の木に数えない
+	# 増築と家具の記録がないセーブ(2026-11-11 より前)は、増築なし・家具なし
+	ext_stage = clampi(int(d.get("ext_stage", -1)), -1, EXT_STAGES.size())
+	ext_days_done = int(d.get("ext_days_done", 0))
+	ext_last_worked = str(d.get("ext_last_worked", ""))
+	furniture = []
+	var fl = d.get("furniture", [])
+	if typeof(fl) == TYPE_ARRAY:
+		for id in fl:
+			if str(id) in FURNITURE and not (str(id) in furniture):
+				furniture.append(str(id))
 	changed.emit()

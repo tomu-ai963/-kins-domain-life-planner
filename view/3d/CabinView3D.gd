@@ -49,6 +49,15 @@ const CHOP_LOG_H := 0.38
 const FIRES_PER_PIECE := 2    # 薪の山の 1 本が表す薪(回分)
 const PILE_COLUMNS := 8       # 薪の山の 1 段の本数
 const PILE_GAP := 0.28        # 薪の山の並びの間隔(m)
+const EXT_ROOF_H := 1.0          # 増築した部屋の屋根の高さ(母屋より低い)
+const KAMADO_H := 0.8             # かまどの高さ
+const SHELF_H := 1.6              # 保存食の棚の高さ
+const SHELF_BOARDS := 3           # 棚板の数
+const SHELF_JARS := 8             # 棚板 1 枚に並べる瓶の数
+const CHAIR_YAW := PI * 0.5       # 揺り椅子に座る向き(西の窓のほう)
+const CHAIR_SEAT_H := 0.42
+const CLOCK_POS := Vector3(-3.5, 2.15, -1.38)  # 掛け時計(西の部屋の北の壁。小屋の中心から)
+const LAMP_POS := Vector2(-2.45, 1.2)          # 立てたランプ(西の部屋の南東の隅)
 const FOOD_COLORS := {
 	"jam": Color(0.70, 0.30, 0.20), "sauce": Color(0.78, 0.16, 0.12), "pickles": Color(0.42, 0.56, 0.26),
 	"garlic_pickle": Color(0.90, 0.86, 0.68), "pirozhki": Color(0.76, 0.54, 0.26),
@@ -98,6 +107,15 @@ var _rafter := Look.mat(Color(0.70, 0.54, 0.34))
 var _roof := Look.mat(Color(0.38, 0.28, 0.24))
 var _door := Look.mat(Color(0.30, 0.18, 0.10))
 var _window := Look.mat(Color(0.55, 0.78, 0.92))
+var _brick := Look.mat(Color(0.74, 0.44, 0.32))   # かまど(れんが)
+var _rug2 := Look.mat(Color(0.46, 0.30, 0.52))    # 買ったじゅうたん
+var _rug2_edge := Look.mat(Color(0.90, 0.78, 0.46))
+var _clock_face := Look.mat(Color(0.96, 0.93, 0.84))
+var _clock_hand := Look.mat(Color(0.12, 0.10, 0.10))
+var _clock_hands := []        # [時針の軸, 分針の軸](掛け時計を置いたときだけ)
+var _chair: Node3D            # 揺り椅子(置いたときだけ)
+var _rocking := false
+var _rock_t := 0.0
 
 func setup(c: Cabin, s: Seedlings = null) -> void:
 	cabin = c
@@ -125,6 +143,17 @@ func set_kitchen(k: Kitchen) -> void:
 # 腰掛けの座面の中心(世界の座標)
 func seat_spot() -> Vector3:
 	return Look.at(cabin.site + Cabin.STOOL_OFFSET) + Vector3(0, FLOOR_Y + STOOL_H, 0)
+
+# 揺り椅子の座面の中心(世界の座標)
+func chair_seat_spot() -> Vector3:
+	return Look.at(cabin.site + Cabin.CHAIR_OFFSET) + Vector3(0, FLOOR_Y + CHAIR_SEAT_H, 0)
+
+# 揺り椅子が揺れる / 止まる(座っている人と同じ速さ)
+func set_rocking(on: bool) -> void:
+	_rocking = on
+	_rock_t = 0.0
+	if _chair != null and not on:
+		_chair.rotation.x = 0.0
 
 # 横になるときの足の裏の位置(世界の座標)
 func lying_spot() -> Vector3:
@@ -159,6 +188,10 @@ func _animate_steam(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	_animate_steam(delta)
+	if _rocking and _chair != null:
+		_rock_t += delta
+		_chair.rotation.x = sin(_rock_t * 1.8) * 0.08  # Player3D.ROCK_SPEED・ROCK_ANGLE と同じ
+	_update_clock()
 	if _player == null or cabin == null or cabin.site == null:
 		return
 	var pos: Vector2 = _player.ground_pos()
@@ -198,6 +231,8 @@ func _apply_night() -> void:
 
 func _rebuild() -> void:
 	Look.clear_children(self)
+	_clock_hands.clear()
+	_chair = null
 	_lamp_light = null
 	_door_hinge = null
 	_sleep_cover = null
@@ -231,6 +266,8 @@ func _rebuild_pieces() -> void:
 		_interior(spot)
 		_pots(spot)
 		_yard(spot)
+		if cabin.ext_started():
+			_extension(spot)
 	elif cabin.stage == 2 and cabin.days_done >= 1:
 		_rafters(spot)
 
@@ -271,11 +308,15 @@ func _yard(parent: Node3D) -> void:
 func _pots(spot: Node3D) -> void:
 	if seedlings == null or seedlings.pots.is_empty():
 		return
-	var x: float = Cabin.WIDTH * 0.5 - 0.3
 	var y: float = FLOOR_Y + 0.8
-	_piece(spot, _sill, Vector3(x, y, 0.2), Vector3(0.38, 0.06, 1.5))
+	var east: float = Cabin.WIDTH * 0.5 - 0.3
+	var west: float = -Cabin.WIDTH * 0.5 - Cabin.EXT_WIDTH + 0.3  # 7 鉢目からは西の部屋の窓辺
+	_piece(spot, _sill, Vector3(east, y, 0.2), Vector3(0.38, 0.06, 1.5))
+	if seedlings.pots.size() > Seedlings.POTS:
+		_piece(spot, _sill, Vector3(west, y, 0.2), Vector3(0.38, 0.06, 1.5))
 	for i in range(seedlings.pots.size()):
-		var z: float = -0.35 + i * 0.22
+		var x: float = east if i < Seedlings.POTS else west
+		var z: float = -0.35 + (i % Seedlings.POTS) * 0.22
 		_piece(spot, _pot, Vector3(x, y + 0.1, z), Vector3(0.16, 0.16, 0.16))
 		var s: float = lerpf(0.06, 0.26, seedlings.growth_ratio(seedlings.pots[i]))
 		spot.add_child(Look.mesh_node(_ball, _sprout, Vector3(x, y + 0.18 + s * 0.5, z), Vector3(s, s, s)))
@@ -333,19 +374,29 @@ func _stove_pieces(room: Node3D) -> void:
 	var size: Vector2 = Cabin.STOVE_SIZE
 	_piece(room, _stove, Vector3(s.x, STOVE_H * 0.5, s.y), Vector3(size.x, STOVE_H, size.y))
 	_piece(room, _stove, Vector3(s.x, 1.5, s.y - size.y * 0.5 + 0.1), Vector3(0.14, 1.4, 0.14))
-	var has_pot: bool = kitchen != null and not kitchen.is_empty()
-	var ready: bool = has_pot and kitchen.is_ready()
-	var cooking: bool = has_pot and not ready
+	var st: Array = _pot_state(0)
+	var cooking: bool = st[0]
 	_fire.emission_enabled = cooking
 	_fire.emission = Color(1.0, 0.45, 0.12)
 	_fire.emission_energy_multiplier = FIRE_GLOW
 	_piece(room, _fire, Vector3(s.x, 0.25, s.y + size.y * 0.5 + 0.005), Vector3(0.34, 0.2, 0.02)).name = "StoveFire"
-	_stove_pot(room, Vector3(s.x, STOVE_H, s.y + 0.1), cooking, kitchen.pot.recipe if ready else "")
+	_stove_pot(room, Vector3(s.x, STOVE_H, s.y + 0.1), cooking, st[1])
 	if kitchen == null or kitchen.firewood <= 0:
 		return
 	var layers: int = mini(ceili(kitchen.firewood * WOOD_PILES_MAX / float(Kitchen.LOG_FIRES)), WOOD_PILES_MAX)
 	for i in range(layers):
 		_piece(room, _firewood, Vector3(s.x - 0.55, 0.05 + i * 0.09, s.y - 0.25), Vector3(0.28, 0.08, 0.18)).name = "Firewood"
+
+# 鍋 i の様子 [仕込んでいるか, できあがった料理の id(なければ "")]
+func _pot_state(i: int) -> Array:
+	if kitchen == null:
+		return [false, ""]
+	return kitchen.with_pot(i, func():
+		if kitchen.is_empty():
+			return [false, ""]
+		if kitchen.is_ready():
+			return [false, kitchen.pot.recipe]
+		return [true, ""])
 
 # 鍋: base は底の中心。cooking なら蓋と湯気、food(料理の id)があれば中身を見せる
 func _stove_pot(room: Node3D, base: Vector3, cooking: bool, food: String) -> void:
@@ -436,8 +487,11 @@ func _walls(spot: Node3D, h: float) -> void:
 	var d: float = Cabin.DEPTH
 	var y: float = FLOOR_Y + h * 0.5
 	_piece(spot, _wall, Vector3(0, y, -d * 0.5), Vector3(w + WALL_T, h, WALL_T))
-	for x in [-w * 0.5, w * 0.5]:
-		_piece(spot, _wall, Vector3(x, y, 0), Vector3(WALL_T, h, d))
+	_piece(spot, _wall, Vector3(w * 0.5, y, 0), Vector3(WALL_T, h, d))
+	if cabin.has_extension():
+		_wall_with_pass(spot, -w * 0.5, h)  # 西の部屋への出入り口
+	else:
+		_piece(spot, _wall, Vector3(-w * 0.5, y, 0), Vector3(WALL_T, h, d))
 	# ドアの両脇: 開口の端から、東西の壁の外側まで
 	var side: float = (w + WALL_T - DOOR_W) * 0.5
 	for sign_x in [-1.0, 1.0]:
@@ -455,6 +509,8 @@ func _details(spot: Node3D) -> void:
 	spot.add_child(_door_hinge)
 	_cut_pieces.append(_piece(_door_hinge, _door, Vector3(DOOR_W * 0.5, DOOR_H * 0.5, 0), Vector3(DOOR_W, DOOR_H, WALL_T * 0.6)))
 	for x in [-w * 0.5, w * 0.5]:
+		if x < 0.0 and cabin.has_extension():
+			continue  # 西の壁は出入り口になった
 		_piece(spot, _window, Vector3(x, FLOOR_Y + 1.3, 0), Vector3(WALL_T + 0.04, 0.7, 0.9))
 
 # 屋根の 1 日目: 棟木と 3 組の垂木
@@ -500,8 +556,11 @@ func _collider(spot: Node3D) -> void:
 		_collider_box(body, Vector3.ZERO, Vector2(w + WALL_T, d + WALL_T))
 	else:
 		_collider_box(body, Vector3(0, 0, -d * 0.5), Vector2(w + WALL_T, WALL_T))
-		for x in [-w * 0.5, w * 0.5]:
-			_collider_box(body, Vector3(x, 0, 0), Vector2(WALL_T, d))
+		_collider_box(body, Vector3(w * 0.5, 0, 0), Vector2(WALL_T, d))
+		if cabin.has_extension():
+			_pass_colliders(body, -w * 0.5)
+		else:
+			_collider_box(body, Vector3(-w * 0.5, 0, 0), Vector2(WALL_T, d))
 		var side: float = (w + WALL_T - DOOR_W) * 0.5
 		for sign_x in [-1.0, 1.0]:
 			_collider_box(body, Vector3(sign_x * (DOOR_W + side) * 0.5, 0, d * 0.5), Vector2(side, WALL_T))
@@ -520,3 +579,229 @@ func _collider_box(body: StaticBody3D, pos: Vector3, size: Vector2) -> void:
 	shape.shape = box
 	shape.position = pos + Vector3(0, h * 0.5, 0)
 	body.add_child(shape)
+
+# ── 増築(2026-11-11) ───────────────────────────────────────────
+# 母屋の西の壁(x)に、西の部屋への出入り口を空けた壁を建てる。高さ h
+func _wall_with_pass(spot: Node3D, x: float, h: float) -> void:
+	var d: float = Cabin.DEPTH
+	var lo: float = Cabin.PASS_Z - Cabin.PASS_W * 0.5
+	var hi: float = Cabin.PASS_Z + Cabin.PASS_W * 0.5
+	var north: float = lo + d * 0.5
+	var south: float = d * 0.5 - hi
+	_piece(spot, _wall, Vector3(x, FLOOR_Y + h * 0.5, -d * 0.5 + north * 0.5), Vector3(WALL_T, h, north))
+	_piece(spot, _wall, Vector3(x, FLOOR_Y + h * 0.5, d * 0.5 - south * 0.5), Vector3(WALL_T, h, south))
+	if h > DOOR_H:
+		_piece(spot, _wall, Vector3(x, FLOOR_Y + (DOOR_H + h) * 0.5, Cabin.PASS_Z), Vector3(WALL_T, h - DOOR_H, Cabin.PASS_W))
+
+func _pass_colliders(body: StaticBody3D, x: float) -> void:
+	var d: float = Cabin.DEPTH
+	var lo: float = Cabin.PASS_Z - Cabin.PASS_W * 0.5
+	var hi: float = Cabin.PASS_Z + Cabin.PASS_W * 0.5
+	_collider_box(body, Vector3(x, 0, (-d * 0.5 + lo) * 0.5), Vector2(WALL_T, lo + d * 0.5))
+	_collider_box(body, Vector3(x, 0, (hi + d * 0.5) * 0.5), Vector2(WALL_T, d * 0.5 - hi))
+
+# 西の部屋の中心(小屋の中心から)
+static func _ext_center() -> Vector2:
+	return Vector2(-(Cabin.WIDTH + Cabin.EXT_WIDTH) * 0.5, 0.0)
+
+# 西の部屋: 杭 → 基礎 → 壁 → 屋根と、増築の段階に合わせて建つ。できたら、かまど・窓・家具
+func _extension(spot: Node3D) -> void:
+	var ext := Node3D.new()
+	ext.name = "Extension"
+	ext.position = Look.at(_ext_center())
+	spot.add_child(ext)
+	var w: float = Cabin.EXT_WIDTH
+	var d: float = Cabin.DEPTH
+	if cabin.ext_stage == 0 and cabin.ext_days_done == 0:
+		for x in [-w * 0.5, w * 0.5]:
+			for z in [-d * 0.5, d * 0.5]:
+				_piece(ext, _stake, Vector3(x, 0.4, z), Vector3(0.1, 0.8, 0.1))
+		for z in [-d * 0.5, d * 0.5]:
+			_piece(ext, _rope, Vector3(0, 0.6, z), Vector3(w, 0.03, 0.03))
+		_piece(ext, _rope, Vector3(-w * 0.5, 0.6, 0), Vector3(0.03, 0.03, d))
+		return
+	# 基礎と床
+	for z in [-d * 0.5, d * 0.5]:
+		_piece(ext, _sill, Vector3(0, FLOOR_Y * 0.5, z), Vector3(w, FLOOR_Y, WALL_T))
+	_piece(ext, _sill, Vector3(-w * 0.5, FLOOR_Y * 0.5, 0), Vector3(WALL_T, FLOOR_Y, d))
+	_piece(ext, _floor, Vector3(0, FLOOR_Y - 0.02, 0), Vector3(w, 0.04, d))
+	if cabin.ext_stage < 1:
+		return
+	var h: float = WALL_H
+	if cabin.ext_stage == 1:
+		h = WALL_H * cabin.ext_days_done / float(Cabin.EXT_STAGES[1].days)
+		if h <= 0.0:
+			return
+	var y: float = FLOOR_Y + h * 0.5
+	_piece(ext, _wall, Vector3(0, y, -d * 0.5), Vector3(w, h, WALL_T))
+	_piece(ext, _wall, Vector3(-w * 0.5, y, 0), Vector3(WALL_T, h, d))
+	_cut_pieces.append(_piece(ext, _wall, Vector3(0, y, d * 0.5), Vector3(w, h, WALL_T)))  # 南の壁(中にいるあいだは影だけ)
+	if cabin.ext_stage < 2:
+		return
+	_piece(ext, _window, Vector3(-w * 0.5, FLOOR_Y + 1.3, 0), Vector3(WALL_T + 0.04, 0.7, 0.9))
+	_cut_pieces.append(_piece(ext, _window, Vector3(0, FLOOR_Y + 1.3, d * 0.5), Vector3(0.9, 0.7, WALL_T + 0.04)))
+	_ext_collider(ext)
+	if not cabin.has_extension():
+		return
+	var prism := PrismMesh.new()
+	prism.size = Vector3(w + ROOF_OVER, EXT_ROOF_H, d + ROOF_OVER * 2.0)
+	var roof := Look.mesh_node(prism, _roof, Vector3(-ROOF_OVER * 0.5, FLOOR_Y + WALL_H + EXT_ROOF_H * 0.5, 0))
+	roof.name = "ExtRoof"
+	ext.add_child(roof)
+	_cut_pieces.append(roof)
+	_ext_room(spot)
+
+# 西の部屋の壁の当たり判定(壁ができてから)。母屋側は母屋の壁が持つ
+func _ext_collider(ext: Node3D) -> void:
+	var body := StaticBody3D.new()
+	body.name = "ExtCollider"
+	var w: float = Cabin.EXT_WIDTH
+	var d: float = Cabin.DEPTH
+	if not cabin.has_extension():
+		_collider_box(body, Vector3.ZERO, Vector2(w, d + WALL_T))
+	else:
+		for z in [-d * 0.5, d * 0.5]:
+			_collider_box(body, Vector3(0, 0, z), Vector2(w, WALL_T))
+		_collider_box(body, Vector3(-w * 0.5, 0, 0), Vector2(WALL_T, d))
+		var k: Vector2 = Cabin.KAMADO_OFFSET - _ext_center()
+		_collider_box(body, Vector3(k.x, 0, k.y), Cabin.KAMADO_SIZE)
+		if cabin.has_furniture("shelf"):
+			var sh: Vector2 = Cabin.SHELF_OFFSET - _ext_center()
+			_collider_box(body, Vector3(sh.x, 0, sh.y), Cabin.SHELF_SIZE)
+	ext.add_child(body)
+
+# 西の部屋の中: かまど・家具・明かり(座標は小屋の中心から)
+func _ext_room(spot: Node3D) -> void:
+	var room := Node3D.new()
+	room.name = "ExtInterior"
+	room.position = Vector3(0, FLOOR_Y, 0)
+	spot.add_child(room)
+	# かまど: れんがの台と煙突、火の口、鍋
+	var k: Vector2 = Cabin.KAMADO_OFFSET
+	var ks: Vector2 = Cabin.KAMADO_SIZE
+	_piece(room, _brick, Vector3(k.x, KAMADO_H * 0.5, k.y), Vector3(ks.x, KAMADO_H, ks.y)).name = "Kamado"
+	_piece(room, _brick, Vector3(k.x, 1.5, k.y - ks.y * 0.5 + 0.1), Vector3(0.16, 1.4, 0.16))
+	var st: Array = _pot_state(1)
+	var fire := Look.mat(Color(0.30, 0.12, 0.08))
+	if st[0]:
+		fire.emission_enabled = true
+		fire.emission = Color(1.0, 0.45, 0.12)
+		fire.emission_energy_multiplier = FIRE_GLOW
+	_piece(room, fire, Vector3(k.x, 0.22, k.y + ks.y * 0.5 + 0.005), Vector3(0.3, 0.18, 0.02)).name = "KamadoFire"
+	_stove_pot(room, Vector3(k.x, KAMADO_H, k.y + 0.1), st[0], st[1])
+	if cabin.has_furniture("rug"):
+		var c: Vector2 = _ext_center() + Vector2(0.1, 0.15)
+		var rug := Look.disc(c, 0.85, 0.012, _rug2_edge, 0.0)
+		rug.scale = Vector3(1.3, 1.0, 1.0)
+		rug.name = "Rug"
+		room.add_child(rug)
+		var inner := Look.disc(c, 0.72, 0.012, _rug2, 0.004)
+		inner.scale = Vector3(1.3, 1.0, 1.0)
+		room.add_child(inner)
+	if cabin.has_furniture("shelf"):
+		_shelf(room)
+	if cabin.has_furniture("rocking_chair"):
+		_rocking_chair(room)
+	if cabin.has_furniture("lamp"):
+		_floor_lamp(room)
+	if cabin.has_furniture("clock"):
+		_wall_clock(room)
+	# 部屋の明かり(中にいるあいだだけ)。ランプがあると明るい
+	var light := OmniLight3D.new()
+	light.position = Look.at(_ext_center(), 1.9)
+	light.light_color = Color(1.0, 0.82, 0.6)
+	light.light_energy = ROOM_LIGHT_ENERGY * (1.3 if cabin.has_furniture("lamp") else 1.0)
+	light.omni_range = 4.5
+	light.shadow_enabled = RenderingServer.get_current_rendering_method() != "gl_compatibility"
+	light.light_cull_mask = 0xFFFFF & ~Look.GROUND_LAYER
+	room.add_child(light)
+	_inside_pieces.append(light)
+	# 南の壁の腰の高さまで(中にいるあいだ、壁の代わりに見せる)
+	_inside_pieces.append(_piece(room, _wall, Vector3(_ext_center().x, 0.2, Cabin.DEPTH * 0.5), Vector3(Cabin.EXT_WIDTH, 0.4, WALL_T)))
+
+# 保存食の棚: 北の壁際の棚板に、持っている保存食の瓶を並べる(棚板 1 枚に SHELF_JARS まで)
+func _shelf(room: Node3D) -> void:
+	var c: Vector2 = Cabin.SHELF_OFFSET
+	var size: Vector2 = Cabin.SHELF_SIZE
+	var shelf := Node3D.new()
+	shelf.name = "Shelf"
+	shelf.position = Vector3(c.x, 0, c.y)
+	room.add_child(shelf)
+	for side in [-1.0, 1.0]:
+		_piece(shelf, _sill, Vector3(side * size.x * 0.5, SHELF_H * 0.5, 0), Vector3(0.05, SHELF_H, size.y))
+	var boards: Array = []
+	for i in range(SHELF_BOARDS):
+		var by: float = 0.35 + i * 0.5
+		_piece(shelf, _rafter, Vector3(0, by, 0), Vector3(size.x, 0.04, size.y))
+		boards.append(by)
+	if kitchen == null:
+		return
+	var shown := 0
+	for id in Kitchen.RECIPES:
+		for _i in range(int(kitchen.stock[id])):
+			if shown >= SHELF_BOARDS * SHELF_JARS:
+				return
+			var by: float = boards[shown / SHELF_JARS]
+			var x: float = -size.x * 0.5 + 0.1 + (shown % SHELF_JARS) * (size.x - 0.2) / (SHELF_JARS - 1)
+			var flat: bool = Kitchen.RECIPES[id].unit == "個"
+			var h: float = 0.05 if flat else 0.13
+			_piece(shelf, _food_mat(id), Vector3(x, by + 0.02 + h * 0.5, 0), Vector3(0.11, h, 0.11)).name = "ShelfJar"
+			if not flat:
+				_piece(shelf, _rope, Vector3(x, by + 0.02 + h + 0.01, 0), Vector3(0.09, 0.02, 0.09))
+			shown += 1
+
+# 揺り椅子: 弧の脚(ロッカー)の上に座面と背もたれ。座って揺れると、椅子も揺れる
+func _rocking_chair(room: Node3D) -> void:
+	var c: Vector2 = Cabin.CHAIR_OFFSET
+	var base := Node3D.new()
+	base.name = "RockingChair"
+	base.position = Vector3(c.x, 0, c.y)
+	base.rotation.y = CHAIR_YAW
+	room.add_child(base)
+	_chair = Node3D.new()
+	base.add_child(_chair)
+	for side in [-1.0, 1.0]:
+		_piece(_chair, _sill, Vector3(side * 0.22, 0.05, 0), Vector3(0.05, 0.05, 0.75))
+		_piece(_chair, _sill, Vector3(side * 0.2, 0.22, -0.15), Vector3(0.05, 0.36, 0.05))
+		_piece(_chair, _sill, Vector3(side * 0.2, 0.22, 0.15), Vector3(0.05, 0.36, 0.05))
+	_piece(_chair, _rafter, Vector3(0, CHAIR_SEAT_H, 0), Vector3(0.48, 0.05, 0.45))
+	_piece(_chair, _rafter, Vector3(0, CHAIR_SEAT_H + 0.4, 0.24), Vector3(0.48, 0.75, 0.05))  # 背もたれ(座った人の後ろ)
+	_piece(_chair, _blanket, Vector3(0, CHAIR_SEAT_H + 0.035, 0), Vector3(0.4, 0.03, 0.38))
+
+# 立てたランプ: 細い柱と、暖かい色の笠。夜は笠が光る(軒の明かりと同じ材質)
+func _floor_lamp(room: Node3D) -> void:
+	var lamp := Node3D.new()
+	lamp.name = "FloorLamp"
+	lamp.position = Look.at(LAMP_POS)
+	room.add_child(lamp)
+	_round(lamp, _stove, Vector3(0, 0.02, 0), Vector3(0.26, 0.04, 0.26))
+	_round(lamp, _stove, Vector3(0, 0.7, 0), Vector3(0.04, 1.36, 0.04))
+	_round(lamp, _lamp, Vector3(0, 1.42, 0), Vector3(0.36, 0.26, 0.36))
+
+# 掛け時計: 北の壁の丸い文字盤。針は今の時刻を指す(_update_clock)
+func _wall_clock(room: Node3D) -> void:
+	var clock := Node3D.new()
+	clock.name = "WallClock"
+	clock.position = CLOCK_POS - Vector3(0, FLOOR_Y, 0)
+	room.add_child(clock)
+	var face := _round(clock, _clock_face, Vector3.ZERO, Vector3(0.36, 0.03, 0.36))
+	face.rotation.x = PI * 0.5
+	var rim := _round(clock, _sill, Vector3(0, 0, -0.01), Vector3(0.42, 0.02, 0.42))
+	rim.rotation.x = PI * 0.5
+	for length in [0.1, 0.15]:
+		var axis := Node3D.new()
+		axis.position = Vector3(0, 0, 0.025)
+		clock.add_child(axis)
+		_piece(axis, _clock_hand, Vector3(0, length * 0.5, 0), Vector3(0.018, length, 0.01))
+		_clock_hands.append(axis)
+	_update_clock()
+
+# 時計の針を今の時刻に合わせる(時針・分針。Z 軸まわりに時計回り)
+func _update_clock() -> void:
+	if _clock_hands.size() < 2:
+		return
+	var t: Dictionary = Time.get_time_dict_from_system()
+	var minutes: float = float(t.minute) + float(t.second) / 60.0
+	var hours: float = fmod(float(t.hour), 12.0) + minutes / 60.0
+	_clock_hands[0].rotation.z = -hours / 12.0 * TAU
+	_clock_hands[1].rotation.z = -minutes / 60.0 * TAU

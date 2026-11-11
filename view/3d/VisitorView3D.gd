@@ -134,8 +134,8 @@ func _obstacles() -> Array:
 		if visitors.forest.is_established(t):
 			list.append(Rect2(t.pos - Vector2.ONE * TREE_MARGIN, Vector2.ONE * TREE_MARGIN * 2.0))
 	var cabin = visitors.market.cabin
-	if cabin.site != null:
-		list.append(cabin.rect().grow(OBSTACLE_MARGIN))
+	for r in cabin.footprints():
+		list.append(r.grow(OBSTACLE_MARGIN))
 	if visitors.bees != null:
 		for h in visitors.bees.hives:
 			list.append(Rect2(h.pos - Vector2.ONE * TREE_MARGIN, Vector2.ONE * TREE_MARGIN * 2.0))

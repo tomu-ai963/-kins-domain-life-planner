@@ -55,10 +55,12 @@ func _process(_delta: float) -> bool:
 			_test_chop_collision()
 			_test_tree_collision()
 			_test_market_collision()
+			_test_extension_view()  # 当たり判定は次のフレームで確かめる
 			_wait_until = Time.get_ticks_msec() + 200
 		12:
 			_test_visitor_collision_off()
 			_test_tree_collision_gone()
+			_test_extension_collision()
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
@@ -596,6 +598,89 @@ func _test_3d_cabin_collision() -> void:
 	_test_hive_view()
 	_test_fruit_view()
 	_test_sound_view()
+
+# 小屋の増築と家具: 市場で頼む → 西の外で H で建てる → 西の部屋・かまど・家具・揺り椅子
+func _test_extension_view() -> void:
+	print("小屋の増築")
+	var w = main.world
+	var c = w.cabin
+	var hud = main.get_node("HUD")
+	var player: CharacterBody3D = main.get_node("Player")
+	var view = main.get_node("Cabin")
+	var m = w.market
+	_check(c.is_complete() and c.site == Vector2(20, 20), "完成した小屋が (20, 20) にある")
+	# 西をあけておく(ほかのテストの物がかからないように)
+	w.land.plots = w.land.plots.filter(func(p): return not c.ext_rect().grow(2.0).has_point(p))
+	w.forest.trees = w.forest.trees.filter(func(t): return not c.ext_rect().grow(1.0).has_point(t.pos))
+	m.money = 50000
+	main._panel = "market"
+	main._buy_page = 3
+	var rows: Array = main.visible_shop_rows()
+	_check(rows.any(func(r): return r.text.contains("小屋の増築")) and rows.any(func(r): return r.text.contains("揺り椅子")), "市場の「小屋」のページに増築と家具が並ぶ")
+	main._on_shop_action("furniture_rug")
+	_check(hud._message.contains("増築した部屋に置く"), "増築の前は家具を買えない")
+	main._on_shop_action("cabin_extension")
+	_check(c.ext_building() and hud._message.contains("西に杭が立った"), "増築を頼む: " + hud._message)
+	_check(main.visible_shop_rows().any(func(r): return r.text.begins_with("済: 小屋の増築")), "頼んだら「済」になる")
+	var ext: Node3D = view.find_child("Extension", true, false)
+	_check(ext != null and ext.get_child_count() == 7, "西に杭 4 本と縄 3 本が立つ")
+	c.materials.log = 20
+	player.global_position = Vector3(14.0, 0, 20.0)
+	_check(main.cabin_line().contains("小屋の増築: 基礎"), "HUD に増築の段階が出る")
+	var counts := []
+	for i in range(4):
+		c.ext_last_worked = ""
+		main._cabin_action()
+		ext = view.find_child("Extension", true, false)
+		counts.append(ext.get_child_count())
+	print("    増築の日ごとの部品の数: ", counts)
+	_check(c.has_extension() and hud._message.contains("増築ができた"), "西の外で H を 4 日押すと増築ができる")
+	_check(counts[1] < counts[2] and view.find_child("ExtRoof", true, false) != null, "壁が建ち、最後に屋根がかかる")
+	_check(view.find_child("Kamado", true, false) != null, "西の部屋にかまどがある")
+	# 家具を買う
+	for id in c.FURNITURE:
+		main._on_shop_action("furniture_" + id)
+	_check(c.furniture.size() == 5 and m.money == 50000 - 8000 - 11200, "家具を 5 つ買った")
+	for name in ["Shelf", "RockingChair", "FloorLamp", "WallClock", "Rug"]:
+		_check(view.find_child(name, true, false) != null, "%s が西の部屋に見える" % name)
+	var keep_stock: Dictionary = w.kitchen.stock.duplicate()
+	for id in w.kitchen.stock:
+		w.kitchen.stock[id] = 0
+	w.kitchen.stock.jam = 10
+	w.kitchen.changed.emit()
+	_check(view.find_children("*ShelfJar*", "", true, false).size() == 10, "棚に保存食の瓶が並ぶ(%d)" % view.find_children("*ShelfJar*", "", true, false).size())
+	w.kitchen.stock = keep_stock
+	w.kitchen.changed.emit()
+	# 時計の針は今の時刻
+	var t: Dictionary = Time.get_time_dict_from_system()
+	var minute_hand: Node3D = view._clock_hands[1]
+	_check(absf(wrapf(minute_hand.rotation.z + (float(t.minute) + float(t.second) / 60.0) / 60.0 * TAU, -PI, PI)) < 0.05, "時計の分針が今の時刻を指す")
+	# かまど: 2 つ目の鍋
+	player.global_position = Vector3(20 + c.KAMADO_OFFSET.x + 0.2, 0, 20 + c.KAMADO_OFFSET.y + 0.7)
+	main._cabin_action()
+	_check(main._panel == "kitchen" and w.kitchen.active == 1 and main.shop_title().begins_with("かまど"), "かまどの前で H: かまどの鍋の画面")
+	main._close_shop()
+	# 揺り椅子
+	player.global_position = Vector3(20 + c.CHAIR_OFFSET.x + 0.3, 0, 20 + c.CHAIR_OFFSET.y)
+	main._cabin_action()
+	_check(main._panel == "chair" and player._rocking and view._rocking, "揺り椅子のそばで H: 座って揺れる")
+	player._process(0.5)
+	view._process(0.5)
+	_check(absf(view._chair.rotation.x) > 0.01 and absf(player._body.rotation.x) > 0.01, "椅子と体が揺れる")
+	main._close_shop()
+	_check(not player._rocking and player._body.rotation.x == 0.0 and view._chair.rotation.x == 0.0, "立つと揺れが止まる")
+	player._pose.custom_step(10.0)
+	# 鉢が 12 まで
+	_check(w.seedlings.max_pots() == 12, "窓辺の鉢は 12 まで")
+
+func _test_extension_collision() -> void:
+	var player: CharacterBody3D = main.get_node("Player")
+	var main_room := Transform3D(Basis.IDENTITY, Vector3(19.0, 0, 19.95))
+	_check(not player.test_move(main_room, Vector3(-3.0, 0, 0)), "母屋から出入り口を通って西の部屋へ歩ける")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(19.0, 0, 21.0)), Vector3(-3.0, 0, 0)), "出入り口のほかは、母屋の西の壁にぶつかる")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(16.5, 0, 20.0)), Vector3(-3.0, 0, 0)), "西の部屋の西の壁にぶつかる")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(13.0, 0, 20.0)), Vector3(3.0, 0, 0)), "外から西の部屋には入れない")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(15.55, 0, 19.7)), Vector3(0, 0, -1)), "かまどにぶつかる")
 
 func _test_cabin_inside() -> void:
 	print("小屋の中")

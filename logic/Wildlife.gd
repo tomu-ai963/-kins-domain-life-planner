@@ -162,7 +162,7 @@ func is_free(pos: Vector2) -> bool:
 	var limit: float = land.HALF - EDGE_MARGIN
 	if absf(pos.x) > limit or absf(pos.y) > limit:
 		return false
-	if cabin.site != null and cabin.rect().grow(CABIN_MARGIN).has_point(pos):
+	if cabin.footprints().any(func(r): return r.grow(CABIN_MARGIN).has_point(pos)):
 		return false
 	if bees != null and bees.covers(pos):
 		return false

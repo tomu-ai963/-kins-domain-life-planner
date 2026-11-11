@@ -63,7 +63,9 @@ const BUY_PAGES := [
 	{"name": "木の種と苗木", "forms": ["seed", "sapling"]},
 	{"name": "野菜の種", "forms": ["crop_seed"]},
 	{"name": "丸太", "forms": ["material"]},
+	{"name": "小屋", "forms": ["extension", "furniture"]},
 ]
+const FURNITURE_NAMES := {"shelf": "保存食の棚", "rocking_chair": "揺り椅子", "rug": "じゅうたん", "lamp": "ランプ", "clock": "掛け時計"}
 const SELL_PAGES := ["収穫物", "保存食"]
 
 # 野菜を選ぶキー(HUD の並びもこの順)
@@ -783,6 +785,22 @@ const CABIN_PLACE_MESSAGES := {
 	"tree": "木がある場所には建てられない(先に Z で伐る)",
 }
 const CABIN_STAGE_NAMES := {"foundation": "基礎", "walls": "壁", "roof": "屋根"}
+const POT_NAMES := ["鍋", "かまどの鍋"]      # 母屋のストーブの鍋 / 増築した部屋のかまどの鍋
+const POT_PLACES := ["ストーブ", "かまど"]
+# 増築(市場で頼む)できないときの文言(Market.buy の結果)
+const EXTENSION_MESSAGES := {
+	"no_cabin": "増築は小屋が建ってから頼める",
+	"exists": "増築はもう頼んである",
+	"edge": "小屋の西は境界に近くて増築できない(生垣のために3m空ける)",
+	"center": "小屋の西は中心に近くて増築できない(家族の杉のために5m空ける)",
+	"pond": "小屋の西に池があって増築できない",
+	"plot": "小屋の西(3m)に菜園の区画があって増築できない(先に F で取り消す)",
+	"tree": "小屋の西(3m)に木があって増築できない(先に Z で伐る)",
+	"hive": "小屋の西に巣箱があって増築できない",
+	"feeder": "小屋の西に餌台があって増築できない",
+	"no_room": "家具は、小屋を増築した部屋に置く(先に増築を頼む)",
+	"owned": "もう持っている",
+}
 
 # プレイヤーの足元(m)
 func player_pos() -> Vector2:
@@ -876,10 +894,16 @@ func _cabin_action() -> void:
 			_split_wood()
 		elif c.is_at_stool(pos):
 			_open_table()
+		elif c.is_at_kamado(pos):
+			_open_kitchen(1)
 		elif c.is_at_stove(pos):
-			_open_kitchen()
+			_open_kitchen(0)
+		elif c.is_at_chair(pos):
+			_sit_chair()
 		elif c.is_at_bed(pos):
 			_sleep()
+		elif c.is_at_ext_site(pos):
+			_extension_work(pos)
 		else:
 			_seedling_action(pos)
 		return
@@ -930,18 +954,20 @@ func _seedling_action(pos: Vector2) -> void:
 			$HUD.show_message("苗の世話をした(%d鉢)" % sl.last_count)
 		"sown":
 			_act("plant", sill)
-			$HUD.show_message("%sの種を鉢にまいた(%d/%d鉢。毎日世話をすれば%d日で苗になる)" % [crop.name, sl.pots.size(), sl.POTS, sl.GROW_DAYS], 5.0)
+			$HUD.show_message("%sの種を鉢にまいた(%d/%d鉢。毎日世話をすれば%d日で苗になる)" % [crop.name, sl.pots.size(), sl.max_pots(), sl.GROW_DAYS], 5.0)
 		"far":
 			$HUD.show_message("小屋まで行って作業する(%.0fm以内)" % world.cabin.REACH)
 		"not_seedling":
 			$HUD.show_message("苗にできるのはトマト [9] と きゅうり [6]")
 		"full":
-			$HUD.show_message("窓辺はいっぱい(%d鉢)。今日の世話は済んだ" % sl.POTS)
+			$HUD.show_message("窓辺はいっぱい(%d鉢)。今日の世話は済んだ" % sl.max_pots())
 		"no_seed":
 			$HUD.show_message("%sがない(市場で買える)" % crop.seed_name)
 
 # ── ストーブ ───────────────────────────────────────────────
-func _open_kitchen() -> void:
+# 台所の画面を開く。pot: 0 = 母屋のストーブ、1 = 増築した部屋のかまど
+func _open_kitchen(pot := 0) -> void:
+	world.kitchen.active = pot
 	_panel = "kitchen"
 	_sfx("open")
 	$Player.set_physics_process(false)  # 料理中は歩かない
@@ -959,13 +985,14 @@ func kitchen_rows() -> Array:
 		rows.append({"id": "cook_" + id, "text": "仕込む: %s(%s → %d%s・%d日)持っている %d%s" % [
 			r.name, _amount_text(r.input, r.amount), r.output, r.unit, r.days, k.input_count(id), produce_unit(r.input),
 		], "column": 0})
+	var where: String = POT_NAMES[k.active]
 	if k.is_empty():
-		rows.append({"id": "pot_wait", "text": "鍋は空いている", "column": 1})
+		rows.append({"id": "pot_wait", "text": "%sは空いている" % where, "column": 1})
 	elif k.is_ready():
 		var r: Dictionary = k.RECIPES[k.pot.recipe]
 		rows.append({"id": "pot_collect", "text": "受け取る: %s %d%s" % [r.name, r.output, r.unit], "column": 1})
 	else:
-		rows.append({"id": "pot_wait", "text": "鍋: %s あと%d日" % [k.RECIPES[k.pot.recipe].name, k.days_left()], "column": 1})
+		rows.append({"id": "pot_wait", "text": "%s: %s あと%d日" % [where, k.RECIPES[k.pot.recipe].name, k.days_left()], "column": 1})
 	rows.append({"id": "close", "text": "閉じる(H / Esc)", "column": 1})
 	return rows
 
@@ -983,12 +1010,51 @@ func _kitchen_action(id: String) -> void:
 			"started":
 				$HUD.show_message("%sを仕込んだ(%d日でできる・薪 -1回分)" % [r.name, r.days], 5.0)
 			"busy":
-				$HUD.show_message("鍋は使っている(受け取ってから次を仕込む)")
+				$HUD.show_message("%sは使っている(受け取ってから次を仕込む)" % POT_NAMES[k.active])
 			"no_input":
 				$HUD.show_message("%sが足りない(%d%s 必要)" % [produce_name(r.input), r.amount, produce_unit(r.input)])
 			"no_wood":
 				$HUD.show_message("薪がない(小屋の東の薪割り台で、H で丸太を割る)", 5.0)
 	$HUD.refresh_shop()
+
+# ── 小屋の増築と揺り椅子 ────────────────────────────────────────
+func _ext_total_days() -> int:
+	var n := 0
+	for s in world.cabin.EXT_STAGES:
+		n += int(s.days)
+	return n
+
+# 西の外で H: 増築の作業をする
+func _extension_work(pos: Vector2) -> void:
+	var c := world.cabin
+	var s: Dictionary = c.ext_current_stage()
+	var result: String = c.work_extension(pos)
+	if result in ["worked", "stage_done", "finished"]:
+		_act("build", c.ext_rect().get_center())
+	match result:
+		"worked":
+			$HUD.show_message("増築の%sの作業をした(丸太 -%d本)。続きは明日" % [CABIN_STAGE_NAMES[s.id], s.logs_per_day], 5.0)
+		"stage_done":
+			$HUD.show_message("増築の%sができた(丸太 -%d本)。明日から%s" % [CABIN_STAGE_NAMES[s.id], s.logs_per_day, CABIN_STAGE_NAMES[c.ext_current_stage().id]], 5.0)
+		"finished":
+			$HUD.show_message("増築ができた。小屋の中から西の部屋に入れる。かまどで2つ目の鍋が使え、西の窓辺にも鉢を置ける(%d鉢まで)。家具は市場で買える" % world.seedlings.max_pots(), 9.0)
+		"inside":
+			$HUD.show_message("建てる場所の外に出て作業する")
+		"done_today":
+			$HUD.show_message("今日の増築の作業はもう済んだ(1日1回)")
+		"no_wood":
+			$HUD.show_message("丸太が足りない(%d本 必要。市場で買うか、育った木を Z で伐る)" % s.logs_per_day, 5.0)
+
+# 揺り椅子に座って揺れる(見て楽しむだけ)。H / Esc で立つ
+func _sit_chair() -> void:
+	_panel = "chair"
+	_sfx("open")
+	$Player.set_physics_process(false)
+	if $Player.has_method("sit_down"):  # 3D だけ
+		$Player.sit_down($Cabin.chair_seat_spot(), $Cabin.CHAIR_YAW)
+		$Player.set_rocking(true)
+		$Cabin.set_rocking(true)
+	$HUD.open_shop()
 
 # ── テーブルと腰掛け ──────────────────────────────────────────
 # 腰掛けに座って、テーブルの保存食を 1 つ食べる。食べた日は少し速く歩ける
@@ -1047,12 +1113,22 @@ func _preserve_price_text(id: String, unit: String) -> String:
 # HUD に出す、鍋の 1 行。鍋が空なら ""
 func kitchen_line() -> String:
 	var k := world.kitchen
+	var parts := PackedStringArray()
+	for i in range(k.pots.size()):
+		var text: String = k.with_pot(i, func(): return _pot_text(i))
+		if text != "":
+			parts.append(text)
+	return "  ".join(parts)
+
+# 鍋 1 つ(k.active)の様子。空なら ""
+func _pot_text(i: int) -> String:
+	var k := world.kitchen
 	if k.is_empty():
 		return ""
 	var recipe: String = k.RECIPES[k.pot.recipe].name
 	if k.is_ready():
-		return "鍋: %s できた(ストーブの前で H)" % recipe
-	return "鍋: %s あと%d日" % [recipe, k.days_left()]
+		return "%s: %s できた(%sの前で H)" % [POT_NAMES[i], recipe, POT_PLACES[i]]
+	return "%s: %s あと%d日" % [POT_NAMES[i], recipe, k.days_left()]
 
 # HUD に出す、食事の 1 行。今日まだ食べていなければ ""
 func meal_line() -> String:
@@ -1159,10 +1235,14 @@ func _tomorrow_lines() -> PackedStringArray:
 	if pots > 0:
 		lines.append("苗を受け取れる: %d鉢" % pots)
 	var k := world.kitchen
-	if k.ready_tomorrow():
-		lines.append("鍋の%sを受け取れる" % k.RECIPES[k.pot.recipe].name)
-	elif k.is_empty():
-		lines.append("鍋が空いている")
+	var pot_count: int = 2 if world.cabin.has_extension() else 1
+	for i in range(pot_count):
+		var line: String = k.with_pot(i, func():
+			if k.ready_tomorrow():
+				return "%sの%sを受け取れる" % [POT_NAMES[i], k.RECIPES[k.pot.recipe].name]
+			return "%sが空いている" % POT_NAMES[i] if k.is_empty() else "")
+		if line != "":
+			lines.append(line)
 	if world.bees.ready_tomorrow() > 0:
 		lines.append("はちみつが採れる巣箱: %d" % world.bees.ready_tomorrow())
 	if world.visitors.is_visit_day(world.forest.day_number() + 1):
@@ -1182,13 +1262,17 @@ func cabin_line() -> String:
 	var c := world.cabin
 	if c.site == null:
 		return "小屋: H で足元に場所を決める(丸太%d本・%d日)" % [c.total_logs(), c.total_days()]
+	if c.ext_building():
+		var es: Dictionary = c.ext_current_stage()
+		var ext_today := "今日の作業は済んだ" if c.ext_last_worked == world.forest.today() else "西の外から H・丸太%d本" % es.logs_per_day
+		return "小屋の増築: %s %d/%d日(%s)" % [CABIN_STAGE_NAMES[es.id], c.ext_days_done, es.days, ext_today]
 	if c.is_complete():
 		var sl := world.seedlings
 		if sl.pots.is_empty():
 			return "小屋: 完成(H で苗づくり)"
 		var left: int = sl.days_left()
 		var todo := "H で受け取る" if left == 0 else ("H で世話" if sl.needs_care() else "世話は済んだ")
-		return "小屋: 苗 %d/%d鉢 あと%d日(%s)" % [sl.pots.size(), sl.POTS, left, todo]
+		return "小屋: 苗 %d/%d鉢 あと%d日(%s)" % [sl.pots.size(), sl.max_pots(), left, todo]
 	var s: Dictionary = c.current_stage()
 	var today := "今日の作業は済んだ" if c.worked_today() else "H で作業・丸太%d本" % s.logs_per_day
 	return "小屋: %s %d/%d日(%s)" % [CABIN_STAGE_NAMES[s.id], c.days_done, s.days, today]
@@ -1371,6 +1455,10 @@ func produce_count(item: String) -> int:
 # ── 市場 ──────────────────────────────────────────────────
 # 市場の品の表示名。例: 「白樺の種(10粒)」「リンゴの苗木(樹齢3年)」「じゃがいもの種いも(春にまく)」「丸太(5本)」
 func good_name(g: Dictionary) -> String:
+	if g.form == "extension":
+		return "小屋の増築(西に1部屋・丸太%d本は別)" % world.cabin.ext_total_logs()
+	if g.form == "furniture":
+		return FURNITURE_NAMES[g.species]
 	if g.form == "material":
 		return "丸太(%d本)" % g.amount
 	if g.species == "tomato":
@@ -1389,12 +1477,18 @@ func shop_title() -> String:
 		return "%s(%s)" % [v.CAST[v.who()].name, v.LEVEL_NAMES[v.level_of(v.who())]]
 	if _panel == "table":
 		return "腰掛け(クリックか 矢印キー + Enter で選ぶ)"
-	return "ストーブ(クリックか 矢印キー + Enter で選ぶ)" if _panel == "kitchen" else "市場(クリックか 矢印キー + Enter で選ぶ)"
+	if _panel == "chair":
+		return "揺り椅子"
+	if _panel == "kitchen":
+		return "%s(クリックか 矢印キー + Enter で選ぶ)" % POT_PLACES[world.kitchen.active]
+	return "市場(クリックか 矢印キー + Enter で選ぶ)"
 
 # 右の画面の 2 行目
 func shop_header() -> String:
 	if _panel == "visitor":
 		return visitor_text()
+	if _panel == "chair":
+		return "ゆらゆら揺れながら、窓の外を眺めている"
 	if _panel == "table":
 		var k := world.kitchen
 		if k.eaten_today().is_empty():
@@ -1412,12 +1506,15 @@ func shop_rows() -> Array:
 		return table_rows()
 	if _panel == "visitor":
 		return visitor_rows()
+	if _panel == "chair":
+		return [{"id": "close", "text": "立つ(H / Esc)", "column": 0}]
 	var m := world.market
 	var rows := []
 	var buy_next: int = (_buy_page + 1) % BUY_PAGES.size()
 	rows.append({"id": "page_buy", "text": "買う品: %s(押すと次: %s)" % [BUY_PAGES[_buy_page].name, BUY_PAGES[buy_next].name], "column": 0})
 	for g in m.GOODS:
-		rows.append({"id": g.id, "text": "買う: %s  %d₽" % [good_name(g), g.price], "column": 0, "page": _buy_page_of(g)})
+		var label: String = "済: %s" % good_name(g) if m.is_owned(g) else "買う: %s  %d₽" % [good_name(g), g.price]
+		rows.append({"id": g.id, "text": label, "column": 0, "page": _buy_page_of(g)})
 	# 冬は、春の種を安く注文できる(3 月 1 日に届く)。野菜の種のページに並べる
 	if m.can_order():
 		for kind in m.orderable():
@@ -1472,7 +1569,10 @@ func _toggle_shop() -> void:
 
 func _close_shop() -> void:
 	var was_chat: bool = _panel == "visitor" and not world.visitors.has_request()
-	var was_sitting: bool = _panel == "table"
+	var was_sitting: bool = _panel == "table" or _panel == "chair"
+	if _panel == "chair" and $Player.has_method("set_rocking"):
+		$Player.set_rocking(false)
+		$Cabin.set_rocking(false)
 	_sfx("click")
 	$HUD.close_shop()
 	$Player.set_physics_process(true)
@@ -1525,10 +1625,17 @@ func _on_shop_action(id: String) -> void:
 		$HUD.show_message("%sを売った(+%d₽)" % [produce_name(item), income] if income > 0 else "売る%sがない" % produce_name(item))
 	else:
 		var g: Dictionary = m.good(id)
-		var bought: bool = m.buy(id) == "bought"
+		var result: String = m.buy(id)
+		var bought: bool = result == "bought"
 		_sfx("coin" if bought else "click")
-		if bought:
+		if bought and g.form == "extension":
+			$HUD.show_message("小屋の増築を頼んだ(-%d₽)。窓ガラスとかまどが届いて、西に杭が立った。西の外から H で建てる(丸太%d本・%d日)" % [g.price, world.cabin.ext_total_logs(), _ext_total_days()], 8.0)
+		elif bought and g.form == "furniture":
+			$HUD.show_message("%sを買って、増築した部屋に置いた(-%d₽)" % [FURNITURE_NAMES[g.species], g.price], 5.0)
+		elif bought:
 			$HUD.show_message("%sを買った(-%d₽)" % [good_name(g), g.price])
+		elif EXTENSION_MESSAGES.has(result):
+			$HUD.show_message(EXTENSION_MESSAGES[result], 5.0)
 		else:
 			$HUD.show_message("お金が足りない(%d₽ 必要)" % g.price)
 	world.save_game()
@@ -1700,7 +1807,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if $HUD.is_shop_open():
 		# 開いているあいだは閉じるキーだけ(選ぶのは画面のボタン)。市場は B、ストーブは H、訪問者は C でも閉じる
-		var close_key: int = {"kitchen": KEY_H, "table": KEY_H, "visitor": KEY_C}.get(_panel, KEY_B)
+		var close_key: int = {"kitchen": KEY_H, "table": KEY_H, "chair": KEY_H, "visitor": KEY_C}.get(_panel, KEY_B)
 		if event.keycode == close_key or event.keycode == KEY_ESCAPE:
 			_close_shop()
 		return
