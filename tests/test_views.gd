@@ -1094,7 +1094,7 @@ func _test_fruit_view() -> void:
 	figure._process(10.0)
 	_check(view._items[0].fruits.is_empty(), "採ると、今日は実が消える")
 	main._harvest()
-	_check(hud._message.contains("今日もう"), "1 日 1 回")
+	_check(hud._message.contains("次に実るまで、あと3日"), "採ったら次に実るまで 3 日: " + hud._message)
 	f.set_season("autumn")
 	main._harvest()
 	_check(hud._message == "サクランボが実るのは夏", "季節の文言: %s" % hud._message)

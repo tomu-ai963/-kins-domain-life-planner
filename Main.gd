@@ -691,7 +691,7 @@ func _collect_pickups() -> void:
 const HARVEST_MESSAGES := {
 	"none": "近くに実のなる木がない",
 	"preview": "未来のプレビュー中は収穫できない",
-	"done": "この木は今日もう収穫した",
+	"done": "この木は収穫したばかり(次に実るまで、あと%d日)",
 }
 
 # 果樹の収穫の文言(結果が harvested / not_season / young のとき)
@@ -1152,7 +1152,7 @@ func _tomorrow_lines() -> PackedStringArray:
 	var to_water: int = g.crops.size() - plan.ripe
 	if to_water > 0 and not rain:
 		lines.append("水やりがいる区画: %d" % to_water)
-	var fruiting: int = world.forest.fruiting_in(season)
+	var fruiting: int = world.forest.ripe_fruit_count(season, 1)
 	if fruiting > 0:
 		lines.append("果物を収穫できる木: %d本" % fruiting)
 	var pots: int = world.seedlings.grown_tomorrow()
@@ -1603,6 +1603,9 @@ func _harvest() -> void:
 		return
 	if result == "harvested":
 		_act("pick_high", world.forest.trees[world.forest.nearest_fruit_index(pos, REACH)].pos, world.forest.last_harvest_item)
+	if result == "done":
+		$HUD.show_message(HARVEST_MESSAGES.done % world.forest.last_harvest_wait)
+		return
 	$HUD.show_message(HARVEST_MESSAGES[result] if HARVEST_MESSAGES.has(result) else _fruit_message(result))
 
 func _water() -> void:

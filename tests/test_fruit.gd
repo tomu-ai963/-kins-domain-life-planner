@@ -141,8 +141,17 @@ func _test_harvest() -> void:
 	f.trees.clear()
 	_tree(w, "plum", 30.0)
 	_check(f.harvest_nearest(AT, 2.0) == "harvested" and f.produce.plum == 5 and f.last_harvest_count == 5, "スモモを 5kg 収穫する")
-	_check(f.harvest_nearest(AT, 2.0) == "done" and f.produce.plum == 5, "1 日 1 回")
+	_check(f.harvest_nearest(AT, 2.0) == "done" and f.produce.plum == 5 and f.last_harvest_wait == 3, "採ったら次に実るまで 3 日")
 	_check(FileAccess.file_exists(TEST_SAVE), "収穫すると保存する")
+	var t: Dictionary = f.trees[0]
+	_check(not f.shows_fruit(t) and f.ripe_fruit_count("summer") == 0, "採った木には実が見えない")
+	_check(f.ripe_fruit_count("summer", 2) == 0 and f.ripe_fruit_count("summer", 3) == 1, "日記の見込み: 3 日後に実る")
+	for days in [1, 2]:
+		t.last_harvest = Forest.date_of_day(f.day_number() - days)
+		_check(f.harvest_nearest(AT, 2.0) == "done" and f.last_harvest_wait == 3 - days, "%d 日後: まだ(あと %d 日)" % [days, 3 - days])
+	t.last_harvest = Forest.date_of_day(f.day_number() - 3)
+	_check(f.shows_fruit(t) and f.ripe_fruit_count("summer") == 1, "3 日後: また実が見える")
+	_check(f.harvest_nearest(AT, 2.0) == "harvested" and f.produce.plum == 10, "3 日後にまた採れる")
 
 func _test_nearest() -> void:
 	print("いちばん近い果樹")
@@ -163,7 +172,7 @@ func _test_planting() -> void:
 	_check(not f.add_tree(AT, "cherry", "sapling"), "苗木がなければ植えられない")
 	f.saplings.cherry = 1
 	_check(f.add_tree(AT, "cherry", "sapling") and f.saplings.cherry == 0, "苗木で植えられる")
-	_check(f.is_established(f.trees[0]) and is_equal_approx(f.real_age_years(f.trees[0]), 2.0), "苗木は根付いて樹齢 2 年から")
+	_check(f.is_established(f.trees[0]) and is_equal_approx(f.real_age_years(f.trees[0]), 1.0), "苗木は根付いて樹齢 1 年から(植えて 3 日で実る)")
 	_check(f.radius_of(f.trees[0]) > 0.0, "大きさがある")
 	f.season = "winter"
 	_check(not f.can_plant("pear", "sapling"), "冬は植えられない")

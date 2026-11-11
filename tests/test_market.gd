@@ -85,8 +85,10 @@ func _test_saplings() -> void:
 	_check(f.is_established(t) and not f.is_seed(t), "苗木はすぐ根付く")
 	f.saplings.apple = 1
 	f.add_tree(Vector2(10, 0), "apple", "sapling")
-	_age(f.trees[-1], 3.0)
-	_check(f.harvest_nearest(Vector2(10, 0), 2.0) == "harvested", "リンゴの苗木(樹齢 3 年)は 3 日で実る(樹齢 6 年)")
+	_age(f.trees[-1], 4.0)
+	_check(f.harvest_nearest(Vector2(10, 0), 2.0) == "young", "リンゴの苗木(樹齢 1 年)は 4 日ではまだ実らない")
+	_age(f.trees[-1], 5.0)
+	_check(f.harvest_nearest(Vector2(10, 0), 2.0) == "harvested", "5 日で実る(樹齢 6 年)")
 
 func _test_germination() -> void:
 	print("種と発芽")
@@ -204,7 +206,7 @@ func _test_save() -> void:
 	var f2 := w2.forest
 	_check(w2.market.money == 10100, "所持金が保存・復元される")
 	_check(f2.produce.apple == 7 and f2.saplings.apple == 0, "収穫物と苗木の数が保存・復元される")
-	_check(f2.trees[0].form == "sapling" and f2.trees[0].start_age == 3.0, "苗木から植えた木は苗木の樹齢ごと復元される")
+	_check(f2.trees[0].form == "sapling" and f2.trees[0].start_age == 1.0, "苗木から植えた木は苗木の樹齢ごと復元される")
 	_check(f2.trees[1].form == "seed" and f2.trees[1].sprouts == f.trees[1].sprouts, "種から植えた木は、芽が出るかどうかごと復元される")
 	_check(f2.pickups.size() == 1 and f2.pickups[0].pos == Vector2(1, 2), "落ちている種が保存・復元される(開き直しても消えない)")
 

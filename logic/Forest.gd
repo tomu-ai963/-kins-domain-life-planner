@@ -30,6 +30,8 @@ const FRUITS := {
 	"pear": {"seasons": ["autumn"], "age": 6.0, "first": 4, "step": 4, "most": 15, "unit": "個"},
 }
 const FRUIT_ORDER := ["apple", "cherry", "plum", "pear"]  # 果樹を選ぶ順番(キーの 2)
+# 収穫してから次に実るまでの日数(2026-11-11 とむ決定。前は毎日採れて、季節の売上が野菜の区画並みだった。仮の数字)
+const FRUIT_INTERVAL := 3
 const SAPLING_ONLY := ["cherry", "plum", "pear"]  # 接ぎ木の苗木から育てる(現実でも、種からだと親と同じ実にならない)
 const GERMINATION_YEARS := 1.0  # 種から芽が出るまで(= 1 日)
 # 剪定: 葉の落ちた冬に果樹の枝を切ると、次の収穫が増える(現実でも果樹の剪定は冬の仕事)。1 本につきひと冬 1 回
@@ -67,25 +69,25 @@ const SPECIES := {
 	},
 	"apple": {
 		"name": "リンゴ", "max_r": 3.0, "tau": 5.0, "p": 2.0, "evergreen": false,
-		"germination": 0.6, "sapling_age": 3.0,
+		"germination": 0.6, "sapling_age": 1.0,
 		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
 		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
 	},
 	"cherry": {
 		"name": "サクランボ", "max_r": 2.6, "tau": 4.0, "p": 2.0, "evergreen": false,
-		"germination": 0.0, "sapling_age": 2.0,
+		"germination": 0.0, "sapling_age": 1.0,
 		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
 		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
 	},
 	"plum": {
 		"name": "スモモ", "max_r": 2.4, "tau": 4.0, "p": 2.0, "evergreen": false,
-		"germination": 0.0, "sapling_age": 3.0,
+		"germination": 0.0, "sapling_age": 1.0,
 		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
 		"wood_age": 20.0, "wood_years": 10.0, "wood_max": 2,
 	},
 	"pear": {
 		"name": "ナシ", "max_r": 2.8, "tau": 6.0, "p": 2.0, "evergreen": false,
-		"germination": 0.0, "sapling_age": 3.0,
+		"germination": 0.0, "sapling_age": 1.0,
 		"seed_age": 0.0, "seed_seasons": [], "seed_drop": 0,
 		"wood_age": 25.0, "wood_years": 10.0, "wood_max": 3,
 	},
@@ -322,6 +324,7 @@ static func fruit_yield(species: String, age: float) -> int:
 var last_harvest_count := 0  # 直前の収穫で採れた量(文言用)
 var last_harvest_item := ""  # 直前に収穫した果物、または収穫できなかった果樹(文言用)
 var last_harvest_extra := 0  # 直前の収穫のうち、剪定で増えた量(文言用)
+var last_harvest_wait := 0   # 直前に収穫できなかった果樹が、次に実るまでの日数(文言用)
 var last_meal_extra := 0     # 直前の収穫のうち、食べたもので増えた量(文言用)
 var harvest_rate := Callable()  # () -> float。GameWorld が Kitchen.harvest_rate を設定する(台所は森を持つので、互いに持つと解放されない)
 var last_prune_item := ""    # 直前に剪定した、または剪定できなかった果樹(文言用)
@@ -342,6 +345,18 @@ func fruiting_in(in_season: String) -> int:
 				and is_established(tree) and real_age_years(tree) >= float(FRUITS[tree.species].age):
 			n += 1
 	return n
+
+# 収穫した果樹が次に実るまでの日数(0 = 今日採れる)。収穫してから FRUIT_INTERVAL 日で、また実る
+func days_until_ripe(tree: Dictionary) -> int:
+	var last: String = str(tree.get("last_harvest", ""))
+	if last == "":
+		return 0
+	var since: int = day_number() - int(Time.get_unix_time_from_datetime_string(last) / 86400.0)
+	return maxi(0, FRUIT_INTERVAL - since)
+
+# その季節に実る果樹のうち、days_ahead 日後までに収穫できる本数(日記用。0 = 今日)
+func ripe_fruit_count(in_season: String, days_ahead := 0) -> int:
+	return trees.filter(func(t): return FRUITS.has(t.species) and in_season in FRUITS[t.species].seasons 			and is_established(t) and real_age_years(t) + days_ahead >= float(FRUITS[t.species].age) 			and days_until_ripe(t) <= days_ahead).size()
 
 # pos から max_dist 以内で、いちばん近い果樹の番号(なければ -1)
 func nearest_fruit_index(pos: Vector2, max_dist: float) -> int:
@@ -371,7 +386,8 @@ func harvest_nearest(pos: Vector2, max_dist: float) -> String:
 		return "not_season"
 	if not is_established(tree) or real_age_years(tree) < float(f.age):
 		return "young"
-	if tree.last_harvest == today():
+	last_harvest_wait = days_until_ripe(tree)
+	if last_harvest_wait > 0:
 		return "done"
 	tree.last_harvest = today()
 	var base := fruit_yield(tree.species, real_age_years(tree))
@@ -489,7 +505,7 @@ func radius_of(tree: Dictionary) -> float:
 func shows_fruit(tree: Dictionary) -> bool:
 	if not FRUITS.has(tree.species) or not (season in FRUITS[tree.species].seasons):
 		return false
-	return not is_seed(tree) and age_years(tree) >= float(FRUITS[tree.species].age) and tree.last_harvest != today()
+	return not is_seed(tree) and age_years(tree) >= float(FRUITS[tree.species].age) and days_until_ripe(tree) == 0
 
 func watered_today(tree: Dictionary) -> bool:
 	return tree.last_watered == today()
