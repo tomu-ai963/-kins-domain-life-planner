@@ -4,6 +4,7 @@ extends RefCounted
 # 冬、足元の雪をどかして道を作る(CELL 四方のマスごと)。どかした道の上は速く歩ける。雪の上は今までどおりの速さ。
 # 雪の日(Forest の発見の rain。冬は雪になる)に全部埋まり、冬が終わると消える。閉じていたあいだの雪も数える。
 # 文言は Main、見た目は view/ が決める。座標の単位は m
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
 const Cabin = preload("res://logic/Cabin.gd")
@@ -105,8 +106,9 @@ func to_save() -> Dictionary:
 
 func from_save(d: Dictionary) -> void:
 	cells.clear()
-	for c in d.get("cells", []):
-		if typeof(c) == TYPE_ARRAY and c.size() == 2:
-			cells[Vector2i(int(c[0]), int(c[1]))] = true
-	last_checked_day = int(d.get("last_checked_day", 0))
+	for c in SaveRead.list(d.get("cells")):
+		var v = SaveRead.pair(c)
+		if v != null:
+			cells[Vector2i(v)] = true
+	last_checked_day = SaveRead.whole(d, "last_checked_day")
 	changed.emit()

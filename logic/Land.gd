@@ -3,6 +3,9 @@ extends RefCounted
 # ── 木以外の配置: 菜園の区画と池(描画を持たない) ─────────────────
 # 見た目は view/ が描く。資源は使わない。同じキーをもう一度押すと取り消せる
 # 座標の単位は m
+
+const SaveRead = preload("res://logic/SaveRead.gd")
+
 signal changed
 
 const HALF := 50.0              # ドメインの半幅(m)。境界は ±50m
@@ -61,10 +64,9 @@ func to_save() -> Dictionary:
 
 func from_save(d: Dictionary) -> void:
 	plots.clear()
-	for p in d.get("plots", []):
-		plots.append(Vector2(float(p[0]), float(p[1])))
-	pond = null
-	var pd = d.get("pond", null)
-	if typeof(pd) == TYPE_ARRAY and pd.size() == 2:
-		pond = Vector2(float(pd[0]), float(pd[1]))
+	for p in SaveRead.list(d.get("plots")):
+		var v = SaveRead.pair(p)
+		if v != null:  # 読めない区画だけ飛ばす
+			plots.append(v)
+	pond = SaveRead.pair(d.get("pond"))
 	changed.emit()

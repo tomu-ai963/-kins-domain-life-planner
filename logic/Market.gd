@@ -3,6 +3,7 @@ extends RefCounted
 # ── お金と市場(描画を持たない) ───────────────────────────────
 # 土地の南の境界の外に市場(屋台)がある。そこまで歩いて行き、種・苗木を買い、収穫物を売る。
 # 値段はロシアの園芸店・市場の目安(ルーブル)。文言は Main、見た目は view/ が決める
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Garden = preload("res://logic/Garden.gd")
 const Cabin = preload("res://logic/Cabin.gd")
@@ -232,11 +233,11 @@ func to_save() -> Dictionary:
 	return {"money": money, "orders": orders}
 
 func from_save(d: Dictionary) -> void:
-	money = int(d.get("money", INITIAL_MONEY))
+	# 読めない所持金は、はじめの所持金にはせず 0 にする(増やす方向に間違えない)。マイナスも 0
+	money = maxi(0, SaveRead.whole(d, "money", INITIAL_MONEY if not d.has("money") else 0))
 	orders = {}
-	var od = d.get("orders", {})
-	if typeof(od) == TYPE_DICTIONARY:
-		for kind in od:
-			if Garden.CROPS.has(kind) and int(od[kind]) > 0:
-				orders[kind] = int(od[kind])
+	var od := SaveRead.dict(d.get("orders"))
+	for kind in od:
+		if Garden.CROPS.has(kind) and SaveRead.count(od, kind) > 0:
+			orders[kind] = SaveRead.count(od, kind)
 	changed.emit()

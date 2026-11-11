@@ -6,6 +6,7 @@ extends RefCounted
 # → 水が半分を超えると生き物が順に来る。
 # 雨と夏の蒸発は閉じているあいだの分も数える(天気は日付から決まる。Forest.roll_daily_event)。
 # 文言は Main、見た目は view/ が決める。座標の単位は m
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
 const Garden = preload("res://logic/Garden.gd")
@@ -201,12 +202,12 @@ func from_save(d: Dictionary) -> void:
 			wet_since_day = forest.day_number()
 			last_checked_day = wet_since_day
 		else:
-			days_dug = int(d.get("days_dug", 0))
-			last_dug = str(d.get("last_dug", ""))
-			water = int(d.get("water", 0))
-			wet_since_day = int(d.get("wet_since_day", -1))
-			last_checked_day = int(d.get("last_checked_day", 0))
-			seen = Array(d.get("seen", []))
+			days_dug = clampi(SaveRead.whole(d, "days_dug"), 0, DIG_DAYS)
+			last_dug = SaveRead.text(d, "last_dug")
+			water = clampi(SaveRead.whole(d, "water"), 0, 100)
+			wet_since_day = SaveRead.whole(d, "wet_since_day", -1)
+			last_checked_day = SaveRead.whole(d, "last_checked_day")
+			seen = SaveRead.ids(d.get("seen"), CREATURES)
 			# 湧き水を入れる前(2026-11-11 より前)に掘り終えた池には、開いたときに 1 回だけ入れる
 			if not d.has("spring") and is_dug():
 				_fill_spring()

@@ -5,6 +5,8 @@ extends RefCounted
 # 状態が変わると changed(描き直し)を出し、保存が必要な変更では dirty も出す(GameWorld が保存する)
 # 座標の単位は m
 
+const SaveRead = preload("res://logic/SaveRead.gd")
+
 signal changed  # 見た目に関わる状態が変わった
 signal dirty    # セーブに入る状態が変わった
 
@@ -539,10 +541,10 @@ func to_save() -> Dictionary:
 
 static func _counts(saved, base: Dictionary) -> Dictionary:
 	var d := base.duplicate()
-	if typeof(saved) == TYPE_DICTIONARY:
-		for k in base:
-			if saved.has(k):
-				d[k] = int(saved[k])
+	var s := SaveRead.dict(saved)
+	for k in base:
+		if s.has(k):
+			d[k] = SaveRead.count(s, k)  # 読めない数・マイナスは 0
 	return d
 
 func from_save(data: Dictionary) -> void:
@@ -553,26 +555,33 @@ func from_save(data: Dictionary) -> void:
 	saplings = _counts(data.get("saplings", {}), INITIAL_SAPLINGS)
 	produce = _counts(data.get("produce", {}), {"apple": 0, "cherry": 0, "plum": 0, "pear": 0})
 	# 記録がない旧形式のセーブは、次に開いたとき(= 今)その日の発見が起きる
-	last_day = str(data.get("last_day", ""))
-	today_event = str(data.get("today_event", ""))
+	last_day = SaveRead.text(data, "last_day")
+	today_event = SaveRead.text(data, "today_event")
+	# 1 本ずつ確かめ、おかしな木だけ飛ばす(位置・樹種・植えた時刻のどれかが読めないもの)
 	trees.clear()
-	for t in data.get("trees", []):
-		if t.species in SPECIES:
-			trees.append({
-				"pos": Vector2(float(t.x), float(t.y)),
-				"species": str(t.species),
-				# form がない木は種・苗木を分ける前に植えたもの(根付いている扱い)
-				"form": str(t.get("form", "")),
-				"planted_at": int(t.planted_at),
-				"start_age": float(t.get("start_age", 0.0)),
-				"sprouts": bool(t.get("sprouts", true)),
-				"last_harvest": str(t.get("last_harvest", "")),
-				"last_watered": str(t.get("last_watered", "")),
-				"bonus_years": float(t.get("bonus_years", 0.0)),
-				"pruned_year": int(t.get("pruned_year", 0)),
-			})
+	for item in SaveRead.list(data.get("trees")):
+		var t := SaveRead.dict(item)
+		var pos = SaveRead.point(t)
+		var species := SaveRead.text(t, "species")
+		if pos == null or not (species in SPECIES) or not SaveRead.is_num(t.get("planted_at")):
+			continue
+		trees.append({
+			"pos": pos,
+			"species": species,
+			# form がない木は種・苗木を分ける前に植えたもの(根付いている扱い)
+			"form": SaveRead.text(t, "form"),
+			"planted_at": SaveRead.whole(t, "planted_at"),
+			"start_age": maxf(0.0, SaveRead.num(t, "start_age")),
+			"sprouts": SaveRead.flag(t, "sprouts", true),
+			"last_harvest": SaveRead.text(t, "last_harvest"),
+			"last_watered": SaveRead.text(t, "last_watered"),
+			"bonus_years": maxf(0.0, SaveRead.num(t, "bonus_years")),
+			"pruned_year": SaveRead.whole(t, "pruned_year"),
+		})
 	pickups.clear()
-	for p in data.get("pickups", []):
-		if typeof(p) == TYPE_DICTIONARY and str(p.get("species", "")) in SPECIES:
-			pickups.append({"pos": Vector2(float(p.x), float(p.y)), "species": str(p.species), "amount": int(p.amount)})
+	for item in SaveRead.list(data.get("pickups")):
+		var p := SaveRead.dict(item)
+		var pos = SaveRead.point(p)
+		if pos != null and SaveRead.text(p, "species") in SPECIES:
+			pickups.append({"pos": pos, "species": p.species, "amount": SaveRead.count(p, "amount")})
 	changed.emit()

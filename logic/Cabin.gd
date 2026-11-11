@@ -4,6 +4,7 @@ extends RefCounted
 # 丸太を集め(市場で買う / 育った木を伐る)、基礎 → 壁 → 屋根と何日かかけて建てる。小屋はひとつまで。
 # 作業は暦の 1 日に 1 回、外から行う。1 回ごとにその段階の丸太を使う。
 # 文言は Main、値段は Market、見た目は view/ が決める。座標の単位は m
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
 
@@ -380,23 +381,15 @@ func to_save() -> Dictionary:
 	return d
 
 func from_save(d: Dictionary) -> void:
-	site = null
-	var s = d.get("site", null)
-	if typeof(s) == TYPE_ARRAY and s.size() == 2:
-		site = Vector2(float(s[0]), float(s[1]))
-	stage = int(d.get("stage", 0))
-	days_done = int(d.get("days_done", 0))
-	last_worked = str(d.get("last_worked", ""))
-	materials = {"log": int(d.get("logs", 0))}
-	own_logs = int(d.get("own_logs", 0))  # 記録がないセーブの丸太は、どこから来たか分からないので自分の木に数えない
+	site = SaveRead.pair(d.get("site"))
+	stage = clampi(SaveRead.whole(d, "stage"), 0, STAGES.size())
+	days_done = SaveRead.count(d, "days_done")
+	last_worked = SaveRead.text(d, "last_worked")
+	materials = {"log": SaveRead.count(d, "logs")}
+	own_logs = SaveRead.count(d, "own_logs")  # 記録がないセーブの丸太は、どこから来たか分からないので自分の木に数えない
 	# 増築と家具の記録がないセーブ(2026-11-11 より前)は、増築なし・家具なし
-	ext_stage = clampi(int(d.get("ext_stage", -1)), -1, EXT_STAGES.size())
-	ext_days_done = int(d.get("ext_days_done", 0))
-	ext_last_worked = str(d.get("ext_last_worked", ""))
-	furniture = []
-	var fl = d.get("furniture", [])
-	if typeof(fl) == TYPE_ARRAY:
-		for id in fl:
-			if str(id) in FURNITURE and not (str(id) in furniture):
-				furniture.append(str(id))
+	ext_stage = clampi(SaveRead.whole(d, "ext_stage", -1), -1, EXT_STAGES.size())
+	ext_days_done = SaveRead.count(d, "ext_days_done")
+	ext_last_worked = SaveRead.text(d, "ext_last_worked")
+	furniture = SaveRead.ids(d.get("furniture"), FURNITURE)
 	changed.emit()

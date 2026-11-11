@@ -5,6 +5,7 @@ extends RefCounted
 # まける季節は現実どおり、育つ日数は数日〜1 週間に縮める(2026-11-03 とむの方針)。
 # 日数は暦で数える。水をやった日は 1 日ぶん、やらなかった日は半日ぶん育つ。
 # 文言は Main、値段は Market、見た目は view/ が決める
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
 
@@ -317,22 +318,28 @@ func to_save() -> Dictionary:
 	return {"crops": list, "seeds": seeds, "produce": produce, "tilled_day": tilled_day, "tilled_count": tilled_count}
 
 func from_save(d: Dictionary) -> void:
-	tilled_day = str(d.get("tilled_day", ""))
-	tilled_count = int(d.get("tilled_count", 0))
+	tilled_day = SaveRead.text(d, "tilled_day")
+	tilled_count = SaveRead.count(d, "tilled_count")
 	seeds = _zero_counts()
 	produce = _zero_counts()
+	var saved_seeds := SaveRead.dict(d.get("seeds"))
+	var saved_produce := SaveRead.dict(d.get("produce"))
 	for k in CROPS:
-		seeds[k] = int(d.get("seeds", {}).get(k, 0))
-		produce[k] = int(d.get("produce", {}).get(k, 0))
+		seeds[k] = SaveRead.count(saved_seeds, k)
+		produce[k] = SaveRead.count(saved_produce, k)
+	# 1 区画ずつ確かめ、おかしな野菜だけ飛ばす
 	crops.clear()
-	for c in d.get("crops", []):
-		if typeof(c) == TYPE_DICTIONARY and str(c.get("kind", "")) in CROPS:
-			crops.append({
-				"pos": Vector2(float(c.x), float(c.y)),
-				"kind": str(c.kind),
-				"sown_day": int(c.sown_day),
-				"water_days": int(c.get("water_days", 0)),
-				"last_watered": str(c.get("last_watered", "")),
-				"head": float(c.get("head", 0.0)),
-			})
+	for item in SaveRead.list(d.get("crops")):
+		var c := SaveRead.dict(item)
+		var pos = SaveRead.point(c)
+		if pos == null or not (SaveRead.text(c, "kind") in CROPS) or not SaveRead.is_num(c.get("sown_day")):
+			continue
+		crops.append({
+			"pos": pos,
+			"kind": c.kind,
+			"sown_day": SaveRead.whole(c, "sown_day"),
+			"water_days": SaveRead.count(c, "water_days"),
+			"last_watered": SaveRead.text(c, "last_watered"),
+			"head": maxf(0.0, SaveRead.num(c, "head")),
+		})
 	changed.emit()

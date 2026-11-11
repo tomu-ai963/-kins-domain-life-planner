@@ -5,6 +5,7 @@ extends RefCounted
 # 「やること」のヒントは、その操作をすると消える。「お知らせ」のヒントは SHOW_SECONDS で消える。どちらも K で閉じられる。
 # 一度出たヒントは二度と出ない(seen に残す)。もう済んでいることのヒントは出ない(途中のセーブからでも使える)。
 # 文言は Main、見た目は HUD が決める
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
 const Garden = preload("res://logic/Garden.gd")
@@ -254,6 +255,4 @@ func to_save() -> Dictionary:
 func from_save(d: Dictionary) -> void:
 	seen = []
 	current = ""
-	for id in d.get("seen", []):
-		if str(id) in HINTS:
-			seen.append(str(id))
+	seen = SaveRead.ids(d.get("seen"), HINTS)

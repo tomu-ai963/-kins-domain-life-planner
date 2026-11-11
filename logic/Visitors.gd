@@ -12,6 +12,7 @@ extends RefCounted
 # 親しさ: 人ごとに、話すと +1、蜂を分けてもらうと +2、頼みごとに応えると +3。断っても減らない。
 # 親しくなるほど話す言葉が増え(Main)、話すだけの日にときどき贈り物を持ってくる(kind = gift)。
 # 文言は Main、見た目は view/ が決める
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Garden = preload("res://logic/Garden.gd")
 const Seedlings = preload("res://logic/Seedlings.gd")
@@ -366,20 +367,22 @@ func to_save() -> Dictionary:
 func from_save(d: Dictionary) -> void:
 	visit = {}
 	# 親しさの記録がないセーブは、みんな顔見知りから
-	var saved = d.get("closeness", {})
+	var saved := SaveRead.dict(d.get("closeness"))
 	for id in CAST:
-		closeness[id] = int(saved.get(id, 0)) if typeof(saved) == TYPE_DICTIONARY else 0
-	var v = d.get("visit", {})
-	if typeof(v) != TYPE_DICTIONARY or not v.has("day"):
+		closeness[id] = SaveRead.count(saved, id)
+	var v := SaveRead.dict(d.get("visit"))
+	if not SaveRead.is_num(v.get("day")):
 		return
-	if v.has("who") and not CAST.has(str(v.who)):
+	if v.has("who") and not CAST.has(SaveRead.text(v, "who")):
 		return
 	visit = v.duplicate(true)
-	visit.day = int(visit.day)
+	visit.day = SaveRead.whole(v, "day")
 	if visit.has("amount"):
-		visit.amount = int(visit.amount)
+		visit.amount = SaveRead.count(v, "amount")
 	if visit.has("line"):
-		visit.line = int(visit.line)
+		visit.line = SaveRead.count(v, "line")
+	if visit.has("done"):
+		visit.done = SaveRead.flag(v, "done", true)
 	# JSON から読むと数は小数になる。お礼の数も整数に戻す(保存し直したときに 1 → 1.0 と変わらないように)
 	if typeof(visit.get("reward")) == TYPE_DICTIONARY:
 		for key in ["count", "amount"]:

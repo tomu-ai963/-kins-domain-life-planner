@@ -1,8 +1,9 @@
 extends RefCounted
 
 # ── ゲーム全体の状態(描画を持たない) ──────────────────────────
-# 木と種(Forest)・菜園と池の場所(Land)・畑の野菜(Garden)・池の作り込み(Pond)・小屋(Cabin)・段階クエスト(Quests)・お金と市場(Market)をまとめ、
-# 1 つのセーブファイルに読み書きする。Forest・Garden・Pond・Cabin の保存が必要な変更(dirty)で自動保存する
+# 木と種(Forest)・菜園と池の場所(Land)・畑の野菜(Garden)・池の作り込み(Pond)・小屋(Cabin)・段階クエスト(Quests)・お金と市場(Market)などをまとめ、
+# 1 つのセーブファイルに読み書きする。保存が必要な変更(dirty)を出す 13 の部品(_init の dirty.connect の並び)で自動保存する。
+# 今日の日付と時刻は WorldTime(time)から読む
 # 座標の単位は m(ドメイン中心が原点、境界は ±50m)
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
@@ -22,8 +23,13 @@ const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
 const DayClock = preload("res://logic/DayClock.gd")
 const WorldTime = preload("res://logic/WorldTime.gd")
+const SaveRead = preload("res://logic/SaveRead.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
+# セーブの版(2026-11-11 から書く。レビュー S4)。セーブの形を変える変更(名前・単位を変える、意味を変える)をしたら 1 上げ、
+# load_game で古い版を新しい形に直す。版のないセーブは 0(キーがあるかないかで古さを見分けていたころのもの。今の読み方で読める)
+const SAVE_VERSION := 1
+const NEWER_INFIX := ".newer_"   # 新しい版のゲームで保存したセーブを、上書きする前に残す名前
 const SAVE_UNIT := "m"           # セーブの座標の単位。この印がない古いセーブは px(40px = 1m)
 const OLD_PX_PER_M := 40.0
 const BACKUP_DIR := "user://backups"  # セーブの控えの置き場所
@@ -213,6 +219,7 @@ func refresh_season() -> void:
 # ── セーブ / ロード ──────────────────────────────────────────
 func save_game() -> void:
 	var data := forest.to_save()
+	data["version"] = SAVE_VERSION
 	data["unit"] = SAVE_UNIT
 	data["land"] = land.to_save()
 	data["garden"] = garden.to_save()
@@ -279,6 +286,11 @@ func load_game() -> void:
 		_backup_save()
 	if FileAccess.file_exists(tmp):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
+	# 新しい版のゲームで保存したセーブ: 知らない記録が消えないよう、上書きする前に別名で残して知らせる
+	var version := SaveRead.whole(data, "version", 0)
+	if version > SAVE_VERSION:
+		var kept := _keep_copy(NEWER_INFIX)
+		load_notice = "このセーブは新しい版のゲームで保存されている(版 %d。このゲームは版 %d)。読めるところだけ読んだ。元のセーブは %s として残してある" % [version, SAVE_VERSION, kept.get_file()]
 	# 2-2 以前のセーブには菜園・池・クエストの記録がない(空・段階 0 から)
 	var ld = data.get("land", {})
 	if typeof(ld) != TYPE_DICTIONARY:
@@ -354,10 +366,17 @@ func load_game() -> void:
 	feeders.from_save(fd)
 	nest_boxes.from_save(nbd)
 	snow.from_save(snow_data)
-	sound_level = clampi(int(data.get("sound_level", 3)), 0, 3)
+	sound_level = clampi(SaveRead.whole(data, "sound_level", 3), 0, 3)
 	market.from_save(md)
 	forest.from_save(data)
 	quests.from_save(qd)  # 木を読んだあと(木の節目を数えるため)
+
+# 今のセーブを「名前.infix日付_時刻.json」として写して残す。残した名前を返す
+func _keep_copy(infix: String) -> String:
+	var stamp := Time.get_datetime_string_from_system().replace(":", "").replace("T", "_")
+	var path := "%s%s%s.json" % [save_path.get_basename(), infix, stamp]
+	DirAccess.copy_absolute(ProjectSettings.globalize_path(save_path), ProjectSettings.globalize_path(path))
+	return path
 
 # 読めないセーブを別名で残し、書きかけの .tmp か、いちばん新しい読める控えから戻す。
 # 戻せたらその中身を本物のセーブに書き、戻せなければ null(新しいゲームになる)。
@@ -413,14 +432,17 @@ func _backup_save() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("%s/%s" % [backup_dir, names[i]]))
 
 static func _px_to_m(data: Dictionary, ld: Dictionary) -> void:
-	for t in data.get("trees", []):
-		if typeof(t) == TYPE_DICTIONARY:
-			t["x"] = float(t.get("x", 0.0)) / OLD_PX_PER_M
-			t["y"] = float(t.get("y", 0.0)) / OLD_PX_PER_M
+	for t in SaveRead.list(data.get("trees")):
+		var pos = SaveRead.point(SaveRead.dict(t))
+		if pos != null:  # 位置の読めない木はそのまま(Forest が飛ばす)
+			t["x"] = pos.x / OLD_PX_PER_M
+			t["y"] = pos.y / OLD_PX_PER_M
 	var plots := []
-	for p in ld.get("plots", []):
-		plots.append([float(p[0]) / OLD_PX_PER_M, float(p[1]) / OLD_PX_PER_M])
+	for p in SaveRead.list(ld.get("plots")):
+		var v = SaveRead.pair(p)
+		if v != null:
+			plots.append([v.x / OLD_PX_PER_M, v.y / OLD_PX_PER_M])
 	ld["plots"] = plots
-	var pd = ld.get("pond", null)
-	if typeof(pd) == TYPE_ARRAY and pd.size() == 2:
-		ld["pond"] = [float(pd[0]) / OLD_PX_PER_M, float(pd[1]) / OLD_PX_PER_M]
+	var pd = SaveRead.pair(ld.get("pond"))
+	if pd != null:
+		ld["pond"] = [pd.x / OLD_PX_PER_M, pd.y / OLD_PX_PER_M]

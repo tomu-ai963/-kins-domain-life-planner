@@ -5,6 +5,7 @@ extends RefCounted
 # 蜂は、自然に入るのを待つ(春と夏だけ。日付で決まるので開き直しても同じ)か、フョードルさんに分けてもらう(Visitors)。
 # 蜂が入ると、はちみつが日ごとにたまる。J で採って市場で売る。採っても蜂はいなくならない。
 # 閉じているあいだの分も数える。文言は Main、値段は Market、見た目は view/ が決める。座標の単位は m
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
 const Garden = preload("res://logic/Garden.gd")
@@ -223,16 +224,19 @@ func to_save() -> Dictionary:
 
 func from_save(d: Dictionary) -> void:
 	hives.clear()
-	for h in d.get("hives", []):
-		if typeof(h) == TYPE_DICTIONARY:
-			hives.append({
-				"pos": Vector2(float(h.x), float(h.y)),
-				"days_done": int(h.get("days_done", 0)),
-				"last_worked": str(h.get("last_worked", "")),
-				"hollowed_day": int(h.get("hollowed_day", -1)),
-				"occupied": bool(h.get("occupied", false)),
-				"comb": float(h.get("comb", 0.0)),
-			})
-	stock = {"honey": int(d.get("honey", 0))}
-	last_checked_day = int(d.get("last_checked_day", 0))
+	for item in SaveRead.list(d.get("hives")):
+		var h := SaveRead.dict(item)
+		var pos = SaveRead.point(h)
+		if pos == null:
+			continue  # 位置の読めない巣箱だけ飛ばす
+		hives.append({
+			"pos": pos,
+			"days_done": SaveRead.count(h, "days_done"),
+			"last_worked": SaveRead.text(h, "last_worked"),
+			"hollowed_day": SaveRead.whole(h, "hollowed_day", -1),
+			"occupied": SaveRead.flag(h, "occupied"),
+			"comb": maxf(0.0, SaveRead.num(h, "comb")),
+		})
+	stock = {"honey": SaveRead.count(d, "honey")}
+	last_checked_day = SaveRead.whole(d, "last_checked_day")
 	changed.emit()

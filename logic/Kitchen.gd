@@ -5,6 +5,7 @@ extends RefCounted
 # 仕込むたびに薪を 1 回分使う。薪は小屋の東の薪割り台で丸太から割る(1 本 ≒ 0.1m³ を 5 回割って 10 回分)。
 # 瓶・砂糖・塩・粉は売値に含めて、別に買わない(手間を増やしすぎないため)。
 # 文言は Main、値段は Market、見た目は view/ が決める
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Garden = preload("res://logic/Garden.gd")
 const Cabin = preload("res://logic/Cabin.gd")
@@ -232,8 +233,9 @@ func collect() -> String:
 	return "collected"
 
 static func _read_pot(p) -> Dictionary:
-	if typeof(p) == TYPE_DICTIONARY and RECIPES.has(str(p.get("recipe", ""))):
-		return {"recipe": str(p.recipe), "start_day": int(p.get("start_day", 0))}
+	var d := SaveRead.dict(p)
+	if RECIPES.has(SaveRead.text(d, "recipe")):
+		return {"recipe": d.recipe, "start_day": SaveRead.whole(d, "start_day")}
 	return {}
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
@@ -241,22 +243,16 @@ func to_save() -> Dictionary:
 	return {"pot": pots[0], "pot2": pots[1], "stock": stock, "firewood": firewood, "log_left": log_left, "cooked": cooked, "ate_day": ate_day, "ate_foods": ate_foods}
 
 func from_save(d: Dictionary) -> void:
-	firewood = int(d.get("firewood", 0))
-	log_left = int(d.get("log_left", 0))
-	ate_day = int(d.get("ate_day", -1))
-	ate_foods = []
-	var foods = d.get("ate_foods", [])
-	if typeof(foods) == TYPE_ARRAY:
-		for id in foods:
-			if RECIPES.has(str(id)):
-				ate_foods.append(str(id))
+	firewood = clampi(SaveRead.whole(d, "firewood"), 0, MAX_FIREWOOD)
+	log_left = clampi(SaveRead.whole(d, "log_left"), 0, LOG_FIRES)
+	ate_day = SaveRead.whole(d, "ate_day", -1)
+	ate_foods = SaveRead.ids(d.get("ate_foods"), RECIPES)
 	stock = _zero_counts()
-	var saved = d.get("stock", {})
-	if typeof(saved) == TYPE_DICTIONARY:
-		for k in RECIPES:
-			stock[k] = int(saved.get(k, 0))
+	var saved := SaveRead.dict(d.get("stock"))
+	for k in RECIPES:
+		stock[k] = SaveRead.count(saved, k)
 	active = 0
 	pots = [_read_pot(d.get("pot", {})), _read_pot(d.get("pot2", {}))]  # かまどの記録がないセーブは、かまどは空
 	# 記録がないセーブは、薪があれば(当時は仕込むときにしか割らなかった)仕込んだことがある
-	cooked = bool(d.get("cooked", firewood > 0 or not pots[0].is_empty()))
+	cooked = SaveRead.flag(d, "cooked", firewood > 0 or not pots[0].is_empty())
 	changed.emit()

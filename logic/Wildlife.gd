@@ -5,6 +5,7 @@ extends RefCounted
 # 木や畑が増えると来る生き物が増える(現実でも、木と作物があると生き物が集まる)。
 # はじめて来た生き物だけ覚えて知らせる。池の生き物は logic/Pond.gd が持つ。
 # 文言は Main、見た目は view/ が決める。座標の単位は m
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
 const Garden = preload("res://logic/Garden.gd")
@@ -212,7 +213,4 @@ func to_save() -> Dictionary:
 	return {"seen": seen}
 
 func from_save(d: Dictionary) -> void:
-	seen = []
-	for id in d.get("seen", []):
-		if SPECIES.has(str(id)):
-			seen.append(str(id))
+	seen = SaveRead.ids(d.get("seen"), SPECIES)

@@ -7,6 +7,7 @@ extends RefCounted
 # いちばん年上の木が樹齢 10・25・50・100 年になる)。どちらも完成の前から数えている。
 # 数えるのは根付いた木だけ(芽が出る前の種は数えない)。
 # 文言は Main、見た目は view/ が決める(ここは id と数だけ)。座標の単位は m
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
 const Pond = preload("res://logic/Pond.gd")
@@ -196,21 +197,18 @@ func from_save(d: Dictionary) -> void:
 	done = []
 	var saved = d.get("done", null)
 	if typeof(saved) == TYPE_ARRAY:
-		for id in saved:
-			if str(id) in QUESTS and not (str(id) in done):
-				done.append(str(id))
+		done = SaveRead.ids(saved, QUESTS)
 	else:
 		# 順番に進めていたころのセーブ(stage まで達成した)
-		for i in range(clampi(int(d.get("stage", 0)), 0, QUESTS.size())):
+		for i in range(clampi(SaveRead.whole(d, "stage"), 0, QUESTS.size())):
 			done.append(QUESTS[i])
-	milestones = []
 	var ms = d.get("milestones", null)
-	if typeof(ms) == TYPE_ARRAY:
-		for key in ms:
-			if not (str(key) in milestones):
-				milestones.append(str(key))
-	guide_done = bool(d.get("guide_done", false))
+	milestones = []
+	for key in SaveRead.list(ms):
+		if typeof(key) == TYPE_STRING and not (key in milestones):
+			milestones.append(key)
+	guide_done = SaveRead.flag(d, "guide_done")
 	changed.emit()
 	# 節目の記録がないセーブ(2026-11-11 より前)は、もう迎えた節目を黙って記録する(開いた日に昔の節目をまとめて知らせない)
-	if ms == null and forest != null:
+	if typeof(ms) != TYPE_ARRAY and forest != null:
 		check_milestones(true)

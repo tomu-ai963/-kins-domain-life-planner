@@ -5,6 +5,7 @@ extends RefCounted
 # ロシアでは冬の終わりにムクドリの巣箱(スクヴォレーチニク)を作って掛け、春に渡ってくるのを待つ習慣がある。
 # 掛け終えた巣箱には、春と夏にムクドリのつがいが来る(数は Wildlife が決める)。見て楽しむもので、ルールには関わらない。
 # 巣箱は木の位置で覚える。その木を伐ると巣箱もなくなる。文言は Main、見た目は view/ が決める。座標の単位は m
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Cabin = preload("res://logic/Cabin.gd")
 
@@ -114,11 +115,13 @@ func to_save() -> Dictionary:
 
 func from_save(d: Dictionary) -> void:
 	boxes.clear()
-	for b in d.get("boxes", []):
-		if typeof(b) == TYPE_DICTIONARY and b.has("x") and b.has("y"):
+	for item in SaveRead.list(d.get("boxes")):
+		var b := SaveRead.dict(item)
+		var pos = SaveRead.point(b)
+		if pos != null:
 			boxes.append({
-				"pos": Vector2(float(b.x), float(b.y)),
-				"days_done": clampi(int(b.get("days_done", 0)), 0, WORK_DAYS),
-				"last_worked": str(b.get("last_worked", "")),
+				"pos": pos,
+				"days_done": clampi(SaveRead.whole(b, "days_done"), 0, WORK_DAYS),
+				"last_worked": SaveRead.text(b, "last_worked"),
 			})
 	changed.emit()

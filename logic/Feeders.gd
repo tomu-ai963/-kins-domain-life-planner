@@ -4,6 +4,7 @@ extends RefCounted
 # 丸太 1 本で餌台を立て、秋と冬に白樺の種を置くと鳥が集まる(冬の餌台はロシアの冬の習慣)。
 # 白樺は秋と冬に根元へ種を落とすので、自分の木の種がそのまま餌になる。
 # 見て楽しむもので、ルールには関わらない。文言は Main、鳥の数は Wildlife、見た目は view/ が決める。座標の単位は m
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Land = preload("res://logic/Land.gd")
 const Cabin = preload("res://logic/Cabin.gd")
@@ -123,7 +124,9 @@ func to_save() -> Dictionary:
 
 func from_save(d: Dictionary) -> void:
 	feeders.clear()
-	for f in d.get("feeders", []):
-		if typeof(f) == TYPE_DICTIONARY:
-			feeders.append({"pos": Vector2(float(f.x), float(f.y)), "fed_day": int(f.get("fed_day", -1))})
+	for item in SaveRead.list(d.get("feeders")):
+		var f := SaveRead.dict(item)
+		var pos = SaveRead.point(f)
+		if pos != null:
+			feeders.append({"pos": pos, "fed_day": SaveRead.whole(f, "fed_day", -1)})
 	changed.emit()

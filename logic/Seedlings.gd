@@ -5,6 +5,7 @@ extends RefCounted
 # 育った苗は春に畑へ植える(2 日ぶん早く収穫できる)か、市場で売る。
 # 水をやった日は 1 日ぶん、やらなかった日は半日ぶん育つ(畑と同じ)。
 # 文言は Main、値段は Market、見た目は view/ が決める
+const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
 const Garden = preload("res://logic/Garden.gd")
 const Cabin = preload("res://logic/Cabin.gd")
@@ -132,17 +133,18 @@ func to_save() -> Dictionary:
 
 func from_save(d: Dictionary) -> void:
 	ready = _zero_counts()
-	var saved = d.get("ready", {})
-	if typeof(saved) == TYPE_DICTIONARY:
-		for k in SEEDLING_CROPS:
-			ready[k] = int(saved.get(k, 0))
+	var saved := SaveRead.dict(d.get("ready"))
+	for k in SEEDLING_CROPS:
+		ready[k] = SaveRead.count(saved, k)
 	pots = []
-	for p in d.get("pots", []):
-		if typeof(p) == TYPE_DICTIONARY and str(p.get("kind", "")) in SEEDLING_CROPS:
-			pots.append({
-				"kind": str(p.kind),
-				"sown_day": int(p.sown_day),
-				"water_days": int(p.get("water_days", 0)),
-				"last_watered": str(p.get("last_watered", "")),
-			})
+	for item in SaveRead.list(d.get("pots")):
+		var p := SaveRead.dict(item)
+		if not (SaveRead.text(p, "kind") in SEEDLING_CROPS) or not SaveRead.is_num(p.get("sown_day")):
+			continue  # おかしな鉢だけ飛ばす
+		pots.append({
+			"kind": p.kind,
+			"sown_day": SaveRead.whole(p, "sown_day"),
+			"water_days": SaveRead.count(p, "water_days"),
+			"last_watered": SaveRead.text(p, "last_watered"),
+		})
 	changed.emit()
