@@ -27,6 +27,8 @@ const OLD_PX_PER_M := 40.0
 const BACKUP_DIR := "user://backups"  # セーブの控えの置き場所
 const BACKUP_PREFIX := "kins_domain_save_"
 const BACKUP_KEEP := 7           # 控えを残す日数
+const TMP_SUFFIX := ".tmp"       # 保存のときに先に書く別の名前(書けたら本物の名前に付け替える)
+const BROKEN_INFIX := ".broken_" # 読めなかったセーブを残す名前(kins_domain_save.broken_日付_時刻.json)
 const PRUNE_FIRES := 1           # 剪定 1 本で切った枝からできる薪(回分。仮の数字)
 
 var forest := Forest.new()
@@ -48,6 +50,7 @@ var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使�
 var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
 var backup_dir := ""             # 控えを置くフォルダ。空なら控えを取らない(本物のセーブのときだけ Main が設定する)
+var load_notice := ""            # 読み込みで知らせることがあれば、その文(セーブが読めず控えから戻したときなど)
 
 func _init() -> void:
 	quests.forest = forest
@@ -213,22 +216,55 @@ func save_game() -> void:
 	data["sound_level"] = sound_level
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
-	var f := FileAccess.open(save_path, FileAccess.WRITE)
-	if f != null:
-		f.store_string(JSON.stringify(data))
-		f.close()
+	_write_save(JSON.stringify(data))
+
+# 別の名前(.tmp)に書き、書けたことを確かめてから本物の名前に付け替える。
+# 途中で落ちても、本物のセーブは前の状態のまま残る
+func _write_save(text: String) -> bool:
+	var tmp := save_path + TMP_SUFFIX
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
+	if f == null:
+		push_error("セーブを書けなかった: %s" % tmp)
+		return false
+	f.store_string(text)
+	f.close()
+	if FileAccess.get_file_as_string(tmp) != text:
+		push_error("セーブを書けなかった(中身が違う): %s" % tmp)
+		return false
+	var err := DirAccess.rename_absolute(ProjectSettings.globalize_path(tmp), ProjectSettings.globalize_path(save_path))
+	if err != OK:
+		push_error("セーブの名前を付け替えられなかった(%d): %s" % [err, save_path])
+		return false
+	return true
+
+# ファイルを読んで、セーブとして読めれば Dictionary、読めなければ null
+static func _read_save(path: String):
+	if not FileAccess.file_exists(path):
+		return null
+	var json := JSON.new()  # parse_string と違い、読めなくてもエラーを出力しない
+	if json.parse(FileAccess.get_file_as_string(path)) != OK:
+		return null
+	return json.data if typeof(json.data) == TYPE_DICTIONARY else null
 
 func load_game() -> void:
-	if not FileAccess.file_exists(save_path):
-		return
-	var f := FileAccess.open(save_path, FileAccess.READ)
-	if f == null:
-		return
-	var data = JSON.parse_string(f.get_as_text())
-	f.close()
-	if typeof(data) != TYPE_DICTIONARY:
-		return
-	_backup_save()
+	load_notice = ""
+	var data = _read_save(save_path)
+	var tmp := save_path + TMP_SUFFIX
+	if data == null and FileAccess.file_exists(save_path):
+		data = _recover_broken_save()
+		if data == null:
+			return  # 戻せるものがなかった。新しいゲームで始める(読めなかったファイルは別名で残してある)
+	elif data == null:
+		# セーブがない。付け替えの途中で落ちたなら、書き終えた .tmp が残っている
+		data = _read_save(tmp)
+		if data == null:
+			return  # はじめて開いた
+		_write_save(FileAccess.get_file_as_string(tmp))
+		_backup_save()
+	else:
+		_backup_save()
+	if FileAccess.file_exists(tmp):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
 	# 2-2 以前のセーブには菜園・池・クエストの記録がない(空・段階 0 から)
 	var ld = data.get("land", {})
 	if typeof(ld) != TYPE_DICTIONARY:
@@ -304,7 +340,48 @@ func load_game() -> void:
 	market.from_save(md)
 	forest.from_save(data)
 
-# その日はじめて読めたセーブを、日付つきで控える(壊れたセーブは呼ばれない)。新しい BACKUP_KEEP 日ぶんを残す
+# 読めないセーブを別名で残し、書きかけの .tmp か、いちばん新しい読める控えから戻す。
+# 戻せたらその中身を本物のセーブに書き、戻せなければ null(新しいゲームになる)。
+# どちらも load_notice で画面に知らせる。この日は控えを取らず、古い控えも消さない
+func _recover_broken_save():
+	var stamp := Time.get_datetime_string_from_system().replace(":", "").replace("T", "_")
+	var broken := "%s%s%s.json" % [save_path.get_basename(), BROKEN_INFIX, stamp]
+	if DirAccess.rename_absolute(ProjectSettings.globalize_path(save_path), ProjectSettings.globalize_path(broken)) != OK:
+		DirAccess.copy_absolute(ProjectSettings.globalize_path(save_path), ProjectSettings.globalize_path(broken))
+	var kept := "読めなかったファイルは %s として残してある" % broken.get_file()
+	var source := ""
+	var from := ""
+	if _read_save(save_path + TMP_SUFFIX) != null:
+		source = save_path + TMP_SUFFIX
+		from = "書きかけの保存"
+	else:
+		for n in _backup_names(true):
+			var path := "%s/%s" % [backup_dir, n]
+			if _read_save(path) != null:
+				source = path
+				from = "%s の控え" % n.trim_prefix(BACKUP_PREFIX).get_basename()
+				break
+	if source == "":
+		load_notice = "セーブが読めなかった。戻せる控えもなかったので、新しく始めた。%s" % kept
+		return null
+	_write_save(FileAccess.get_file_as_string(source))
+	load_notice = "セーブが読めなかったので、%sから戻した。%s" % [from, kept]
+	return _read_save(save_path)
+
+# 控えのファイル名(日付が入っているので、名前の順 = 古い順)。newest_first なら新しい順
+func _backup_names(newest_first := false) -> Array:
+	var names := []
+	if backup_dir == "" or not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(backup_dir)):
+		return names
+	for n in DirAccess.get_files_at(backup_dir):
+		if n.begins_with(BACKUP_PREFIX):
+			names.append(n)
+	names.sort()
+	if newest_first:
+		names.reverse()
+	return names
+
+# その日はじめて読めたセーブを、日付つきで控える(読めなかった日は呼ばれない)。新しい BACKUP_KEEP 日ぶんを残す
 func _backup_save() -> void:
 	if backup_dir == "":
 		return
@@ -312,11 +389,7 @@ func _backup_save() -> void:
 	var path := "%s/%s%s.json" % [backup_dir, BACKUP_PREFIX, forest.today()]
 	if not FileAccess.file_exists(path):
 		DirAccess.copy_absolute(ProjectSettings.globalize_path(save_path), ProjectSettings.globalize_path(path))
-	var names := []
-	for n in DirAccess.get_files_at(backup_dir):
-		if n.begins_with(BACKUP_PREFIX):
-			names.append(n)
-	names.sort()  # 名前に日付が入っているので、古い順になる
+	var names := _backup_names()
 	for i in range(names.size() - BACKUP_KEEP):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("%s/%s" % [backup_dir, names[i]]))
 

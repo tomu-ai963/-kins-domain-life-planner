@@ -174,9 +174,16 @@ func update_shovel(delta: float, holding: bool) -> void:
 func _check_new_day() -> void:
 	var f := world.forest
 	var id: String = world.check_new_day()
+	# セーブが読めず控えから戻したときは、その日のはじめの知らせの先頭に出す(1 回だけ)
+	var notice := world.load_notice
+	world.load_notice = ""
 	if id == "":
+		if notice != "":
+			$HUD.show_message(notice, 15.0)
 		return
 	var lines := ["今日の発見: " + daily_message(id)]
+	if notice != "":
+		lines.push_front(notice)
 	if not f.pickups.is_empty():
 		lines.append("育った木の根元に種が落ちている(%dか所)" % f.pickups.size())
 	for sp in f.last_failed:
@@ -197,7 +204,7 @@ func _check_new_day() -> void:
 		lines.append("空の巣箱に蜂が入った(%d箱)" % world.bees.last_arrivals)
 	if world.snow.last_fell:
 		lines.append("雪かきの道が雪で埋まった")
-	$HUD.show_message("\n".join(PackedStringArray(lines)), 10.0)
+	$HUD.show_message("\n".join(PackedStringArray(lines)), 15.0 if notice != "" else 10.0)
 
 # ── 巣箱とはちみつ ─────────────────────────────────────────
 # J: 足元に巣箱を作る / くり抜く / はちみつを採る
