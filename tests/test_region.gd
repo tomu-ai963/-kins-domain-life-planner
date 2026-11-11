@@ -41,6 +41,7 @@ func _initialize() -> void:
 	_test_wildlife()
 	_test_crops()
 	_test_recipes()
+	_test_wild_woods()
 	_run_scene.call_deferred()
 
 func _check(cond: bool, label: String) -> void:
@@ -186,7 +187,8 @@ func _test_planting() -> void:
 	var f := tk.forest
 	_check(f.plant_problem("birch", "seed") == "not_here" and f.plant_problem("cedar", "sapling") == "not_here", "東京では白樺とシベリア杉は育たない")
 	_check(f.can_plant("konara", "seed") and f.can_plant("sugi", "seed") and f.can_plant("mikan", "sapling"), "東京ではコナラ・スギ・ミカンが育つ")
-	_check(f.species_in("broadleaf") == ["konara", "keyaki", "kunugi"] and f.species_in("conifer") == ["sugi", "hinoki"], "東京のキー 1・3 で選べる木(%s・%s)" % [f.species_in("broadleaf"), f.species_in("conifer")])
+	_check(f.plantable_in("broadleaf") == ["konara", "keyaki", "kunugi"] and f.plantable_in("conifer") == ["sugi", "hinoki"], "東京のキー 1・3 で選べる木(%s・%s)" % [f.plantable_in("broadleaf"), f.plantable_in("conifer")])
+	_check(f.species_in("broadleaf").has("yamazakura") and f.species_in("broadleaf").has("shirakashi") and not f.plantable_in("broadleaf").has("yamazakura"), "東京ではヤマザクラ・シラカシも育つが、種を持つまでキーでは選べない")
 	_check(f.species_in("fruit") == ["plum", "pear", "kaki", "mikan", "ume", "kuri"], "東京の果樹(%s)" % str(f.species_in("fruit")))
 	f.seeds.birch = 1
 	_check(f.add_tree(TREE_SPOT, "birch", "seed"), "持っている種は add_tree では植えられる(画面で止めるのは Main)")
@@ -198,9 +200,9 @@ func _test_planting() -> void:
 	_check(hk.forest.can_plant("birch", "seed"), "北海道の冬も白樺の種はまける")
 	_check(hk.forest.plant_problem("sugi", "seed") == "not_here" and hk.forest.grows_here("ezomatsu"), "北海道はスギでなくエゾマツ")
 	var ok := _world("okinawa", "2026-11-11")
-	_check(ok.forest.species_in("broadleaf") == ["gajumaru", "deigo", "fukugi"] and ok.forest.species_in("conifer") == ["ryukyu_pine"] and ok.forest.species_in("fruit") == ["shikuwasa", "mango", "papaya"], "沖縄: ガジュマル・デイゴ・フクギ / リュウキュウマツ / シークヮーサー・マンゴー・パパイヤ")
-	_check(ok.forest.species_in("broadleaf").size() + ok.forest.species_in("fruit").size() + ok.forest.species_in("conifer").size() == 7, "沖縄の木は 7 種類")
-	_check(Forest.SPECIES.size() == 23, "木は全部で 23 種類")
+	_check(ok.forest.plantable_in("broadleaf") == ["gajumaru", "deigo", "fukugi"] and ok.forest.plantable_in("conifer") == ["ryukyu_pine"] and ok.forest.plantable_in("fruit") == ["shikuwasa", "mango", "papaya"], "沖縄: ガジュマル・デイゴ・フクギ / リュウキュウマツ / シークヮーサー・マンゴー・パパイヤ")
+	_check(ok.forest.plantable_in("broadleaf").size() + ok.forest.plantable_in("fruit").size() + ok.forest.plantable_in("conifer").size() == 7, "沖縄の市場で買える木は 7 種類")
+	_check(Forest.SPECIES.size() == 40 and Forest.SPECIES.values().filter(func(s): return s.get("wild_only", false)).size() == 17, "木は全部で 40 種類(うち外の林だけの木 17)")
 	_check(Forest.FRUIT_ORDER.all(func(sp): return Forest.FRUITS[sp].first * Market_price(sp) <= 300 and Forest.FRUITS[sp].most * Market_price(sp) <= 300), "どの果樹も 1 本 1 日 300₽ まで")
 	_check(ok.forest.SPECIES.papaya.wood_max == 0, "パパイヤからは丸太が採れない")
 	var legacy := _world("", "2026-11-11")
@@ -304,7 +306,7 @@ func _test_quest_and_feeder() -> void:
 	_check(ok.quests.family_tree() == "gajumaru", "沖縄の家族の木はガジュマル")
 	var legacy := _world("", "2026-11-11")
 	_check(legacy.quests.family_tree() == "cedar" and legacy.feeders.feed_species() == "birch", "選ぶ前はシベリア杉と白樺")
-	_check(tk.quests.milestone_total() == tk.forest.SPECIES.keys().filter(func(sp): return tk.forest.grows_here(sp)).size() * tk.quests.MILESTONE_AGES.size() + 0, "木の節目は、その土地で育つ樹種のぶん")
+	_check(tk.quests.milestone_total() == tk.forest.SPECIES.keys().filter(func(sp): return tk.forest.grows_here(sp) and not Forest.is_wild_only(sp)).size() * tk.quests.MILESTONE_AGES.size(), "木の節目は、その土地で買える樹種のぶん(外の林の木は植えると増える)")
 
 func _test_prune_year() -> void:
 	print("剪定が効く年")
@@ -358,6 +360,7 @@ func _test_picker_text() -> void:
 	print("選ぶ画面の文言")
 	var tokyo := RegionPicker.describe("tokyo")
 	_check(tokyo.contains("太平洋側") and tokyo.contains("冬 12〜2月") and tokyo.contains("コナラ") and not tokyo.contains("白樺"), "東京の説明: 気候・冬の月・育つ木")
+	_check(tokyo.contains("広葉樹: コナラ・ケヤキ・クヌギ\n") and tokyo.contains("外の林: ") and tokyo.contains("ヤマザクラ"), "植えられる木(市場の木)と、外の林の木は別の行")
 	var hk := RegionPicker.describe("hokkaido")
 	_check(hk.contains("冬 11〜3月") and hk.contains("雪が積もり") and hk.contains("エゾマツ"), "北海道の説明")
 	var ok := RegionPicker.describe("okinawa")
@@ -493,6 +496,69 @@ func _test_recipes() -> void:
 	_check(k.eat("hoshigaki") == "eaten" and k.has_effect("sweet"), "干し柿を食べると「甘い」(親しくなりやすい)")
 	_check(tk.market.sell_all("hoshigaki") == 9 * 40, "干し柿は 1 個 40₽ で売れる(秋)")
 
+func _test_wild_woods() -> void:
+	print("外の自然の林")
+	var Wilds = load("res://logic/Wilds.gd")
+	var Market = load("res://logic/Market.gd")
+	var legacy := _world("", "2026-11-11")
+	legacy.wilds.refresh()
+	_check(legacy.wilds.trees.is_empty(), "県を選ぶ前は外の林がない")
+	for zid in Region.ZONES:
+		var pref: String = Region.PREFS.keys().filter(func(p): return Region.PREFS[p].zone == zid)[0]
+		var w := _world(pref, "2026-11-11")
+		var ws = w.wilds
+		ws.refresh()
+		var kinds: Array = ws.species_here()
+		var in_band: bool = ws.trees.all(func(t): return maxf(absf(t.pos.x), absf(t.pos.y)) >= Wilds.BAND_IN and maxf(absf(t.pos.x), absf(t.pos.y)) <= Wilds.BAND_OUT)
+		var clear: bool = ws.trees.all(func(t): return t.pos.distance_to(Market.POS) >= Wilds.MARKET_CLEAR)
+		var all_kinds: bool = kinds.all(func(sp): return ws.trees.any(func(t): return t.species == sp))
+		_check(ws.trees.size() == Wilds.TREE_COUNT and in_band and clear and all_kinds, "%s: 外の林に %d 本・%d 種類(%s)。境界の外の帯にあり、市場の前は空く" % [Region.ZONES[zid].name, ws.trees.size(), kinds.size(), _names(kinds)])
+		_check(kinds.all(func(sp): return zid in Forest.SPECIES[sp].zones), "%s: どれもその土地に自生する木" % Region.ZONES[zid].name)
+		var shops: Array = kinds.filter(func(sp): return not Market.good(sp + "_seed").is_empty() or not Market.good(sp + "_sapling").is_empty())
+		_check(shops.all(func(sp): return sp in ["konara", "kunugi", "keyaki"]), "%s: 市場でも買えるのはコナラ・クヌギ・ケヤキだけ" % Region.ZONES[zid].name)
+	_check(Forest.SPECIES.keys().filter(func(sp): return Forest.is_wild_only(sp)).all(func(sp): return Market.good(sp + "_seed").is_empty() and Market.good(sp + "_sapling").is_empty() and Market.SELL_PRICES.has("seed_" + sp)), "外の林だけの木は、市場で買えず、種は売れる")
+	# 種が落ちる日
+	var tk := _world("tokyo", "2026-06-01")
+	var ws = tk.wilds
+	ws.refresh()
+	var days: Array = ws.drop_days_in("yamazakura", 2026)
+	var months_ok: bool = days.all(func(d): return int(Forest.date_of_day(d).substr(5, 2)) == 6)
+	_check(days.size() == Wilds.DROP_DAYS and months_ok and days == ws.drop_days_in("yamazakura", 2026), "ヤマザクラの種が落ちるのは 6 月のうち 3 日(%s)。何度数えても同じ" % ", ".join(PackedStringArray(days.map(func(d): return Forest.date_of_day(d)))))
+	_check(ws.drop_days_in("yamazakura", 2027) != days, "年が変わると日も変わる")
+	var total := 0
+	for sp in ws.species_here():
+		total += ws.drop_days_in(sp, 2026).size()
+	_check(total >= ws.species_here().size() * 2, "東京の外の林で種の落ちる日は年 %d 日(樹種ごとに 2〜3 日。重なる日もある)" % total)
+	# 落ちる日に開くと、根元に種がある。翌日には消える
+	tk.time.set_today(Forest.date_of_day(days[0]))
+	tk.forest.last_day = Forest.date_of_day(days[0] - 1)
+	tk.refresh_season()
+	tk.check_new_day()
+	var wild_pickups: Array = tk.forest.pickups.filter(func(p): return p.species == "yamazakura")
+	var n_trees: int = ws.trees.filter(func(t): return t.species == "yamazakura").size()
+	_check(ws.last_drops.has("yamazakura") and wild_pickups.size() == n_trees, "落ちる日はヤマザクラの根元 %d か所に種" % n_trees)
+	var p0: Dictionary = wild_pickups[0]
+	tk.forest.collect_near(p0.pos, 1.2)
+	_check(int(tk.forest.seeds.yamazakura) == 5, "拾うとヤマザクラの種 +5")
+	_check(tk.forest.plantable_in("broadleaf").has("yamazakura"), "種を持つと、キーの 1 で選べる")
+	tk.time.shift_days(1)
+	tk.refresh_season()
+	tk.check_new_day()
+	_check(not tk.forest.pickups.any(func(p): return p.species == "yamazakura") or ws.last_drops.has("yamazakura"), "翌日には拾わなかった種は消える")
+	_check(tk.market.sell_all("seed_yamazakura") == 5 * 8, "ヤマザクラの種は 1 粒 8₽ で売れる")
+	_check(tk.market.buy("yamazakura_seed") == "unknown", "ヤマザクラの種は買えない")
+	# 自分の土地で育てれば、種を増やせる
+	var hk := _world("hokkaido", "2026-10-05")
+	hk.forest.seeds.buna = 1
+	hk.forest.germination_rates.buna = 1.0
+	_check(hk.forest.can_plant("buna", "seed") and hk.forest.add_tree(Vector2(10, 10), "buna", "seed"), "ブナの種を自分の土地にまける")
+	hk.forest.trees[-1].planted_at -= 86400 * 41
+	hk.forest.drop_seeds(hk.forest.today())
+	_check(hk.forest.pickups.any(func(p): return p.species == "buna" and p.pos.distance_to(Vector2(10, 10)) < 3.0), "育ったブナ(樹齢 40 年〜)は秋に自分の土地で種を落とす")
+
+func _names(species: Array) -> String:
+	return "・".join(PackedStringArray(species.map(func(sp): return Forest.SPECIES[sp].name)))
+
 func Market_price(sp: String) -> int:
 	return int(load("res://logic/Market.gd").SELL_PRICES[sp])
 
@@ -535,6 +601,8 @@ func _run_scene() -> void:
 	picker.press("ここに決める")
 	await process_frame
 	_check(not hud.is_picker_open() and main.world.region.pref == "tokyo", "決めると閉じて、東京都になる")
+	await process_frame
+	_check(main.get_node("WildWoods").tree_count() == 56, "外の林が見える(56 本)")
 	_check(player.is_physics_processing(), "決めたら歩ける")
 	_check(main.selected_species == "konara", "選んでいた白樺は育たないので、コナラに選び直す")
 	_check(hud.is_message_visible() and hud._message.contains("東京都"), "決めた県を知らせる")

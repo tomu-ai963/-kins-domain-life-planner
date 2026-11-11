@@ -363,7 +363,7 @@ func _stock_text(stock: Dictionary, with_sapling_only: bool) -> String:
 		order.append_array(Forest.SAPLING_ONLY)
 	var parts := PackedStringArray()
 	for sp in order:
-		if _trees.grows_here(sp) or int(stock.get(sp, 0)) > 0:
+		if (_trees.grows_here(sp) and not Forest.is_wild_only(sp)) or int(stock.get(sp, 0)) > 0:
 			parts.append("%s %d" % [Forest.SPECIES[sp].name, int(stock.get(sp, 0))])
 	var rows := PackedStringArray()
 	for i in range(0, parts.size(), 3):

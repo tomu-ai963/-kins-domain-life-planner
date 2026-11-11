@@ -71,6 +71,75 @@ const KINDS := {
 		"leaf": Color(0.12, 0.38, 0.20), "leaf_autumn": Color(0.12, 0.38, 0.20), "trunk": Color(0.50, 0.30, 0.20),
 		"shape": "cone", "trunk_h": 0.9, "trunk_w": 0.13, "crown_h": 4.6, "crown_y": -0.2,
 	},
+	# ── 自然の木(外の林。2026-11-11) ──
+	"buna": {
+		"leaf": Color(0.40, 0.62, 0.28), "leaf_autumn": Color(0.80, 0.52, 0.20), "trunk": Color(0.62, 0.62, 0.58), "twig": Color(0.44, 0.40, 0.36),
+		"shape": "sphere", "trunk_h": 1.8, "trunk_w": 0.12, "crown_h": 2.2, "crown_y": 0.9,
+	},
+	"mizunara": {
+		"leaf": Color(0.34, 0.56, 0.24), "leaf_autumn": Color(0.72, 0.48, 0.20), "trunk": Color(0.46, 0.40, 0.34), "twig": Color(0.36, 0.30, 0.26),
+		"shape": "sphere", "trunk_h": 1.5, "trunk_w": 0.13, "crown_h": 2.2, "crown_y": 0.8,
+	},
+	"harunire": {
+		"leaf": Color(0.36, 0.58, 0.24), "leaf_autumn": Color(0.80, 0.68, 0.24), "trunk": Color(0.40, 0.34, 0.28), "twig": Color(0.34, 0.28, 0.24),
+		"shape": "sphere", "trunk_h": 1.8, "trunk_w": 0.12, "crown_h": 2.3, "crown_y": 0.9,
+	},
+	"nanakamado": {
+		"leaf": Color(0.38, 0.60, 0.26), "leaf_autumn": Color(0.86, 0.22, 0.14), "trunk": Color(0.42, 0.36, 0.32), "twig": Color(0.38, 0.32, 0.28),
+		"shape": "sphere", "trunk_h": 1.0, "trunk_w": 0.11, "crown_h": 1.8, "crown_y": 0.6,
+	},
+	"oyamazakura": {
+		"leaf": Color(0.34, 0.58, 0.24), "leaf_autumn": Color(0.86, 0.38, 0.18), "trunk": Color(0.34, 0.22, 0.20), "twig": Color(0.34, 0.22, 0.20),
+		"shape": "sphere", "trunk_h": 1.2, "trunk_w": 0.13, "crown_h": 1.8, "crown_y": 0.7,
+	},
+	"yamazakura": {
+		"leaf": Color(0.34, 0.58, 0.24), "leaf_autumn": Color(0.84, 0.44, 0.18), "trunk": Color(0.36, 0.24, 0.20), "twig": Color(0.36, 0.24, 0.20),
+		"shape": "sphere", "trunk_h": 1.2, "trunk_w": 0.13, "crown_h": 1.8, "crown_y": 0.7,
+	},
+	"akashide": {
+		"leaf": Color(0.38, 0.60, 0.26), "leaf_autumn": Color(0.84, 0.40, 0.18), "trunk": Color(0.50, 0.48, 0.44), "twig": Color(0.40, 0.36, 0.32),
+		"shape": "sphere", "trunk_h": 1.3, "trunk_w": 0.11, "crown_h": 1.9, "crown_y": 0.7,
+	},
+	"mizuki": {
+		"leaf": Color(0.36, 0.60, 0.26), "leaf_autumn": Color(0.76, 0.30, 0.22), "trunk": Color(0.46, 0.42, 0.38), "twig": Color(0.40, 0.36, 0.32),
+		"shape": "sphere", "trunk_h": 1.4, "trunk_w": 0.11, "crown_h": 1.4, "crown_y": 0.7,
+	},
+	"enoki": {
+		"leaf": Color(0.36, 0.58, 0.24), "leaf_autumn": Color(0.78, 0.66, 0.24), "trunk": Color(0.52, 0.48, 0.42), "twig": Color(0.40, 0.36, 0.32),
+		"shape": "sphere", "trunk_h": 1.5, "trunk_w": 0.13, "crown_h": 1.9, "crown_y": 0.8,
+	},
+	"hannoki": {
+		"leaf": Color(0.28, 0.50, 0.22), "leaf_autumn": Color(0.46, 0.44, 0.22), "trunk": Color(0.40, 0.34, 0.30), "twig": Color(0.34, 0.28, 0.24),
+		"shape": "sphere", "trunk_h": 1.6, "trunk_w": 0.10, "crown_h": 2.4, "crown_y": 0.9,
+	},
+	"egonoki": {
+		"leaf": Color(0.38, 0.62, 0.28), "leaf_autumn": Color(0.82, 0.70, 0.26), "trunk": Color(0.34, 0.28, 0.26), "twig": Color(0.30, 0.26, 0.24),
+		"shape": "sphere", "trunk_h": 1.0, "trunk_w": 0.10, "crown_h": 1.7, "crown_y": 0.6,
+	},
+	"tsuge": {
+		"leaf": Color(0.18, 0.42, 0.16), "leaf_autumn": Color(0.18, 0.42, 0.16), "trunk": Color(0.52, 0.46, 0.36),
+		"shape": "sphere", "trunk_h": 0.5, "trunk_w": 0.10, "crown_h": 1.6, "crown_y": 0.5,
+	},
+	"shirakashi": {
+		"leaf": Color(0.18, 0.40, 0.18), "leaf_autumn": Color(0.18, 0.40, 0.18), "trunk": Color(0.36, 0.34, 0.30),
+		"shape": "sphere", "trunk_h": 1.2, "trunk_w": 0.12, "crown_h": 2.0, "crown_y": 0.7,
+	},
+	"sudajii": {
+		"leaf": Color(0.20, 0.40, 0.16), "leaf_autumn": Color(0.20, 0.40, 0.16), "trunk": Color(0.30, 0.28, 0.26),
+		"shape": "sphere", "trunk_h": 1.2, "trunk_w": 0.14, "crown_h": 1.9, "crown_y": 0.7,
+	},
+	"akagi": {
+		"leaf": Color(0.26, 0.50, 0.22), "leaf_autumn": Color(0.26, 0.50, 0.22), "trunk": Color(0.52, 0.34, 0.26),
+		"shape": "sphere", "trunk_h": 1.2, "trunk_w": 0.15, "crown_h": 1.8, "crown_y": 0.7,
+	},
+	"kanhizakura": {
+		"leaf": Color(0.32, 0.56, 0.24), "leaf_autumn": Color(0.32, 0.56, 0.24), "trunk": Color(0.34, 0.22, 0.20), "twig": Color(0.34, 0.22, 0.20),
+		"shape": "sphere", "trunk_h": 1.0, "trunk_w": 0.12, "crown_h": 1.7, "crown_y": 0.6,
+	},
+	"hamaibiwa": {
+		"leaf": Color(0.20, 0.46, 0.20), "leaf_autumn": Color(0.20, 0.46, 0.20), "trunk": Color(0.56, 0.52, 0.44),
+		"shape": "sphere", "trunk_h": 0.8, "trunk_w": 0.14, "crown_h": 1.6, "crown_y": 0.6,
+	},
 	"ryukyu_pine": {
 		"leaf": Color(0.20, 0.46, 0.22), "leaf_autumn": Color(0.20, 0.46, 0.22), "trunk": Color(0.46, 0.28, 0.18),
 		"shape": "sphere", "trunk_h": 1.8, "trunk_w": 0.12, "crown_h": 1.4, "crown_y": 0.5,  # 高い幹の上に、平たい樹冠
@@ -135,6 +204,11 @@ const BLOSSOMS := {
 	"ume": {"color": Color(1.0, 0.82, 0.88), "amount": 0.95},
 	"kuri": {"color": Color(0.96, 0.94, 0.80), "amount": 0.4},   # 初夏の白っぽい穂
 	"deigo": {"color": Color(0.90, 0.20, 0.16), "amount": 0.75}, # 赤い花
+	"yamazakura": {"color": Color(1.0, 0.86, 0.88), "amount": 0.8},
+	"oyamazakura": {"color": Color(1.0, 0.74, 0.82), "amount": 0.85},
+	"kanhizakura": {"color": Color(0.94, 0.36, 0.52), "amount": 0.8},  # 濃い桃色
+	"egonoki": {"color": Color(1.0, 0.98, 0.94), "amount": 0.45},     # 下向きの白い花
+	"mizuki": {"color": Color(1.0, 0.98, 0.92), "amount": 0.4},
 }
 const LEAF_SHADE := 0.06  # 木ごとの葉の色の違い(明るい・そのまま・暗いの 3 通り)
 const SPROUT_SCALE := 0.45

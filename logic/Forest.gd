@@ -126,7 +126,7 @@ const SPECIES := {
 	},
 	# ── 県を選ぶようにして足した木(2026-11-11)。数字は現実の目安から置いた仮の数字 ──
 	"konara": {  # コナラ: 北海道から九州の雑木林。どんぐりはよく芽が出る。15〜20 年ごとに伐って薪にしてきた
-		"group": "broadleaf", "zones": NOT_ISLANDS, "regional": true,
+		"group": "broadleaf", "zones": NOT_ISLANDS, "regional": true, "wild": true, "drop_months": [10],
 		"name": "コナラ", "max_r": 4.0, "tau": 8.0, "p": 2.2, "evergreen": false,
 		"germination": 0.6, "sapling_age": 2.0,
 		"seed_age": 15.0, "seed_seasons": ["autumn"], "seed_drop": 5,
@@ -176,14 +176,14 @@ const SPECIES := {
 	},
 	# ── 2026-11-11 に足した木(2 回目。関東より西と沖縄が手薄だったので) ──
 	"keyaki": {  # ケヤキ: 本州から九州。扇のように広がる大きな木。材は丈夫
-		"group": "broadleaf", "zones": HONSHU_TO_KYUSHU, "regional": true,
+		"group": "broadleaf", "zones": HONSHU_TO_KYUSHU, "regional": true, "wild": true, "drop_months": [10, 11],
 		"name": "ケヤキ", "max_r": 5.0, "tau": 12.0, "p": 2.2, "evergreen": false,
 		"germination": 0.4, "sapling_age": 2.0,
 		"seed_age": 20.0, "seed_seasons": ["autumn"], "seed_drop": 5,
 		"wood_age": 25.0, "wood_years": 6.0, "wood_max": 8,
 	},
 	"kunugi": {  # クヌギ: 本州から九州の雑木林。10〜15 年ごとに伐って薪やしいたけの原木にしてきた。コナラより早く太る
-		"group": "broadleaf", "zones": HONSHU_TO_KYUSHU, "regional": true,
+		"group": "broadleaf", "zones": HONSHU_TO_KYUSHU, "regional": true, "wild": true, "drop_months": [10],
 		"name": "クヌギ", "max_r": 4.0, "tau": 8.0, "p": 2.2, "evergreen": false,
 		"germination": 0.6, "sapling_age": 2.0,
 		"seed_age": 12.0, "seed_seasons": ["autumn"], "seed_drop": 5,
@@ -245,6 +245,128 @@ const SPECIES := {
 		"seed_age": 10.0, "seed_seasons": ["autumn", "winter"], "seed_drop": 5,
 		"wood_age": 15.0, "wood_years": 5.0, "wood_max": 6,
 	},
+	# ── 自然の木(2026-11-11 とむ決定)。一族の土地の外の林(logic/Wilds.gd)に生え、決まった日に種が落ちる。
+	#    wild_only: 市場では買えない(種は売れる)。自分の土地に植えて育てれば、種を増やせる。
+	#    drop_months: 外の林で種が落ちる月(その中から年 Wilds.DROP_DAYS 日)。数字は現実の目安から
+	"buna": {  # ブナ: 冷温帯の森の主。実がたくさんなる年は数年に一度
+		"group": "broadleaf", "zones": COLD, "regional": true, "wild": true, "wild_only": true, "drop_months": [10],
+		"name": "ブナ", "max_r": 5.0, "tau": 14.0, "p": 2.2, "evergreen": false,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 40.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 40.0, "wood_years": 8.0, "wood_max": 8,
+	},
+	"mizunara": {  # ミズナラ: 北の森のどんぐりの木
+		"group": "broadleaf", "zones": COLD, "regional": true, "wild": true, "wild_only": true, "drop_months": [9, 10],
+		"name": "ミズナラ", "max_r": 5.0, "tau": 12.0, "p": 2.2, "evergreen": false,
+		"germination": 0.5, "sapling_age": 2.0,
+		"seed_age": 25.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 30.0, "wood_years": 6.0, "wood_max": 8,
+	},
+	"harunire": {  # ハルニレ: 北の川べりの大きな木。種は初夏に風で飛ぶ
+		"group": "broadleaf", "zones": ["hokkaido", "tohoku", "highland"], "regional": true, "wild": true, "wild_only": true, "drop_months": [5, 6],
+		"name": "ハルニレ", "max_r": 5.0, "tau": 10.0, "p": 2.2, "evergreen": false,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 15.0, "seed_seasons": ["spring", "summer"], "seed_drop": 5,
+		"wood_age": 25.0, "wood_years": 6.0, "wood_max": 6,
+	},
+	"nanakamado": {  # ナナカマド: 秋に赤い実と紅葉。鳥が実を食べて種を運ぶ
+		"group": "broadleaf", "zones": COLD, "regional": true, "wild": true, "wild_only": true, "drop_months": [9, 10],
+		"name": "ナナカマド", "max_r": 2.5, "tau": 6.0, "p": 2.0, "evergreen": false,
+		"germination": 0.3, "sapling_age": 2.0,
+		"seed_age": 8.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 20.0, "wood_years": 8.0, "wood_max": 2,
+	},
+	"oyamazakura": {  # オオヤマザクラ: 北海道の桜。夏に黒い実
+		"group": "broadleaf", "zones": ["hokkaido"], "regional": true, "wild": true, "wild_only": true, "drop_months": [7],
+		"name": "オオヤマザクラ", "max_r": 4.0, "tau": 8.0, "p": 2.0, "evergreen": false,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 10.0, "seed_seasons": ["summer"], "seed_drop": 5,
+		"wood_age": 25.0, "wood_years": 8.0, "wood_max": 5,
+	},
+	"yamazakura": {  # ヤマザクラ: 本州から九州の山の桜。初夏に黒い実
+		"group": "broadleaf", "zones": HONSHU_TO_KYUSHU, "regional": true, "wild": true, "wild_only": true, "drop_months": [6],
+		"name": "ヤマザクラ", "max_r": 4.5, "tau": 8.0, "p": 2.0, "evergreen": false,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 10.0, "seed_seasons": ["summer"], "seed_drop": 5,
+		"wood_age": 25.0, "wood_years": 8.0, "wood_max": 5,
+	},
+	"akashide": {  # アカシデ: 雑木林のシデの仲間。房になった実が秋に熟す
+		"group": "broadleaf", "zones": HONSHU_TO_KYUSHU, "regional": true, "wild": true, "wild_only": true, "drop_months": [10, 11],
+		"name": "アカシデ", "max_r": 3.5, "tau": 8.0, "p": 2.0, "evergreen": false,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 12.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 15.0, "wood_years": 5.0, "wood_max": 5,
+	},
+	"mizuki": {  # ミズキ: 枝が段になって横に広がる。夏の終わりに黒い実
+		"group": "broadleaf", "zones": NOT_ISLANDS, "regional": true, "wild": true, "wild_only": true, "drop_months": [8, 9],
+		"name": "ミズキ", "max_r": 4.0, "tau": 8.0, "p": 2.0, "evergreen": false,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 10.0, "seed_seasons": ["summer", "autumn"], "seed_drop": 5,
+		"wood_age": 20.0, "wood_years": 6.0, "wood_max": 4,
+	},
+	"enoki": {  # エノキ: 里の大きな木。秋に小さな橙色の実
+		"group": "broadleaf", "zones": ["tohoku", "snowy", "highland", "pacific", "setouchi", "south", "nansei"], "regional": true, "wild": true, "wild_only": true, "drop_months": [9, 10],
+		"name": "エノキ", "max_r": 5.0, "tau": 10.0, "p": 2.2, "evergreen": false,
+		"germination": 0.5, "sapling_age": 2.0,
+		"seed_age": 12.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 25.0, "wood_years": 6.0, "wood_max": 6,
+	},
+	"hannoki": {  # ハンノキ: 湿ったところの木。育つのが速い
+		"group": "broadleaf", "zones": NOT_ISLANDS, "regional": true, "wild": true, "wild_only": true, "drop_months": [10, 11],
+		"name": "ハンノキ", "max_r": 3.5, "tau": 6.0, "p": 2.0, "evergreen": false,
+		"germination": 0.3, "sapling_age": 2.0,
+		"seed_age": 8.0, "seed_seasons": ["autumn", "winter"], "seed_drop": 5,
+		"wood_age": 12.0, "wood_years": 4.0, "wood_max": 5,
+	},
+	"egonoki": {  # エゴノキ: 初夏に白い花が下向きに咲く。北海道から沖縄まで
+		"group": "broadleaf", "zones": ["hokkaido", "tohoku", "snowy", "highland", "pacific", "setouchi", "south", "nansei"], "regional": true, "wild": true, "wild_only": true, "drop_months": [8, 9],
+		"name": "エゴノキ", "max_r": 2.8, "tau": 6.0, "p": 2.0, "evergreen": false,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 8.0, "seed_seasons": ["summer", "autumn"], "seed_drop": 5,
+		"wood_age": 20.0, "wood_years": 8.0, "wood_max": 2,
+	},
+	"tsuge": {  # ツゲ: 暖かい山の、葉の小さな常緑の低い木。育つのはとてもゆっくり
+		"group": "broadleaf", "zones": WARM, "regional": true, "wild": true, "wild_only": true, "drop_months": [9, 10],
+		"name": "ツゲ", "max_r": 1.2, "tau": 15.0, "p": 2.0, "evergreen": true,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 10.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 30.0, "wood_years": 10.0, "wood_max": 1,
+	},
+	"shirakashi": {  # シラカシ: 暖かい土地の常緑のどんぐりの木
+		"group": "broadleaf", "zones": WARM, "regional": true, "wild": true, "wild_only": true, "drop_months": [11],
+		"name": "シラカシ", "max_r": 4.0, "tau": 12.0, "p": 2.0, "evergreen": true,
+		"germination": 0.6, "sapling_age": 2.0,
+		"seed_age": 15.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 25.0, "wood_years": 6.0, "wood_max": 6,
+	},
+	"sudajii": {  # スダジイ: 暖かい土地の森の主。沖縄ではイタジイと呼ぶ。どんぐりは生でも食べられる
+		"group": "broadleaf", "zones": ["pacific", "setouchi", "south", "nansei"], "regional": true, "wild": true, "wild_only": true, "drop_months": [10, 11],
+		"name": "スダジイ", "max_r": 5.0, "tau": 12.0, "p": 2.0, "evergreen": true,
+		"germination": 0.6, "sapling_age": 2.0,
+		"seed_age": 15.0, "seed_seasons": ["autumn"], "seed_drop": 5,
+		"wood_age": 25.0, "wood_years": 6.0, "wood_max": 6,
+	},
+	"akagi": {  # アカギ: 沖縄の大きな常緑樹。冬に実が熟す
+		"group": "broadleaf", "zones": ["nansei"], "regional": true, "wild": true, "wild_only": true, "drop_months": [11, 12],
+		"name": "アカギ", "max_r": 5.0, "tau": 10.0, "p": 2.0, "evergreen": true,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 12.0, "seed_seasons": ["autumn", "winter"], "seed_drop": 5,
+		"wood_age": 25.0, "wood_years": 6.0, "wood_max": 5,
+	},
+	"kanhizakura": {  # カンヒザクラ: 沖縄で冬の終わりに咲く濃い桃色の桜。春に実
+		"group": "broadleaf", "zones": ["nansei"], "regional": true, "wild": true, "wild_only": true, "drop_months": [4, 5],
+		"name": "カンヒザクラ", "max_r": 3.0, "tau": 6.0, "p": 2.0, "evergreen": false,
+		"germination": 0.4, "sapling_age": 2.0,
+		"seed_age": 6.0, "seed_seasons": ["spring"], "seed_drop": 5,
+		"wood_age": 20.0, "wood_years": 8.0, "wood_max": 3,
+	},
+	"hamaibiwa": {  # ハマイヌビワ: 沖縄のイチジクの仲間。鳥が実を食べて種を運ぶ
+		"group": "broadleaf", "zones": ["nansei"], "regional": true, "wild": true, "wild_only": true, "drop_months": [7, 8],
+		"name": "ハマイヌビワ", "max_r": 4.0, "tau": 8.0, "p": 2.0, "evergreen": true,
+		"germination": 0.3, "sapling_age": 2.0,
+		"seed_age": 6.0, "seed_seasons": ["summer", "autumn"], "seed_drop": 5,
+		"wood_age": 20.0, "wood_years": 8.0, "wood_max": 3,
+	},
 }
 const GROUPS := ["broadleaf", "fruit", "conifer"]  # キーの 1・2・3
 
@@ -297,6 +419,14 @@ func start_stock() -> void:
 		seeds["apple"] = 1
 	saplings = zero_counts()
 	_commit()
+
+# 外の林でしか手に入らない木(市場では買えない。種は売れる)
+static func is_wild_only(species: String) -> bool:
+	return bool(SPECIES[species].get("wild_only", false))
+
+# キーの 1・2・3 で選べる木: この土地で育ち、市場で買えるか、種か苗木を持っている木
+func plantable_in(group: String) -> Array:
+	return species_in(group).filter(func(sp): return not is_wild_only(sp) or int(seeds.get(sp, 0)) > 0 or int(saplings.get(sp, 0)) > 0)
 
 # この土地で植えられる木か(県を選ぶ前は、今までの木だけ)
 func grows_here(species: String) -> bool:

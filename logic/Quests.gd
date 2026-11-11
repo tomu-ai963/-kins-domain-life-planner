@@ -143,7 +143,8 @@ func take_guide_complete() -> bool:
 func milestone_total() -> int:
 	var n := 0
 	for sp in Forest.SPECIES:
-		if forest.grows_here(sp) or forest.trees.any(func(t): return t.species == sp):
+		var planted: bool = forest.trees.any(func(t): return t.species == sp)
+		if (forest.grows_here(sp) and not Forest.is_wild_only(sp)) or planted:
 			n += 1
 	return n * MILESTONE_AGES.size()
 

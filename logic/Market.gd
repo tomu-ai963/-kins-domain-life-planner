@@ -105,6 +105,11 @@ const SELL_PRICES := {
 	"hoshigaki": 40, "marmalade": 60, "shikuwasa_juice": 35, "umeboshi": 50, "kuri_kanroni": 60, "dried_mango": 36, "papaya_pickle": 27,
 	"takuan": 30, "sauerkraut": 50, "hakusai_zuke": 38, "nasu_zuke": 44, "hoshiimo": 42, "goya_champuru": 50, "zunda": 32,
 	"pumpkin_soup": 60, "imoni": 53,
+	# 自然の木の種(seed_ + 樹種。1 粒あたり。2026-11-11 とむ決定: 売れるが買えない)。外の林で年に数日しか拾えないので、市場の種より少し高い
+	"seed_buna": 15, "seed_mizunara": 8, "seed_harunire": 4, "seed_nanakamado": 6, "seed_oyamazakura": 8, "seed_yamazakura": 8,
+	"seed_akashide": 4, "seed_mizuki": 5, "seed_enoki": 5, "seed_hannoki": 3, "seed_egonoki": 5, "seed_tsuge": 10,
+	"seed_shirakashi": 6, "seed_sudajii": 6, "seed_akagi": 6, "seed_kanhizakura": 8, "seed_hamaibiwa": 5,
+	"seed_konara": 3, "seed_kunugi": 3, "seed_keyaki": 4,
 }
 # 春の種の注文(2026-11-11 とむ決定): 冬のあいだ、春にまく野菜の種を安く注文でき、3 月 1 日(冬が終わった最初の確認)に届く
 const ORDER_RATE := 0.7        # 注文の値段の割合(店頭の 3 割引き。仮の数字)
@@ -247,6 +252,8 @@ func deliver_orders() -> void:
 
 # 収穫物 item の持ち物の入れ物と、その中のキー
 func pile_of(item: String) -> Dictionary:
+	if item.begins_with("seed_"):
+		return forest.seeds
 	if item.begins_with("seedling_"):
 		return seedlings.ready
 	if Kitchen.RECIPES.has(item):
@@ -256,7 +263,7 @@ func pile_of(item: String) -> Dictionary:
 	return garden.produce if garden.produce.has(item) else forest.produce
 
 func key_of(item: String) -> String:
-	return item.trim_prefix("seedling_")
+	return item.trim_prefix("seed_") if item.begins_with("seed_") else item.trim_prefix("seedling_")
 
 # 収穫物 item をいくつ持っているか
 func count_of(item: String) -> int:

@@ -32,6 +32,24 @@ const ROUND := {
 	"kuri": {"count": 11, "size": [0.17, 0.23], "core": 0.32, "branches": 6, "branch_thick": 0.02},
 	"mango": {"count": 12, "size": [0.15, 0.21], "core": 0.36, "branches": 6, "branch_thick": 0.02},
 	"papaya": {"count": 6, "size": [0.18, 0.24], "core": 0.22, "branches": 4, "branch_thick": 0.02},  # 細い幹の上に大きな葉が集まる
+	# 自然の木(外の林。2026-11-11)
+	"buna": {"count": 13, "size": [0.15, 0.21], "core": 0.34, "branches": 8, "branch_thick": 0.016},
+	"mizunara": {"count": 12, "size": [0.16, 0.22], "core": 0.32, "branches": 7, "branch_thick": 0.018},
+	"harunire": {"count": 12, "size": [0.15, 0.21], "core": 0.34, "branches": 8, "branch_thick": 0.016},
+	"nanakamado": {"count": 8, "size": [0.15, 0.21], "core": 0.26, "branches": 6, "branch_thick": 0.016},
+	"oyamazakura": {"count": 10, "size": [0.16, 0.22], "core": 0.30, "branches": 6, "branch_thick": 0.018},
+	"yamazakura": {"count": 10, "size": [0.16, 0.22], "core": 0.30, "branches": 6, "branch_thick": 0.018},
+	"akashide": {"count": 11, "size": [0.14, 0.20], "core": 0.30, "branches": 7, "branch_thick": 0.014},
+	"mizuki": {"count": 9, "size": [0.18, 0.24], "core": 0.26, "branches": 7, "branch_thick": 0.016},
+	"enoki": {"count": 13, "size": [0.15, 0.21], "core": 0.34, "branches": 8, "branch_thick": 0.016},
+	"hannoki": {"count": 9, "size": [0.15, 0.21], "core": 0.28, "branches": 6, "branch_thick": 0.014},
+	"egonoki": {"count": 9, "size": [0.15, 0.20], "core": 0.26, "branches": 6, "branch_thick": 0.014},
+	"tsuge": {"count": 10, "size": [0.16, 0.22], "core": 0.34, "branches": 5, "branch_thick": 0.012},
+	"shirakashi": {"count": 12, "size": [0.15, 0.21], "core": 0.34, "branches": 6, "branch_thick": 0.016},
+	"sudajii": {"count": 14, "size": [0.15, 0.21], "core": 0.36, "branches": 7, "branch_thick": 0.018},
+	"akagi": {"count": 13, "size": [0.15, 0.21], "core": 0.34, "branches": 7, "branch_thick": 0.020},
+	"kanhizakura": {"count": 9, "size": [0.15, 0.21], "core": 0.28, "branches": 6, "branch_thick": 0.016},
+	"hamaibiwa": {"count": 12, "size": [0.15, 0.21], "core": 0.34, "branches": 6, "branch_thick": 0.020},
 }
 # 針葉樹の段: 下から上へ、段ごとに細くなる
 #   tiers: 段の数 / base・top: いちばん下・上の段の半径 / wave: 縁の波 / droop: 縁の波に合わせて上下にも揺らす(枝先が垂れて見える)

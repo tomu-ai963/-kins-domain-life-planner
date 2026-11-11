@@ -12,6 +12,12 @@ const COLORS := {
 	"sugi": Color(0.46, 0.30, 0.14), "ezomatsu": Color(0.40, 0.26, 0.14), "ryukyu_pine": Color(0.44, 0.28, 0.12),  # 球果
 	"keyaki": Color(0.60, 0.50, 0.30), "kunugi": Color(0.52, 0.34, 0.16), "hinoki": Color(0.48, 0.34, 0.18),
 	"deigo": Color(0.56, 0.20, 0.16), "fukugi": Color(0.80, 0.62, 0.20),
+	# 自然の木の種(どんぐり・木の実)
+	"buna": Color(0.50, 0.36, 0.20), "mizunara": Color(0.54, 0.38, 0.18), "harunire": Color(0.78, 0.72, 0.46), "nanakamado": Color(0.86, 0.20, 0.14),
+	"oyamazakura": Color(0.24, 0.10, 0.12), "yamazakura": Color(0.30, 0.10, 0.14), "akashide": Color(0.72, 0.66, 0.40), "mizuki": Color(0.18, 0.16, 0.22),
+	"enoki": Color(0.86, 0.50, 0.16), "hannoki": Color(0.40, 0.30, 0.20), "egonoki": Color(0.74, 0.76, 0.66), "tsuge": Color(0.44, 0.36, 0.20),
+	"shirakashi": Color(0.50, 0.38, 0.20), "sudajii": Color(0.36, 0.24, 0.14), "akagi": Color(0.40, 0.26, 0.30), "kanhizakura": Color(0.48, 0.10, 0.16),
+	"hamaibiwa": Color(0.62, 0.40, 0.46),
 }
 
 var forest: Forest

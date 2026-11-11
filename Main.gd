@@ -5,6 +5,7 @@ extends Node
 # Main はキー入力をロジックに渡し、結果コードを文言にして HUD に出す。
 # Main・HUD は 2D と 3D で共通。位置は Player.ground_pos() で m の Vector2(x, y)を受け取る
 const GameWorld = preload("res://logic/GameWorld.gd")
+const WildWoodsView = preload("res://view/3d/WildWoodsView3D.gd")
 const REACH := 2.0    # 足元 2m 以内
 const PICKUP_RADIUS := 1.2  # 落ちている種は、これだけ近づくと拾う
 const FELL_CONFIRM_SECONDS := 4.0  # 根付いた木は、この時間内にもう一度 Z を押すと伐れる
@@ -72,7 +73,8 @@ const BUY_PAGES := [
 ]
 const FURNITURE_NAMES := {"shelf": "保存食の棚", "rocking_chair": "揺り椅子", "rug": "じゅうたん", "lamp": "ランプ", "clock": "掛け時計"}
 # 売る列のページ。果物ははちみつも、実もの野菜は苗も。野菜の組は SELL_GROUPS(果樹と野菜が増えて 1 列 15 行を超えるため分けた)
-const SELL_PAGES := ["果物", "根菜といも", "実もの野菜と苗", "葉もの・豆・香味野菜", "果物とはちみつの保存食", "野菜の保存食"]
+const SELL_PAGES := ["果物", "根菜といも", "実もの野菜と苗", "葉もの・豆・香味野菜", "果物とはちみつの保存食", "野菜の保存食", "自然の木の種 1", "自然の木の種 2"]
+const WILD_SEEDS_PER_PAGE := 10  # 自然の木の種の売る列は 10 種類ずつ(ほかの土地の種を持つこともあるので)
 # ストーブと腰掛けの画面のページ(料理が増えて 1 列 15 行を超えるため分けた。材料が果物かはちみつか、野菜か)
 const COOK_PAGES := ["果物とはちみつ", "野菜"]
 const SELL_GROUPS := {"root": 1, "imo": 1, "fruit": 2, "leaf": 3, "bean": 3, "aroma": 3}
@@ -168,6 +170,10 @@ func _setup_3d_only() -> void:
 	$Audio.setup(world, $Player)
 	$Player.work_sound.connect($Audio.play)
 	$TouchControls.setup(self, $Player, $HUD)
+	var woods := WildWoodsView.new()
+	woods.name = "WildWoods"
+	add_child(woods)
+	woods.setup(world.wilds)
 
 func _process(delta: float) -> void:
 	_guide_timer += delta
@@ -223,15 +229,18 @@ func _check_new_day() -> void:
 	var lines := ["今日の発見: " + daily_message(id)]
 	if notice != "":
 		lines.push_front(notice)
-	if not f.pickups.is_empty():
-		lines.append("育った木の根元に種が落ちている(%dか所)" % f.pickups.size())
+	var own_drops: int = f.pickups.filter(func(p): return absf(p.pos.x) <= world.land.HALF and absf(p.pos.y) <= world.land.HALF).size()
+	if own_drops > 0:
+		lines.append("育った木の根元に種が落ちている(%dか所)" % own_drops)
+	if not world.wilds.last_drops.is_empty():
+		lines.append("外の林で%sの種が落ちている(今日だけ。境界の外の木の根元)" % _names_of(world.wilds.last_drops))
 	for sp in f.last_failed:
 		lines.append("%sの種 %d粒は芽が出なかった" % [f.SPECIES[sp].name, f.last_failed[sp]])
 	var g := world.garden
 	for kind in g.last_frost:
 		lines.append("霜で%sが枯れた(%d区画)" % [g.CROPS[kind].name, g.last_frost[kind]])
 	if g.frost_is_near(f.today()):
-		lines.append("もうすぐ霜が降りる(12月)。ニンニク以外の野菜は枯れるので、早めに収穫を")
+		lines.append("もうすぐ霜が降りる(%s)。霜に弱い野菜は枯れるので、早めに収穫を" % g.frost_date_text())
 	if has_node("Visitor") and world.visitors.is_here():
 		lines.append("%sが訪ねてきた(C で話す)" % world.visitors.CAST[world.visitors.who()].name)
 	var pond := world.pond
@@ -976,7 +985,7 @@ func _on_plant_tree(pos: Vector2) -> void:
 # 1・2・3: 押すたびに、その組(広葉樹・果樹・針葉樹)のうち、この土地で育つ次の木を選ぶ。
 # 苗木からしか育てない果樹なら、苗木に切り替える。その組に育つ木がなければ選び直さない
 func _select_next_in(group: String) -> void:
-	var order: Array = world.forest.species_in(group)
+	var order: Array = world.forest.plantable_in(group)
 	if order.is_empty():
 		$HUD.show_message("この土地で育つ%sは、まだない" % GROUP_NAMES[group])
 		return
@@ -994,7 +1003,7 @@ const GROUP_NAMES := {"broadleaf": "広葉樹", "fruit": "果樹", "conifer": "�
 # with_group = false なら名前だけを / でつなぐ(果樹の行用)
 func group_keys_text(group: String, with_group := true) -> String:
 	var names := PackedStringArray()
-	for sp in world.forest.species_in(group):
+	for sp in world.forest.plantable_in(group):
 		names.append(world.forest.SPECIES[sp].name)
 	if names.is_empty():
 		return "なし" if with_group else "この土地で育つものはまだない"
@@ -1006,7 +1015,7 @@ func group_keys_text(group: String, with_group := true) -> String:
 func _fit_selection() -> void:
 	if world.forest.grows_here(selected_species):
 		return
-	var list: Array = world.forest.species_in("broadleaf")
+	var list: Array = world.forest.plantable_in("broadleaf")
 	if not list.is_empty():
 		selected_species = list[0]
 		selected_form = "seed"
@@ -1362,6 +1371,10 @@ func diary_text() -> String:
 	lines.append("H / Esc / Enter で起きる")
 	return "\n".join(lines)
 
+# 樹種の名前を「・」でつなぐ。例: 「ブナ・ミズナラ」
+func _names_of(species: Array) -> String:
+	return "・".join(PackedStringArray(species.map(func(sp): return world.forest.SPECIES[sp].name)))
+
 func _tomorrow_lines() -> PackedStringArray:
 	var g := world.garden
 	var date: String = world.tomorrow_date()
@@ -1372,7 +1385,10 @@ func _tomorrow_lines() -> PackedStringArray:
 	if rain:
 		lines.append("%sになりそう(水やりはいらない)" % ("雪" if is_snow_day(season) else "雨"))
 	if g.frost_is_near(world.forest.today()):
-		lines.append("12月の霜が近い(ニンニク以外は早めに収穫を)")
+		lines.append("%sの霜が近い(霜に弱い野菜は早めに収穫を)" % g.frost_date_text())
+	var wild_drops: Array = world.wilds.dropping_on(world.forest.day_number() + 1)
+	if not wild_drops.is_empty():
+		lines.append("外の林で%sの種が落ちる日(その日だけ拾える)" % _names_of(wild_drops))
 	if plan.ripe > 0:
 		lines.append("収穫できる区画: %d" % plan.ripe)
 	if plan.spoiling > 0:
@@ -1574,7 +1590,7 @@ func produce_line() -> String:
 	var parts := PackedStringArray()
 	for item in world.market.SELL_PRICES:
 		var n := produce_count(item)
-		if n > 0 and not item.begins_with("seedling_") and not world.kitchen.RECIPES.has(item):
+		if n > 0 and not item.begins_with("seedling_") and not item.begins_with("seed_") and not world.kitchen.RECIPES.has(item):
 			parts.append(_amount_text(item, n))
 	return _rows(parts, 4) if not parts.is_empty() else "なし"
 
@@ -1595,6 +1611,8 @@ func seedlings_line() -> String:
 func produce_name(item: String) -> String:
 	if item == world.visitors.FIREWOOD:
 		return "薪"
+	if item.begins_with("seed_"):
+		return world.forest.SPECIES[item.trim_prefix("seed_")].name + "の種"
 	if world.forest.FRUITS.has(item):
 		return world.forest.SPECIES[item].name
 	if item == "honey":
@@ -1608,6 +1626,8 @@ func produce_name(item: String) -> String:
 func produce_unit(item: String) -> String:
 	if item == world.visitors.FIREWOOD:
 		return "回分"
+	if item.begins_with("seed_"):
+		return "粒"
 	if world.forest.FRUITS.has(item):
 		return world.forest.FRUITS[item].unit
 	if world.kitchen.RECIPES.has(item):
@@ -1615,6 +1635,8 @@ func produce_unit(item: String) -> String:
 	return "鉢" if item.begins_with("seedling_") else "kg"
 
 func produce_count(item: String) -> int:
+	if item.begins_with("seed_"):
+		return int(world.forest.seeds.get(item.trim_prefix("seed_"), 0))
 	if world.forest.FRUITS.has(item):
 		return int(world.forest.produce[item])
 	if item == "honey":
@@ -1726,8 +1748,11 @@ func _buy_page_of(g: Dictionary) -> int:
 	return 0
 
 func _sell_page_of(item: String) -> int:
+	if item.begins_with("seed_"):
+		var seeds: Array = world.market.SELL_PRICES.keys().filter(func(k): return k.begins_with("seed_"))
+		return SELL_PAGES.find("自然の木の種 1") + mini(1, int(seeds.find(item) / float(WILD_SEEDS_PER_PAGE)))
 	if world.kitchen.RECIPES.has(item):
-		return SELL_PAGES.size() - (2 if world.kitchen.from_tree(item) else 1)
+		return SELL_PAGES.find("果物とはちみつの保存食" if world.kitchen.from_tree(item) else "野菜の保存食")
 	if world.forest.FRUITS.has(item) or item == "honey":
 		return 0
 	return SELL_GROUPS[world.garden.CROPS[item.trim_prefix("seedling_")].group]

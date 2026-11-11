@@ -25,6 +25,7 @@ const DayClock = preload("res://logic/DayClock.gd")
 const WorldTime = preload("res://logic/WorldTime.gd")
 const SaveRead = preload("res://logic/SaveRead.gd")
 const Region = preload("res://logic/Region.gd")
+const Wilds = preload("res://logic/Wilds.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
 # セーブの版(2026-11-11 から書く。レビュー S4)。セーブの形を変える変更(名前・単位を変える、意味を変える)をしたら 1 上げ、
@@ -59,6 +60,7 @@ var market := Market.new()
 var time := WorldTime.new()      # ゲームの「今」。日付と時刻はここから読む(テストでは日付を進められる)
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
 var region := Region.new()       # 土地のある都道府県と気候。はじめに 1 度だけ選ぶ(選ぶ前は今までのルール)
+var wilds := Wilds.new()         # 一族の土地の外の自然の林(県から決まる。保存しない)
 var is_new_game := false         # 読み込むセーブがなかった(新しく始めた)。県を選んだときに、その土地のはじめの種を配る
 var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
@@ -66,6 +68,7 @@ var backup_dir := ""             # 控えを置くフォルダ。空なら控え
 var load_notice := ""            # 読み込みで知らせることがあれば、その文(セーブが読めず控えから戻したときなど)
 
 func _init() -> void:
+	wilds.forest = forest
 	forest.time = time
 	clock.time = time
 	clock.region = region
@@ -189,6 +192,7 @@ func check_new_day() -> String:
 	if id == "":
 		visitors.check_today()  # 前のセーブを同じ日に開いたとき
 		return id
+	wilds.drop_today()  # 外の林で、今日が種の落ちる日の木
 	garden.apply_frost()
 	if id == "rain":
 		garden.water_all()
@@ -223,6 +227,7 @@ func choose_region(id: String) -> String:
 		return "unknown"
 	forest.region = region
 	refresh_season()
+	wilds.refresh()
 	if is_new_game:
 		forest.start_stock()
 	forest.changed.emit()

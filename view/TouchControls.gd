@@ -207,7 +207,7 @@ func _menu_text(id: String, text: String) -> String:
 		var f = _main.world.forest
 		if _is_selected(id):
 			return f.SPECIES[_main.selected_species].name
-		var list: Array = f.species_in(TREE_GROUPS[id])
+		var list: Array = f.plantable_in(TREE_GROUPS[id])
 		return f.SPECIES[list[0]].name if not list.is_empty() else text
 	return text
 

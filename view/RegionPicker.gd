@@ -100,9 +100,15 @@ static func describe(id: String) -> String:
 		var names := PackedStringArray()
 		for sp in (Forest.FRUIT_ORDER if group == "fruit" else Forest.SPECIES.keys()):
 			var s: Dictionary = Forest.SPECIES[sp]
-			if s.group == group and zone_id in s.zones:
+			if s.group == group and zone_id in s.zones and not s.get("wild_only", false):
 				names.append(s.name)
 		lines.append("%s: %s" % [{"broadleaf": "広葉樹", "fruit": "果樹", "conifer": "針葉樹"}[group], "・".join(names) if not names.is_empty() else "なし"])
+	var wild := PackedStringArray()
+	for sp in Forest.SPECIES:
+		var s: Dictionary = Forest.SPECIES[sp]
+		if s.get("wild", false) and zone_id in s.zones:
+			wild.append(s.name)
+	lines.append("外の林: %s" % "・".join(wild))
 	return "\n".join(lines)
 
 # 例: 「春 4〜5月・夏 6〜8月・秋 9〜10月・冬 11〜3月」
