@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_seed_drops()
 	_test_growth_is_realistic()
 	_test_save()
+	_test_orders()
 	_remove_save()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -219,3 +220,44 @@ func _test_save() -> void:
 	w3.load_game()
 	_check(w3.market.money == 11000 and w3.forest.saplings.birch == 0 and w3.forest.produce.apple == 0, "お金の記録がない古いセーブには、はじめの所持金を足し、苗木・収穫物は 0 から")
 	_check(w3.forest.is_established(w3.forest.trees[0]), "前のセーブの木は根付いている扱い")
+
+func _test_orders() -> void:
+	print("春の種の注文")
+	var w := _world()
+	var m := w.market
+	_check(m.orderable() == ["radish", "carrot", "cucumber", "potato"], "注文できるのは春にまく野菜(苗から育てるトマトと秋のニンニクは除く)")
+	_check(m.order_price("radish") == 28 and m.order_price("potato") == 105, "値段は店頭の 3 割引き(ラディッシュ 40 → 28₽)")
+	var money: int = m.money
+	_check(m.order("radish") == "not_season" and m.money == money, "秋は注文できない")
+	w.forest.season = "winter"
+	_check(m.order("radish") == "ordered" and m.order("radish") == "ordered" and m.order("carrot") == "ordered", "冬は注文できる")
+	_check(m.money == money - 28 * 2 - 35 and m.orders == {"radish": 2, "carrot": 1} and m.order_count() == 3, "お金が減って、注文が残る")
+	_check(w.garden.seeds.radish == 0, "注文した種は、まだ手元にない")
+	_check(m.order("tomato") == "unknown" and m.order("garlic") == "unknown", "注文できない野菜は断る")
+	m.money = 10
+	_check(m.order("potato") == "no_money" and m.orders.size() == 2, "お金が足りなければ注文できない")
+	m.deliver_orders()
+	_check(m.last_delivered.is_empty() and m.order_count() == 3, "冬のあいだは届かない")
+
+	# 保存して読み直しても注文は残る
+	w.save_game()
+	var w2 := _world(false)
+	w2.load_game()
+	_check(w2.market.orders == {"radish": 2, "carrot": 1}, "注文は保存される")
+
+	# 冬が終わった最初の確認で届く
+	w2.forest.season = "spring"
+	w2.forest.last_day = "2000-01-01"
+	w2.check_new_day()
+	_check(w2.garden.seeds.radish == 2 and w2.garden.seeds.carrot == 1, "春になると種が届く")
+	_check(w2.market.last_delivered == {"radish": 2, "carrot": 1} and w2.market.orders.is_empty(), "届いたものを知らせ、注文は空になる")
+	w2.forest.last_day = "2000-01-01"
+	w2.check_new_day()
+	_check(w2.market.last_delivered.is_empty() and w2.garden.seeds.radish == 2, "二度は届かない")
+
+	# 古いセーブ(注文の記録がない)
+	var w3 := _world()
+	w3.market.from_save({"money": 500})
+	_check(w3.market.orders.is_empty() and w3.market.money == 500, "注文の記録がないセーブは注文なし")
+	w3.market.from_save({"money": 500, "orders": {"radish": 1, "nothing": 3, "carrot": -1}})
+	_check(w3.market.orders == {"radish": 1}, "おかしな注文は読まない")

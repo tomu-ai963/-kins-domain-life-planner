@@ -41,7 +41,9 @@ func _process(_delta: float) -> bool:
 			_test_plot_limit()
 			_test_toon()
 			_test_winter_work()
+			_test_nest_box_view()
 			_test_snow_view()
+			_test_winter_sights()
 		10:
 			_test_3d_cabin_collision()  # 当たり判定が物理サーバーに入るのを待ってから
 			_prepare_visitor_collision()
@@ -1236,6 +1238,54 @@ func _test_hive_view() -> void:
 	# 当たり判定(物理サーバーに入るのを待って _test_hive_collision で確かめる)
 	_check(view.get_child(0).get_node("HiveBody") is StaticBody3D, "巣箱に当たり判定がある")
 
+const NEST_TREE := Vector2(-40, 40)  # ほかのテストの物から離れた場所
+
+# ムクドリの巣箱: L で作る・HUD の行・作っている形と掛けた形・ムクドリの姿
+func _test_nest_box_view() -> void:
+	print("ムクドリの巣箱")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var player: CharacterBody3D = main.get_node("Player")
+	var view = main.get_node("NestBoxes")
+	var nb = w.nest_boxes
+	var keep_logs: int = w.cabin.materials.log
+	var keep_season: String = w.forest.season
+	w.forest.trees.append({"pos": NEST_TREE, "species": "birch", "form": "sapling", "planted_at": w.forest._now(), "start_age": 20.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0, "pruned_year": 0})
+	w.forest.changed.emit()
+	w.cabin.materials.log = 2
+	player.global_position = Vector3(NEST_TREE.x + 1.0, 0, NEST_TREE.y)
+	_check(main.nest_box_line().contains("L で作れる"), "育った木のそばで、作れることが出る")
+	_check(hud.status_text().contains("ムクドリの巣箱"), "HUD に出る")
+	var feeders_before: int = w.feeders.feeders.size()
+	_press(KEY_L)
+	_check(nb.boxes.size() == 1 and w.feeders.feeders.size() == feeders_before, "L で巣箱を作りはじめる(餌台は立てない)")
+	_check(hud._message.contains("ムクドリの巣箱を作りはじめた"), "作りはじめの知らせ")
+	_check(view.get_child_count() == 1 and view.get_child(0).position.y < 0.5, "作っているあいだは根元に置いてある")
+	_check(main.nest_box_line().contains("1/3日") and main.nest_box_line().contains("今日は済んだ"), "作った日数が出る")
+	var b: Dictionary = nb.boxes[0]
+	b.days_done = 3
+	nb.changed.emit()
+	var hung: Node3D = view.get_child(0)
+	_check(hung.position.y >= nb.MIN_RADIUS and hung.position.y <= 2.5 and hung.get_child_count() == 4, "掛け終えると幹の高さ %.2fm に掛かる(屋根・穴・止まり木)" % hung.position.y)
+	_check(hung.position.z > NEST_TREE.y, "幹のカメラの側(南)に掛かる")
+	w.forest.set_season("spring")
+	_check(main.nest_box_line().contains("つがい"), "春はつがいが出入りしている")
+	var wildlife_view = main.get_node("Wildlife")
+	wildlife_view._spawn("starling")
+	var birds: Array = wildlife_view._animals.filter(func(a): return a.id == "starling")
+	_check(not birds.is_empty() and birds[0].home == NEST_TREE, "ムクドリの姿は巣箱の木のまわりにいる")
+	# 片付け
+	for a in birds:
+		a.node.queue_free()
+	wildlife_view._animals = wildlife_view._animals.filter(func(a): return a.id != "starling")
+	w.forest.set_season(keep_season)
+	nb.boxes.clear()
+	nb.changed.emit()
+	w.forest.trees = w.forest.trees.filter(func(t): return t.pos != NEST_TREE)
+	w.forest.changed.emit()
+	w.cabin.materials.log = keep_logs
+	_check(view.get_child_count() == 0, "巣箱をなくすと見えなくなる")
+
 const FEEDER_SPOT := Vector2(40, -40)  # ほかのテストの物から離れた場所
 
 # 冬の作業: 餌台の見た目・鳥・剪定の動きと枝の束・キー操作
@@ -1407,6 +1457,113 @@ func _test_winter_work() -> void:
 	player.global_position = keep_pos
 
 # 雪かき: U を押したまま歩くと道ができて、道の上は速く歩ける
+# 冬の見る楽しみ: 雪の上の足跡・アカゲラ・凍った池の上を滑る
+func _test_winter_sights() -> void:
+	print("冬の見る楽しみ")
+	var w = main.world
+	var f = w.forest
+	var player: CharacterBody3D = main.get_node("Player")
+	var fp = main.get_node("Footprints")
+	var keep_season: String = f.season
+	var keep_pos: Vector3 = player.global_position
+	f.set_season("winter")
+	var start := Vector2(-30.5, -30.5)
+	player.global_position = Vector3(start.x, 0, start.y)
+	fp._process(0.1)
+	_check(fp.shown_count() == 0, "立っているだけでは足跡は付かない")
+	var xs := []
+	for i in range(1, 6):
+		player.global_position = Vector3(start.x, 0, start.y + i * 0.65)
+		fp._process(0.1)
+		xs.append(fp._prints[-1].xf.origin.x if not fp._prints.is_empty() else 0.0)
+	_check(fp.shown_count() == 5, "歩くと一歩ごとに足跡が残る(%d)" % fp.shown_count())
+	_check(xs[0] != xs[1] and is_equal_approx(xs[0], xs[2]), "左右の足が交互に付く")
+	var before: int = fp.shown_count()
+	player.global_position = Vector3(start.x + 20, 0, start.y)
+	fp._process(0.1)
+	_check(fp.shown_count() == before, "遠くへ移ったときは足跡をつながない")
+	# 雪をどかした道の上には付かない
+	var path_spot := Vector2(start.x + 20, start.y + 0.7)
+	w.snow.clear_at(path_spot)
+	player.global_position = Vector3(path_spot.x, 0, path_spot.y)
+	fp._process(0.1)
+	_check(fp.shown_count() == before, "雪をどかした道には残らない")
+	# ノウサギは前後 2 つずつ
+	var n: int = fp._prints.size()
+	fp._track("hare_test", Vector2(0, 0), fp.TRACKS.hare)
+	fp._track("hare_test", Vector2(0, 1.2), fp.TRACKS.hare)
+	_check(fp._prints.size() == n + 2, "ノウサギの足跡は 2 つずつ")
+	# しばらくすると消える(生き物の跡は長く残る)
+	fp._process(fp.PLAYER_LIFE + 1.0)
+	_check(fp.shown_count() == 2, "自分の足跡は %d 秒で消え、ノウサギの跡は残る" % int(fp.PLAYER_LIFE))
+	fp._process(fp.ANIMAL_LIFE)
+	_check(fp.shown_count() == 0, "生き物の跡もやがて消える")
+	# 冬でなければ付かない
+	f.set_season("autumn")
+	player.global_position = Vector3(start.x, 0, start.y)
+	fp._process(0.1)
+	player.global_position = Vector3(start.x, 0, start.y + 0.7)
+	fp._process(0.1)
+	_check(fp.shown_count() == 0 and not fp.visible, "秋は足跡が付かない")
+	f.set_season("winter")
+	w.snow.cells.clear()
+	w.snow.changed.emit()
+
+	# 凍った池の上は滑る
+	var p = w.pond
+	if w.land.pond != null:
+		var keep_dug: int = p.days_dug
+		var keep_water: int = p.water
+		p.days_dug = p.DIG_DAYS
+		p.water = 50
+		player.global_position = Vector3(w.land.pond.x, 0, w.land.pond.y)
+		main.update_shovel(0.1, false)
+		_check(player.slippery, "凍った池の上にいる")
+		_check(main.pond_line().contains("滑る"), "HUD に滑ることが出る")
+		player.velocity = Vector3.ZERO
+		player.move_input = Vector2(1, 0)
+		player._physics_process(0.1)
+		var icy: float = player.velocity.length()
+		player.slippery = false
+		player.velocity = Vector3.ZERO
+		player._physics_process(0.1)
+		var normal: float = player.velocity.length()
+		_check(icy < normal * 0.5 and icy > 0.0, "氷の上は動きだしがゆっくり(%.2f → ふだん %.2f m/s)" % [icy, normal])
+		player.slippery = true
+		player.move_input = Vector2.ZERO
+		player._physics_process(0.1)
+		_check(player.velocity.length() > normal * 0.5, "手を離してもすぐには止まらない(%.2f m/s)" % player.velocity.length())
+		player.move_input = Vector2.ZERO
+		player.velocity = Vector3.ZERO
+		_check(not fp._track("ice_test", w.land.pond, fp.TRACKS.player) and not fp._track("ice_test", w.land.pond + Vector2(0, 0.7), fp.TRACKS.player), "氷の上には足跡が残らない")
+		f.set_season("spring")
+		main.update_shovel(0.1, false)
+		_check(not player.slippery, "春は滑らない")
+		f.set_season("winter")
+		p.days_dug = keep_dug
+		p.water = keep_water
+	else:
+		_check(false, "池のテストのあとに池があるはず")
+
+	# アカゲラ: 育った木の幹のカメラの側に、高いところにとまる
+	var wildlife_view = main.get_node("Wildlife")
+	var tree_at := Vector2(-36, 36)
+	f.trees.append({"pos": tree_at, "species": "birch", "form": "sapling", "planted_at": f._now(), "start_age": 20.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0, "pruned_year": 0})
+	wildlife_view._spawn("woodpecker")
+	var a: Dictionary = wildlife_view._animals[-1]
+	a.home = tree_at
+	a.pos = wildlife_view._home_spot(tree_at, 0, "woodpecker")
+	wildlife_view._place(a, 0.0)
+	_check(a.id == "woodpecker" and absf(a.node.position.y - 1.9) < 0.01, "アカゲラは幹の 1.9m の高さにとまる")
+	_check(a.pos.distance_to(tree_at) < 0.2 and a.pos.y > tree_at.y, "幹のすぐそばの、カメラの側(南)")
+	a.node.queue_free()
+	wildlife_view._animals.pop_back()
+	f.trees = f.trees.filter(func(t): return t.pos != tree_at)
+	f.changed.emit()
+	f.set_season(keep_season)
+	player.global_position = keep_pos
+	player.slippery = false
+
 func _test_snow_view() -> void:
 	print("雪かき")
 	var w = main.world

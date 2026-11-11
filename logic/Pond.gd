@@ -178,6 +178,10 @@ func present() -> Array:
 func is_frozen() -> bool:
 	return forest.season == "winter" and water > 0
 
+# 凍った池の上か(冬は上を歩けて、滑る。2026-11-11 とむ決定)
+func is_on_ice(pos: Vector2) -> bool:
+	return is_dug() and is_frozen() and pos.distance_to(land.pond) <= land.POND_RADIUS
+
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
 	return {

@@ -29,6 +29,7 @@ func _initialize() -> void:
 	_test_closeness()
 	_test_gifts()
 	_test_closeness_save()
+	_test_winter_firewood()
 	_remove_save()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -418,11 +419,12 @@ func _test_rewards_by_season() -> void:
 			kinds[r.type] = true
 			if r.type == "crop_seed":
 				var crop: Dictionary = Garden.CROPS[r.kind]
-				if not (season in crop.seasons) or crop.get("seedling_only", false) or r.count < 1:
+				var sow_season: String = "spring" if season == "winter" else season  # 冬は春にまける種
+				if not (sow_season in crop.seasons) or crop.get("seedling_only", false) or r.count < 1:
 					bad += 1
 			if r.type == "seedling" and not (season in Visitors.SEEDLING_SEASONS):
 				bad += 1
-		_check(bad == 0, "%s: お礼の種や苗は今の季節に使える" % season)
+		_check(bad == 0, "%s: お礼の種や苗は今の季節に使える(冬は春にまける種)" % season)
 		_check(kinds.has("money"), "%s: お金のお礼がある" % season)
 		match season:
 			"spring", "summer":
@@ -430,7 +432,7 @@ func _test_rewards_by_season() -> void:
 			"autumn":
 				_check(kinds.has("crop_seed") and not kinds.has("seedling"), "秋: 種はもらえるが、苗はもらえない")
 			"winter":
-				_check(kinds.size() == 1, "冬: まける種がないのでお金だけ")
+				_check(kinds.has("crop_seed") and not kinds.has("seedling"), "冬: 春にまける種がもらえる(苗はもらえない)")
 
 func _test_give() -> void:
 	print("渡す")
@@ -520,3 +522,72 @@ func _test_save() -> void:
 	w4.save_path = TEST_SAVE
 	w4.load_game()
 	_check(w4.visitors.visit.is_empty(), "記録がないセーブは、まだ何も決まっていない")
+
+func _cabin_done(w: GameWorld) -> void:
+	w.cabin.site = Vector2(20, 20)
+	w.cabin.stage = 3
+
+func _test_winter_firewood() -> void:
+	print("冬の薪の頼みごと")
+	var w := _world("winter")
+	var vs := w.visitors
+	_check(not vs.can_ask_firewood(), "小屋がなければ薪は頼まれない(割れないので)")
+	_cabin_done(w)
+	_check(w.cabin.is_complete(), "小屋が建った")
+	w.cabin.materials.log = 0
+	w.kitchen.firewood = 0
+	w.kitchen.log_left = 0
+	_check(not vs.can_ask_firewood(), "割れる丸太も薪もなければ頼まれない")
+	w.kitchen.log_left = 3
+	w.kitchen.firewood = 1
+	_check(vs.can_ask_firewood(), "割ってある薪と割りかけの丸太で 4 回分に届けば頼まれる")
+	w.kitchen.log_left = 0
+	w.kitchen.firewood = 0
+	w.cabin.materials.log = 1
+	_check(vs.can_ask_firewood(), "丸太が 1 本あれば頼まれる(今日のうちに割れる)")
+
+	# 冬の頼みごとは薪になる
+	var base: int = w.forest.day_number()
+	var asked := 0
+	var other := 0
+	for d in range(base, base + 200):
+		if not Visitors.is_visit_day(d):
+			continue
+		var v: Dictionary = vs._generate(d)
+		if v.kind == "request":
+			if v.item == Visitors.FIREWOOD and int(v.amount) == Visitors.FIREWOOD_ASK:
+				asked += 1
+			else:
+				other += 1
+	print("    冬の 200 日の頼みごと: 薪 %d・ほか %d" % [asked, other])
+	_check(asked > 0 and other == 0, "冬は薪を 4 回分頼まれる(持っていなくても)")
+	var autumn := _world("autumn")
+	_cabin_done(autumn)
+	autumn.cabin.materials.log = 5
+	var autumn_firewood := 0
+	for d in range(base, base + 200):
+		if Visitors.is_visit_day(d):
+			var v: Dictionary = autumn.visitors._generate(d)
+			if v.kind == "request" and v.item == Visitors.FIREWOOD:
+				autumn_firewood += 1
+	_check(autumn_firewood == 0, "冬のほかは薪を頼まれない")
+
+	# 渡す
+	vs.visit = {"day": base, "who": "nina", "kind": "request", "item": Visitors.FIREWOOD, "amount": 4, "reward": {"type": "crop_seed", "kind": "radish", "count": 3}, "done": false, "line": 0}
+	w.kitchen.firewood = 2
+	_check(vs.have(Visitors.FIREWOOD) == 2 and vs.give() == "short" and w.kitchen.firewood == 2, "割ってある薪が足りなければ渡せない")
+	w.kitchen.split()
+	_check(w.kitchen.firewood == 4, "その日のうちに割って足りるようにできる")
+	var seeds: int = w.garden.seeds.radish
+	_check(vs.give() == "given" and w.kitchen.firewood == 0 and w.garden.seeds.radish == seeds + 3, "薪を渡して、春の種をもらう")
+	_check(vs.value_of(Visitors.FIREWOOD, 4) == 200, "お礼の元になる値段は 1 回分 50₽")
+	# お礼の値段: 4 回分 × 50₽ × 1.3 = 260₽
+	var rng := RandomNumberGenerator.new()
+	var money := -1
+	for sd in range(50):
+		rng.seed = sd
+		var r: Dictionary = vs._choose_reward(Visitors.FIREWOOD, 4, rng)
+		if r.type == "money":
+			money = int(r.amount)
+			break
+	_check(money == 260, "お金のお礼は 260₽")

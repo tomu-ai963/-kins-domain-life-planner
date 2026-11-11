@@ -9,6 +9,7 @@ const WorkEffects = preload("res://view/3d/WorkEffects3D.gd")
 
 const SPEED := 5.0        # m/s(設計作業がしやすい速さ。2D と同じ)
 const TURN_SPEED := 12.0  # 向きを変える速さ
+const ICE_GRIP := 1.8     # 氷の上で、思った速さに近づく割合(1 秒あたり)。小さいほど滑る
 
 # カメラ: 斜め上から見下ろす。ホイールで距離を変える(寄ると足元、引くと土地全体)
 const CAM_PITCH_DEG := 55.0
@@ -40,6 +41,7 @@ const WORK_REACH := 1.0      # 作業で物が飛ぶ場所は、体からこの�
 @onready var _lantern_light: OmniLight3D = $LanternLight
 
 var speed_scale := 1.0    # 歩く速さの倍率(雪かき。Main が毎フレーム決める)
+var slippery := false     # 凍った池の上にいる(Main が毎フレーム決める)。止まるのも曲がるのもゆっくりになる
 var move_input := Vector2.ZERO  # タッチのスティックの傾き(長さ 0〜1。上 = 北 = -y)
 var _cam_dist := 28.0
 var shadow_light: DirectionalLight3D  # Main が太陽を渡す
@@ -77,7 +79,11 @@ func _physics_process(delta: float) -> void:
 	dir = dir.normalized()
 	if dir == Vector3.ZERO:
 		dir = Vector3(move_input.x, 0.0, move_input.y)  # タッチのスティック。傾きで速さが変わる
-	velocity = dir * SPEED * speed_scale
+	var want := dir * SPEED * speed_scale
+	if slippery:
+		velocity = velocity.lerp(want, 1.0 - exp(-ICE_GRIP * delta))  # 氷の上は滑る
+	else:
+		velocity = want
 	move_and_slide()
 	position.x = clampf(position.x, -WALK_LIMIT, WALK_LIMIT)
 	position.z = clampf(position.z, -WALK_LIMIT, WALK_LIMIT)

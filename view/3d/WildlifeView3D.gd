@@ -23,6 +23,9 @@ const MOVES := {
 	"tit": {"roam": 0.26, "speed": 0.45, "flee": 8.0, "run": 8.0, "hop": 0.05, "hop_rate": 16.0, "wings": true, "arc": 2.5, "perch": Feeders.TABLE_H, "back": 5.0},
 	"bullfinch": {"roam": 0.26, "speed": 0.3, "flee": 7.0, "run": 7.0, "hop": 0.04, "hop_rate": 14.0, "wings": true, "arc": 2.0, "perch": Feeders.TABLE_H, "back": 4.5},
 	"sparrow": {"roam": 3.0, "speed": 1.2, "flee": 7.0, "run": 12.0, "hop": 0.1, "hop_rate": 14.0, "wings": true, "arc": 2.5},
+	# アカゲラ: 育った白樺の幹(カメラの側)にとまって、幹をつつく。perch_r: 幹の中心からの距離 / side: 幹のカメラの側だけにとまる
+	"woodpecker": {"roam": 0.08, "speed": 0.12, "flee": 7.0, "run": 9.0, "hop": 0.07, "hop_rate": 11.0, "wings": true, "arc": 2.5, "perch": 1.9, "back": 4.5, "perch_r": 0.16, "side": true},
+	"starling": {"roam": 3.5, "speed": 1.0, "flee": 7.0, "run": 12.0, "hop": 0.06, "hop_rate": 12.0, "wings": true, "arc": 2.5},  # 巣箱の木の根元で虫を探して歩く
 	"squirrel": {"roam": 5.0, "speed": 2.2, "flee": 6.0, "run": 11.0, "hop": 0.14, "hop_rate": 12.0, "wings": false, "arc": 0.0},
 	"hare": {"roam": 6.0, "speed": 2.0, "flee": 8.0, "run": 18.0, "hop": 0.32, "hop_rate": 9.0, "wings": false, "arc": 0.0},
 	"hedgehog": {"roam": 4.0, "speed": 0.5, "flee": 0.0, "run": 0.0, "hop": 0.0, "hop_rate": 0.0, "wings": false, "arc": 0.0},
@@ -34,7 +37,7 @@ const FLEE_REST_MAX := 10.0
 const BUTTERFLY_COLORS := [Color(0.96, 0.96, 0.88), Color(0.96, 0.82, 0.25), Color(0.95, 0.52, 0.16)]
 const FOLD_ANGLE := 1.4       # 鳥が羽を背中へたたむ角度(rad)
 # 見下ろしのカメラから見えるように、形に掛ける倍率(いつものカメラの距離で点にならないところ)
-const DISPLAY_SCALE := {"sparrow": 1.5,"squirrel": 1.8, "butterfly": 2.2, "bee": 2.4, "hare": 1.5, "hedgehog": 1.7, "migrant": 1.0, "tit": 1.0, "bullfinch": 1.1}
+const DISPLAY_SCALE := {"sparrow": 1.5,"squirrel": 1.8, "butterfly": 2.2, "bee": 2.4, "hare": 1.5, "hedgehog": 1.7, "migrant": 1.0, "tit": 1.0, "bullfinch": 1.1, "starling": 1.5, "woodpecker": 1.5}
 const PERCH_SLOTS := 3        # 台の上の持ち場の数(餌台 1 つに来る鳥の数)。鳥が重なって、かたまりに見えないように分ける
 const PERCH_R := 0.3          # 持ち場の、台の中心からの距離(m)
 const ON_TABLE_DIST := 0.5    # 住みかからこの距離までは台の上にいる
@@ -94,7 +97,7 @@ func _spawn(id: String) -> void:
 	var home: Vector2 = _flock_home(id, near)
 	var flying: bool = not MOVES.has(id)
 	var slot: int = _animals.filter(func(other): return _perches(other.id) and other.home == home).size() if _perches(id) else 0
-	var pos: Vector2 = _home_spot(home, slot) if _perches(id) else _free_spot(home, 1.2 if flying else float(MOVES[id].roam) * 0.5)
+	var pos: Vector2 = _home_spot(home, slot, id) if _perches(id) else _free_spot(home, 1.2 if flying else float(MOVES[id].roam) * 0.5)
 	var a := {
 		"id": id, "home": home, "slot": slot, "pos": pos, "mode": "idle", "wait": _rng.randf_range(0.2, 2.5), "target": pos, "from": pos,
 		"t": _rng.randf_range(0.0, TAU), "seed": _rng.randf_range(0.0, TAU), "wings": [], "moves": MOVES.get(id, {}),
@@ -112,10 +115,13 @@ func _spawn(id: String) -> void:
 func _perches(id: String) -> bool:
 	return MOVES.has(id) and MOVES[id].has("perch")
 
-# 台の上の、とまる場所。持ち場のまわりで少しずつ動く
-func _home_spot(home: Vector2, slot: int) -> Vector2:
+# 台の上の、とまる場所。持ち場のまわりで少しずつ動く。幹にとまる鳥は、幹のカメラの側(南)
+func _home_spot(home: Vector2, slot: int, id := "") -> Vector2:
+	var m: Dictionary = MOVES.get(id, {})
 	var angle: float = slot * TAU / PERCH_SLOTS + _rng.randf_range(-0.3, 0.3)
-	return home + Vector2.from_angle(angle) * PERCH_R * _rng.randf_range(0.8, 1.15)
+	if m.get("side", false):
+		angle = PI * 0.5 + _rng.randf_range(-0.5, 0.5)
+	return home + Vector2.from_angle(angle) * float(m.get("perch_r", PERCH_R)) * _rng.randf_range(0.8, 1.15)
 
 # 渡り鳥は群れでいるので、同じ場所に降りる
 func _flock_home(id: String, near: Vector2) -> Vector2:
@@ -188,7 +194,7 @@ func _walk(a: Dictionary, delta: float, player_pos: Vector2) -> void:
 			a.wait -= delta
 			if a.wait <= 0.0:
 				a.from = a.pos
-				a.target = _home_spot(a.home, a.slot) if m.has("perch") else _free_spot(a.home, float(m.roam))
+				a.target = _home_spot(a.home, a.slot, a.id) if m.has("perch") else _free_spot(a.home, float(m.roam))
 				a.mode = "walk"
 		"walk":
 			var away: bool = m.has("back") and a.pos.distance_to(a.home) > SETTLE_DIST
@@ -299,6 +305,10 @@ func _build(id: String, a: Dictionary) -> Node3D:
 			_tit(n, a)
 		"bullfinch":
 			_bullfinch(n, a)
+		"starling":
+			_starling(n, a)
+		"woodpecker":
+			_woodpecker(n, a)
 	n.scale = Vector3.ONE * float(DISPLAY_SCALE[id])
 	if MOVES.has(id):
 		_fold(a)
@@ -313,6 +323,38 @@ func _sparrow(n: Node3D, a: Dictionary) -> void:
 	_part(n, _box, Color(0.36, 0.24, 0.14), Vector3(0, 0.16, 0.2), Vector3(0.06, 0.03, 0.16))
 	for side in [-1.0, 1.0]:
 		_wing(a, n, Color(0.36, 0.24, 0.14), Vector3(side * 0.08, 0.18, 0.02), Vector3(0.18, 0.02, 0.16), side)
+
+# アカゲラ: 幹に縦にとまる。黒い背に白い肩、白いほお、赤い下尾筒と後頭部。くちばしは幹(体の前 = -Z)に向く
+func _woodpecker(n: Node3D, a: Dictionary) -> void:
+	var black := Color(0.10, 0.10, 0.12)
+	var white := Color(0.95, 0.94, 0.90)
+	var red := Color(0.86, 0.14, 0.12)
+	_part(n, _ball, black, Vector3(0, 0.2, 0), Vector3(0.17, 0.32, 0.16))
+	_part(n, _ball, Color(0.90, 0.86, 0.78), Vector3(0, 0.2, 0.05), Vector3(0.13, 0.26, 0.08))
+	for side in [-1.0, 1.0]:
+		_part(n, _ball, white, Vector3(side * 0.07, 0.25, -0.01), Vector3(0.05, 0.12, 0.08))
+	_part(n, _ball, red, Vector3(0, 0.06, 0.04), Vector3(0.09, 0.07, 0.07))
+	_part(n, _box, black, Vector3(0, 0.0, 0.03), Vector3(0.06, 0.12, 0.03))
+	_part(n, _ball, black, Vector3(0, 0.39, -0.02), Vector3.ONE * 0.13)
+	_part(n, _ball, white, Vector3(0, 0.38, 0.0), Vector3(0.14, 0.07, 0.09))
+	_part(n, _ball, red, Vector3(0, 0.41, 0.05), Vector3(0.06, 0.05, 0.04))
+	_part(n, _box, Color(0.20, 0.18, 0.16), Vector3(0, 0.39, -0.11), Vector3(0.03, 0.03, 0.08))
+	for side in [-1.0, 1.0]:
+		_wing(a, n, black, Vector3(side * 0.08, 0.22, 0.02), Vector3(0.14, 0.02, 0.14), side)
+
+# ムクドリ: 緑と紫に光る黒い体に白い斑点、黄色いくちばし
+func _starling(n: Node3D, a: Dictionary) -> void:
+	var gloss := Color(0.14, 0.16, 0.18)
+	_part(n, _ball, gloss, Vector3(0, 0.14, 0), Vector3(0.21, 0.18, 0.32))
+	_part(n, _ball, Color(0.20, 0.26, 0.22), Vector3(0, 0.12, -0.04), Vector3(0.17, 0.13, 0.2))
+	for i in range(4):
+		var side: float = -1.0 if i % 2 == 0 else 1.0
+		_part(n, _ball, Color(0.88, 0.86, 0.80), Vector3(side * 0.06, 0.15 + (i / 2) * 0.03, 0.02 - (i / 2) * 0.06), Vector3.ONE * 0.03)
+	_part(n, _ball, Color(0.18, 0.14, 0.22), Vector3(0, 0.25, -0.12), Vector3.ONE * 0.15)
+	_part(n, _box, Color(0.95, 0.80, 0.20), Vector3(0, 0.24, -0.22), Vector3(0.035, 0.03, 0.08))
+	_part(n, _box, gloss, Vector3(0, 0.16, 0.2), Vector3(0.06, 0.03, 0.12))
+	for side in [-1.0, 1.0]:
+		_wing(a, n, Color(0.22, 0.20, 0.18), Vector3(side * 0.08, 0.18, 0.02), Vector3(0.18, 0.02, 0.16), side)
 
 # シジュウカラ: 黄色みのある腹、黒い頭と胸の線、白いほお、青みのある灰色の羽
 func _tit(n: Node3D, a: Dictionary) -> void:

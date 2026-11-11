@@ -46,10 +46,16 @@ const SELL_PRICES := {
 	"pryanik": 40, "sbiten": 100,
 	"honey": 200,  # 1kg あたり。巣箱 1 つで 1 日 100〜140₽ ほどになる仮の数字
 }
+# 春の種の注文(2026-11-11 とむ決定): 冬のあいだ、春にまく野菜の種を安く注文でき、3 月 1 日(冬が終わった最初の確認)に届く
+const ORDER_RATE := 0.7        # 注文の値段の割合(店頭の 3 割引き。仮の数字)
+const ORDER_SEASON := "winter" # 注文できる季節
+
 # 保存食(Kitchen.RECIPES)の買い取り値の倍率。新鮮なものが少ない冬と、蓄えが尽きてくる春は高い(倍率は仮の数字)
 const PRESERVE_RATES := {"winter": 1.5, "spring": 1.25}
 
 var money := INITIAL_MONEY
+var orders := {}           # 注文した春の種 {野菜の kind: 区画の数}。冬が終わると届く
+var last_delivered := {}   # 今日の確認で届いた注文(知らせる用・保存しない)
 var forest: Forest  # GameWorld が設定する(木の種・苗木・リンゴの持ち物は Forest にある)
 var garden: Garden  # GameWorld が設定する(野菜の種・収穫物の持ち物は Garden にある)
 var cabin: Cabin    # GameWorld が設定する(丸太の持ち物は Cabin にある)
@@ -85,6 +91,51 @@ func buy(id: String) -> String:
 	changed.emit()
 	forest.changed.emit()
 	return "bought"
+
+# 注文できる野菜(春にまけて、苗からでなく種でまけるもの)
+static func orderable() -> Array:
+	var list := []
+	for kind in Garden.CROPS:
+		var crop: Dictionary = Garden.CROPS[kind]
+		if "spring" in crop.seasons and not crop.get("seedling_only", false):
+			list.append(kind)
+	return list
+
+static func order_price(kind: String) -> int:
+	return roundi(int(good(kind + "_seed").price) * ORDER_RATE)
+
+func can_order() -> bool:
+	return forest.season == ORDER_SEASON
+
+# 春の種を 1 区画ぶん注文する。結果: ordered / not_season / no_money / unknown
+func order(kind: String) -> String:
+	if not (kind in orderable()):
+		return "unknown"
+	if not can_order():
+		return "not_season"
+	if money < order_price(kind):
+		return "no_money"
+	money -= order_price(kind)
+	orders[kind] = int(orders.get(kind, 0)) + 1
+	changed.emit()
+	return "ordered"
+
+func order_count() -> int:
+	var n := 0
+	for kind in orders:
+		n += int(orders[kind])
+	return n
+
+# 冬が終わっていれば、注文した種を届ける(日付が変わったときに呼ぶ)。閉じていたあいだに冬が終わった場合も届く
+func deliver_orders() -> void:
+	last_delivered = {}
+	if can_order() or orders.is_empty():
+		return
+	for kind in orders:
+		garden.seeds[kind] = int(garden.seeds.get(kind, 0)) + int(orders[kind])
+	last_delivered = orders
+	orders = {}
+	changed.emit()
 
 # 収穫物 item の持ち物の入れ物と、その中のキー
 func pile_of(item: String) -> Dictionary:
@@ -131,8 +182,14 @@ func sell_all(item: String) -> int:
 
 # ── セーブ用 ──────────────────────────────────────────────
 func to_save() -> Dictionary:
-	return {"money": money}
+	return {"money": money, "orders": orders}
 
 func from_save(d: Dictionary) -> void:
 	money = int(d.get("money", INITIAL_MONEY))
+	orders = {}
+	var od = d.get("orders", {})
+	if typeof(od) == TYPE_DICTIONARY:
+		for kind in od:
+			if Garden.CROPS.has(kind) and int(od[kind]) > 0:
+				orders[kind] = int(od[kind])
 	changed.emit()

@@ -235,8 +235,10 @@ func _test_creatures() -> void:
 		w.forest.season = e[1]
 		_check(p.present() == e[2], e[3])
 	_check(p.is_frozen(), "冬は氷が張る")
+	_check(p.is_on_ice(SPOT) and p.is_on_ice(SPOT + Vector2(3.9, 0)) and not p.is_on_ice(SPOT + Vector2(4.2, 0)), "凍った池の上(縁まで)を歩ける")
 	w.forest.season = "spring"
 	_check(not p.is_frozen(), "春には解ける")
+	_check(not p.is_on_ice(SPOT), "解けたら氷の上ではない")
 
 	# 湧き水だけで、雨を待たずに来る(晴れが続いても)
 	var w3 := _world(DryForest.new())

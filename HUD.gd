@@ -312,6 +312,9 @@ func _status_lines() -> PackedStringArray:
 	var feeder: String = _main.feeder_line()
 	if feeder != "":
 		lines.append(feeder)
+	var nest: String = _main.nest_box_line()
+	if nest != "":
+		lines.append(nest)
 	var prune: String = _main.prune_line()
 	if prune != "":
 		lines.append(prune)
@@ -330,7 +333,7 @@ func _inventory_lines() -> PackedStringArray:
 		"─ 持ち物 ─",
 		"種: 白樺 %d  リンゴ %d  シベリア杉 %d" % [seeds.birch, seeds.apple, seeds.cedar],
 		"苗木: 白樺 %d  リンゴ %d  シベリア杉 %d\n      サクランボ %d  スモモ %d  ナシ %d" % [sap.birch, sap.apple, sap.cedar, sap.cherry, sap.plum, sap.pear],
-		"野菜の種: " + _main.crop_seeds_line(),
+		"野菜の種: " + _main.crop_seeds_line() + _orders_suffix(),
 		"苗: " + _main.seedlings_line(),
 		"収穫物: " + _main.produce_line(),
 		"保存食: " + _main.food_line(),
@@ -338,6 +341,14 @@ func _inventory_lines() -> PackedStringArray:
 		"近所の人: " + _main.neighbors_line(),
 		"植えた木: %d本   いる場所: X %.0fm  Y %.0fm" % [_trees.trees.size(), pos.x, pos.y],
 	])
+
+# 注文した春の種があれば、持ち物の野菜の種の行のあとに出す
+func _orders_suffix() -> String:
+	var m = _main.world.market
+	if m.orders.is_empty():
+		return ""
+	return "
+      注文中(3/1に届く): " + _main.orders_text(m.orders)
 
 # タッチのときは、キーの言い方をボタンの名前に置き換えて出す
 func _shown(text: String) -> String:
@@ -361,7 +372,7 @@ func _help_lines() -> PackedStringArray:
 	return PackedStringArray([
 		"─ 操作 ─",
 		"J:丸太の巣箱を作る/くり抜く/はちみつを採る  M:音量(大/中/小/消す)",
-		"L:鳥の餌台を立てる/白樺の種を置く(秋と冬)  X:果樹を剪定する(冬)",
+		"L:鳥の餌台を立てる/白樺の種を置く(秋と冬)/育った木にムクドリの巣箱  X:果樹を剪定する(冬)",
 		"U:押したまま歩いて雪かき(冬)  H:小屋の東の台で薪を割る / 腰掛けで食べる",
 		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者と話す",
 		"[1]白樺 [2]果樹(押すたびに リンゴ/サクランボ/スモモ/ナシ) [3]シベリア杉 [V]種/苗木",

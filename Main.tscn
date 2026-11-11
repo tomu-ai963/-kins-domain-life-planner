@@ -1,4 +1,4 @@
-[gd_scene load_steps=21 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://Main.gd" id="1"]
 [ext_resource type="PackedScene" path="res://Player3D.tscn" id="2"]
@@ -21,6 +21,8 @@
 [ext_resource type="Script" path="res://view/3d/FeederView3D.gd" id="19"]
 [ext_resource type="Script" path="res://view/3d/SnowView3D.gd" id="20"]
 [ext_resource type="Script" path="res://view/TouchControls.gd" id="21"]
+[ext_resource type="Script" path="res://view/3d/NestBoxView3D.gd" id="22"]
+[ext_resource type="Script" path="res://view/3d/FootprintsView3D.gd" id="23"]
 
 [sub_resource type="ProceduralSkyMaterial" id="1"]
 sky_top_color = Color(0.42, 0.62, 0.86, 1)
@@ -97,8 +99,14 @@ script = ExtResource("17")
 [node name="Feeders" type="Node3D" parent="."]
 script = ExtResource("19")
 
+[node name="NestBoxes" type="Node3D" parent="."]
+script = ExtResource("22")
+
 [node name="SnowPath" type="MultiMeshInstance3D" parent="."]
 script = ExtResource("20")
+
+[node name="Footprints" type="MultiMeshInstance3D" parent="."]
+script = ExtResource("23")
 
 [node name="Audio" type="Node" parent="."]
 script = ExtResource("18")

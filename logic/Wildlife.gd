@@ -34,6 +34,8 @@ const SPECIES := {
 	"migrant": {"name": "渡り鳥", "seasons": ALL_YEAR, "time": "any", "fair": false},
 	"tit": {"name": "シジュウカラ", "seasons": ["autumn", "winter"], "time": "day", "fair": false},
 	"bullfinch": {"name": "ウソ", "seasons": ["winter"], "time": "day", "fair": false},
+	"woodpecker": {"name": "アカゲラ", "seasons": ["winter"], "time": "day", "fair": false},
+	"starling": {"name": "ムクドリ", "seasons": ["spring", "summer"], "time": "day", "fair": false},
 }
 const TITS_PER_FEEDER := 2       # 餌のある餌台 1 つに来るシジュウカラ(秋と冬)
 const BULLFINCHES_PER_FEEDER := 1  # 餌のある餌台 1 つに来るウソ(冬だけ。雪の上で赤い胸が映える冬の鳥)
@@ -47,6 +49,7 @@ var cabin: Cabin
 var clock: DayClock
 var bees = null      # GameWorld が設定する(巣箱の上には行かない)
 var feeders = null   # GameWorld が設定する(餌があると鳥が来る)
+var nest_boxes = null  # GameWorld が設定する(掛けた巣箱にムクドリが来る)
 
 var seen := []       # 一度でも来た生き物の id
 
@@ -120,6 +123,10 @@ func _wanted(id: String) -> int:
 			return TITS_PER_FEEDER * feeders.fed_count() if feeders != null else 0
 		"bullfinch":
 			return BULLFINCHES_PER_FEEDER * feeders.fed_count() if feeders != null else 0
+		"woodpecker":  # 冬、育った木が 3 本あれば来る(幹の中の虫を探す)。10 本で 2 羽
+			return mini(2, 1 + int(trees[1] / 10.0)) if trees[1] >= 3 else 0
+		"starling":  # 掛けた巣箱 1 つにつがい 1 組
+			return nest_boxes.starlings() if nest_boxes != null else 0
 	return 0
 
 # 今いる生き物の数 {id: 数}。いないものは入らない
@@ -183,6 +190,17 @@ func home_for(id: String, rng: RandomNumberGenerator, near: Vector2) -> Vector2:
 			# 土地の内側へ少し離れたところ。足元が中心なら東へ
 			var inward: Vector2 = -near.normalized() if near.length() > 1.0 else Vector2.RIGHT
 			return near + inward * MIGRANT_NEAR
+		"woodpecker":  # 育った木の幹
+			var big := []
+			for t in forest.trees:
+				if forest.is_established(t) and forest.real_age_years(t) >= MATURE_AGE:
+					big.append(t.pos)
+			if not big.is_empty():
+				return big[rng.randi_range(0, big.size() - 1)]
+		"starling":  # 巣箱を掛けた木
+			var hung: Array = nest_boxes.boxes.filter(func(b): return nest_boxes.is_done(b)) if nest_boxes != null else []
+			if not hung.is_empty():
+				return hung[rng.randi_range(0, hung.size() - 1)].pos
 		"tit", "bullfinch":  # 餌のある餌台
 			var fed: Array = feeders.feeders.filter(func(f): return feeders.is_fed(f)) if feeders != null else []
 			if not fed.is_empty():

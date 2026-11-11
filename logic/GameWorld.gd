@@ -16,6 +16,7 @@ const Visitors = preload("res://logic/Visitors.gd")
 const Guide = preload("res://logic/Guide.gd")
 const Bees = preload("res://logic/Bees.gd")
 const Feeders = preload("res://logic/Feeders.gd")
+const NestBoxes = preload("res://logic/NestBoxes.gd")
 const Snow = preload("res://logic/Snow.gd")
 const Quests = preload("res://logic/Quests.gd")
 const Market = preload("res://logic/Market.gd")
@@ -43,6 +44,7 @@ var visitors := Visitors.new()
 var guide := Guide.new()
 var bees := Bees.new()
 var feeders := Feeders.new()
+var nest_boxes := NestBoxes.new()
 var snow := Snow.new()
 var quests := Quests.new()
 var market := Market.new()
@@ -103,6 +105,9 @@ func _init() -> void:
 	wildlife.feeders = feeders
 	visitors.feeders = feeders
 	guide.feeders = feeders
+	nest_boxes.forest = forest
+	nest_boxes.cabin = cabin
+	wildlife.nest_boxes = nest_boxes
 	snow.forest = forest
 	snow.land = land
 	snow.cabin = cabin
@@ -127,6 +132,7 @@ func _init() -> void:
 	guide.dirty.connect(save_game)
 	bees.dirty.connect(save_game)
 	feeders.dirty.connect(save_game)
+	nest_boxes.dirty.connect(save_game)
 	snow.dirty.connect(save_game)
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
@@ -173,6 +179,7 @@ func check_new_day() -> String:
 	pond.catch_up()
 	bees.catch_up()
 	snow.catch_up()
+	market.deliver_orders()  # 冬が終わっていれば、注文した春の種が届く
 	visitors.check_today()  # 霜のあとの畑を見て、今日の頼みごとを決める
 	return id
 
@@ -212,6 +219,7 @@ func save_game() -> void:
 	data["guide"] = guide.to_save()
 	data["bees"] = bees.to_save()
 	data["feeders"] = feeders.to_save()
+	data["nest_boxes"] = nest_boxes.to_save()
 	data["snow"] = snow.to_save()
 	data["sound_level"] = sound_level
 	data["quests"] = quests.to_save()
@@ -313,6 +321,10 @@ func load_game() -> void:
 	if typeof(bd) != TYPE_DICTIONARY:
 		bd = {}
 	# 餌台の記録がないセーブは、餌台なしから
+	# ムクドリの巣箱の記録がないセーブ(2026-11-11 より前)は、巣箱なしから
+	var nbd = data.get("nest_boxes", {})
+	if typeof(nbd) != TYPE_DICTIONARY:
+		nbd = {}
 	var fd = data.get("feeders", {})
 	if typeof(fd) != TYPE_DICTIONARY:
 		fd = {}
@@ -334,6 +346,7 @@ func load_game() -> void:
 	guide.from_save(gud)
 	bees.from_save(bd)
 	feeders.from_save(fd)
+	nest_boxes.from_save(nbd)
 	snow.from_save(snow_data)
 	sound_level = clampi(int(data.get("sound_level", 3)), 0, 3)
 	quests.from_save(qd)

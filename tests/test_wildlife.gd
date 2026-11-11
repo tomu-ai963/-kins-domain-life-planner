@@ -168,6 +168,26 @@ func _test_seasons() -> void:
 	w.clock.fixed_now = MIDNIGHT
 	var winter_night: Dictionary = w.wildlife.counts()
 	_check(not winter_night.has("hedgehog") and winter_night.has("hare"), "冬の夜: ハリネズミは冬眠。ノウサギはいる")
+	_check(not winter_night.has("woodpecker"), "冬の夜: アカゲラはいない")
+	w.clock.fixed_now = NOON
+	_check(int(winter.get("woodpecker", 0)) == 2, "冬の昼: 育った木 10 本でアカゲラが 2 羽")
+	w.forest.season = "autumn"
+	_check(not w.wildlife.counts().has("woodpecker"), "アカゲラが来るのは冬")
+
+	# アカゲラは育った木が 3 本から
+	var w2 := _world()
+	w2.forest.season = "winter"
+	_add_trees(w2, 2, 6.0)
+	_check(not w2.wildlife.counts().has("woodpecker"), "育った木 2 本では来ない")
+	_add_trees(w2, 3, 1.0)
+	_check(not w2.wildlife.counts().has("woodpecker"), "若い木は数えない")
+	w2.forest.trees.append({"pos": Vector2(30, 30), "species": "birch", "form": "sapling", "planted_at": w2.forest._now(), "start_age": 6.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	_check(int(w2.wildlife.counts().get("woodpecker", 0)) == 1, "育った木 3 本で 1 羽")
+	var rng := RandomNumberGenerator.new()
+	var homes := {}
+	for i in range(30):
+		homes[w2.wildlife.home_for("woodpecker", rng, Vector2.ZERO)] = true
+	_check(homes.keys().all(func(p): return w2.forest.trees.any(func(t): return t.pos == p and w2.forest.real_age_years(t) >= 5.0)), "とまるのは育った木の幹")
 
 func _test_rain() -> void:
 	print("雨")

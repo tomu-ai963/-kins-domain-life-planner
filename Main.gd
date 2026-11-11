@@ -127,7 +127,10 @@ func _setup_3d_only() -> void:
 	$Visitor.setup(world.visitors, $Player)
 	$Hives.setup(world.bees)
 	$Feeders.setup(world.feeders)
+	$NestBoxes.setup(world.nest_boxes, world.forest)
 	$SnowPath.setup(world.snow)
+	$Footprints.setup(world.snow, $Player, $Wildlife)
+	$Footprints.skip_at = world.pond.is_on_ice  # 氷の上には足跡が残らない
 	world.guide.has_people = true
 	$Audio.setup(world, $Player)
 	$Player.work_sound.connect($Audio.play)
@@ -171,6 +174,8 @@ func update_shovel(delta: float, holding: bool) -> void:
 	if k.has_effect("strength"):
 		speed *= k.MEAL_SPEED
 	$Player.speed_scale = speed
+	if "slippery" in $Player:
+		$Player.slippery = world.pond.is_on_ice(pos)
 
 func _check_new_day() -> void:
 	var f := world.forest
@@ -205,6 +210,8 @@ func _check_new_day() -> void:
 		lines.append("空の巣箱に蜂が入った(%d箱)" % world.bees.last_arrivals)
 	if world.snow.last_fell:
 		lines.append("雪かきの道が雪で埋まった")
+	if not world.market.last_delivered.is_empty():
+		lines.append("冬に注文した春の種が届いた(%s)" % orders_text(world.market.last_delivered))
 	$HUD.show_message("\n".join(PackedStringArray(lines)), 15.0 if notice != "" else 10.0)
 
 # ── 巣箱とはちみつ ─────────────────────────────────────────
@@ -264,6 +271,10 @@ func hive_line() -> String:
 func _feeder_action() -> void:
 	var fd := world.feeders
 	var pos := player_pos()
+	# 餌台のそばでなく、育った木のそばなら、ムクドリの巣箱の作業
+	if fd.feeder_near(pos).is_empty() and world.nest_boxes.is_near(pos):
+		_nest_box_action(pos)
+		return
 	var front = pos + $Player.facing() * HIVE_FRONT if $Player.has_method("facing") else null
 	match fd.act(pos, front):
 		"placed":
@@ -284,6 +295,51 @@ func _feeder_action() -> void:
 			$HUD.show_message("餌台は%dつまで(種を置くときは、餌台のそばで L)" % fd.MAX_FEEDERS, 5.0)
 		"blocked":
 			$HUD.show_message("ここには立てられない(区画・小屋・池・木・巣箱のそばや、土地の端は空ける)", 5.0)
+
+# L(育った木のそば): ムクドリの巣箱を作る / 続きを作る
+func _nest_box_action(pos: Vector2) -> void:
+	var nb := world.nest_boxes
+	var result: String = nb.act(pos)
+	var b: Dictionary = nb.last_box
+	match result:
+		"started":
+			_act("build", b.pos)
+			$HUD.show_message("丸太でムクドリの巣箱を作りはじめた(丸太 -%d本・1/%d日)。続きは明日。春になると、ムクドリが渡ってくる" % [nb.LOG_COST, nb.WORK_DAYS], 7.0)
+		"worked":
+			_act("build", b.pos)
+			$HUD.show_message("巣箱を作った(%d/%d日)。続きは明日" % [b.days_done, nb.WORK_DAYS])
+		"finished":
+			_act("build", b.pos)
+			var soon := "もうすぐムクドリのつがいが来る" if world.forest.season in nb.SEASONS else "春になると、ムクドリのつがいが来る"
+			$HUD.show_message("ムクドリの巣箱を木に掛けた。%s" % soon, 7.0)
+		"done":
+			$HUD.show_message("この木にはもう巣箱が掛かっている(ムクドリが来るのは春と夏)")
+		"done_today":
+			$HUD.show_message("今日はもう作った(1日1回)")
+		"too_many":
+			$HUD.show_message("ムクドリの巣箱は%dつまで" % nb.MAX_BOXES)
+		"no_wood":
+			$HUD.show_message("丸太が%d本いる(市場で買うか、育った木を Z で伐る)" % nb.LOG_COST)
+
+# HUD に出す、育った木のそばのムクドリの巣箱の 1 行。そばにいなければ ""
+func nest_box_line() -> String:
+	var nb := world.nest_boxes
+	var pos := player_pos()
+	if not world.feeders.feeder_near(pos).is_empty():
+		return ""
+	var tree: Dictionary = nb.tree_near(pos)
+	if tree.is_empty():
+		return ""
+	var b: Dictionary = nb.box_on(tree.pos)
+	if b.is_empty():
+		if nb.boxes.size() >= nb.MAX_BOXES:
+			return ""
+		return "ムクドリの巣箱: L で作れる(丸太%d本・%d日)" % [nb.LOG_COST, nb.WORK_DAYS]
+	if not nb.is_done(b):
+		return "ムクドリの巣箱: %d/%d日(%s)" % [b.days_done, nb.WORK_DAYS, "今日は済んだ" if nb.worked_today(b) else "L で続きを作る"]
+	if world.forest.season in nb.SEASONS:
+		return "ムクドリの巣箱: つがいが出入りしている"
+	return "ムクドリの巣箱: 春にムクドリが来る"
 
 # HUD に出す、餌台のそばの 1 行。そばにいなければ ""
 func feeder_line() -> String:
@@ -423,6 +479,17 @@ const VISITOR_REQUESTS := {
 	"tanya": "%sを%sちょうだい!\nかわりに%sをあげるね。",
 	"pavel": "%sを%s分けていただけませんか。\nお礼に%sをお渡しします。",
 }
+# 冬に薪を頼むときの言葉
+const VISITOR_FIREWOOD := {
+	"nina": "この寒さで、うちの薪が足りなくなりそうなの。
+薪を%s分けてもらえない?お礼に%sをあげる。",
+	"fyodor": "冬の巣箱の番で、薪を使い切ってしまってな。
+薪を%s譲ってくれないか。お礼に%sを持ってきた。",
+	"tanya": "おばあちゃんちのペチカの薪がないの!
+薪を%sちょうだい!かわりに%sをあげるね。",
+	"pavel": "配達先のお年寄りの家で、薪が切れかけていまして。
+薪を%s分けていただけませんか。お礼に%sをお渡しします。",
+}
 # 手詰まりのときに分けてくれる言葉(種のとき / 冬のお金のとき)
 const VISITOR_HELP := {
 	"nina": ["畑が空っぽじゃない。困ってるんでしょう。\n%sを持っていって。まけばまた始められるよ。", "冬は苦しいよね。\n%sあげるから、春になったら種を買いなさい。"],
@@ -490,6 +557,8 @@ func visitor_text() -> String:
 		return VISITOR_GIFTS[who] % reward_text(v.visit.reward)
 	if v.has_request():
 		var item: String = v.visit.item
+		if item == v.FIREWOOD:
+			return VISITOR_FIREWOOD[who] % ["%d回分" % v.visit.amount, reward_text(v.visit.reward)]
 		return VISITOR_REQUESTS[who] % [produce_name(item), "%d%s" % [v.visit.amount, produce_unit(item)], reward_text(v.visit.reward)]
 	var lines: Array = visitor_chat_lines(who)
 	var line: String = lines[int(v.visit.line) % lines.size()]
@@ -523,7 +592,7 @@ func visitor_rows() -> Array:
 		rows.append({"id": "close", "text": "今はいい(C / Esc)", "column": 0})
 	elif v.has_request():
 		var item: String = v.visit.item
-		var have: int = world.market.count_of(item)
+		var have: int = v.have(item)
 		rows.append({"id": "give", "text": "渡す(%s 持っている)" % _amount_text(item, have), "column": 0})
 		rows.append({"id": "close", "text": "今はいい(C / Esc)", "column": 0})
 	else:
@@ -556,8 +625,10 @@ func _visitor_action(id: String) -> void:
 		_close_shop()
 		_act("pick", $Visitor.ground_pos(), item)
 		return
-	var need: int = int(v.visit.amount) - world.market.count_of(item)
+	var need: int = int(v.visit.amount) - v.have(item)
 	var ripe := "。畑に収穫できるものがある" if world.garden.crops.any(func(c): return c.kind == item and world.garden.is_ripe(c)) else ""
+	if item == v.FIREWOOD:
+		ripe = "。小屋の東の薪割り台で H を押すと割れる"
 	$HUD.show_message("%sがあと%d%s足りない%s" % [produce_name(item), need, produce_unit(item), ripe], 5.0)
 
 # 文言のあとに、親しくなった知らせを足す
@@ -1152,7 +1223,7 @@ func pond_line() -> String:
 	var names := PackedStringArray()
 	for id in p.present():
 		names.append(p.CREATURES[id].name)
-	var state := "氷が張っている" if p.is_frozen() else "水 %d%%" % p.water
+	var state := ("氷が張っている(上を歩くと滑る)" if p.is_dug() else "氷が張っている") if p.is_frozen() else "水 %d%%" % p.water
 	return "池: %s%s" % [state, "(%s)" % "・".join(names) if not names.is_empty() else ""]
 
 # ── 畑の野菜 ────────────────────────────────────────────────
@@ -1227,6 +1298,13 @@ static func _rows(parts: PackedStringArray, n: int) -> String:
 	return "\n    ".join(rows)
 
 # HUD に出す、持っている野菜の種
+# 「ラディッシュ 3・にんじん 2」
+func orders_text(orders: Dictionary) -> String:
+	var parts := PackedStringArray()
+	for kind in orders:
+		parts.append("%s %d" % [world.garden.CROPS[kind].name, int(orders[kind])])
+	return "・".join(parts)
+
 func crop_seeds_line() -> String:
 	var parts := PackedStringArray()
 	for key in CROP_KEYS:
@@ -1258,6 +1336,8 @@ func seedlings_line() -> String:
 	return "トマト %d鉢  きゅうり %d鉢" % [ready.tomato, ready.cucumber]
 
 func produce_name(item: String) -> String:
+	if item == world.visitors.FIREWOOD:
+		return "薪"
 	if world.forest.FRUITS.has(item):
 		return world.forest.SPECIES[item].name
 	if item == "honey":
@@ -1269,6 +1349,8 @@ func produce_name(item: String) -> String:
 	return world.garden.CROPS[item].name
 
 func produce_unit(item: String) -> String:
+	if item == world.visitors.FIREWOOD:
+		return "回分"
 	if world.forest.FRUITS.has(item):
 		return world.forest.FRUITS[item].unit
 	if world.kitchen.RECIPES.has(item):
@@ -1336,6 +1418,12 @@ func shop_rows() -> Array:
 	rows.append({"id": "page_buy", "text": "買う品: %s(押すと次: %s)" % [BUY_PAGES[_buy_page].name, BUY_PAGES[buy_next].name], "column": 0})
 	for g in m.GOODS:
 		rows.append({"id": g.id, "text": "買う: %s  %d₽" % [good_name(g), g.price], "column": 0, "page": _buy_page_of(g)})
+	# 冬は、春の種を安く注文できる(3 月 1 日に届く)。野菜の種のページに並べる
+	if m.can_order():
+		for kind in m.orderable():
+			var ordered: int = int(m.orders.get(kind, 0))
+			var note := "・注文済み %d" % ordered if ordered > 0 else ""
+			rows.append({"id": "order_" + kind, "text": "注文: %s(3/1に届く%s)  %d₽" % [world.garden.CROPS[kind].seed_name, note, m.order_price(kind)], "column": 0, "page": 1})
 	var sell_next: int = (_sell_page + 1) % SELL_PAGES.size()
 	rows.append({"id": "page_sell", "text": "売る品: %s(押すと次: %s %d種類)" % [SELL_PAGES[_sell_page], SELL_PAGES[sell_next], _held_kinds(sell_next)], "column": 1})
 	for item in m.SELL_PRICES:
@@ -1421,7 +1509,16 @@ func _on_shop_action(id: String) -> void:
 			_sell_page = (_sell_page + 1) % SELL_PAGES.size()
 		$HUD.refresh_shop()
 		return
-	if id.begins_with("sell_"):
+	if id.begins_with("order_"):
+		var kind := id.trim_prefix("order_")
+		var price: int = m.order_price(kind)
+		var ordered: bool = m.order(kind) == "ordered"
+		_sfx("coin" if ordered else "click")
+		if ordered:
+			$HUD.show_message("%sを注文した(-%d₽)。3月1日に届く(店頭より%d₽安い)" % [world.garden.CROPS[kind].seed_name, price, int(m.good(kind + "_seed").price) - price], 5.0)
+		else:
+			$HUD.show_message("お金が足りない(%d₽ 必要)" % price)
+	elif id.begins_with("sell_"):
 		var item := id.trim_prefix("sell_")
 		var income: int = m.sell_all(item)
 		_sfx("coin" if income > 0 else "click")
@@ -1557,13 +1654,15 @@ func _remove() -> void:
 	var nearest: int = world.forest.nearest_index(pos, REACH, "")
 	var felled: Dictionary = world.forest.trees[nearest] if nearest >= 0 else {}
 	var falls: bool = not felled.is_empty() and $Trees.has_method("start_fall") and $Trees.start_fall(felled, pos)
+	var had_box: bool = not felled.is_empty() and not world.nest_boxes.box_on(felled.pos).is_empty()
 	var logs: int = world.cabin.fell(pos, REACH)
+	world.nest_boxes.drop_missing()  # 伐った木に掛けていた巣箱もなくなる
 	if not felled.is_empty():
 		_act("chop" if falls else "pull", felled.pos)
 	if falls and $Audio.has_method("play_after"):
 		$Audio.play_after("tree_fall", TREE_FALL_SOUND_DELAY)
 	if logs > 0:
-		$HUD.show_message("木を伐った(丸太 +%d本)" % logs)
+		$HUD.show_message("木を伐った(丸太 +%d本)%s" % [logs, "。掛けていたムクドリの巣箱も外れた" if had_box else ""])
 	elif logs == 0:
 		$HUD.show_message("木を抜いた(細くて丸太にはならない)")
 	elif world.cabin.cancel(pos):

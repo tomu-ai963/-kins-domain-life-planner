@@ -6,6 +6,8 @@ extends RefCounted
 # 渡せるものがなければ話すだけの日になる。頼みごとは断ってもよく、その日が終わると帰る(罰はない)。
 # 収入の手段が尽きているとき(is_stuck)だけは、種を少し分けてくれる(冬はまける種がないのでお金)。
 # フョードルさん(養蜂家)は、空の巣箱があれば蜂を分けてくれる(kind = bees)。
+# 冬は、小屋が建っていて今日のうちに割れる丸太があれば、薪を頼まれる(item = firewood。2026-11-11 とむ決定)。
+# 冬のお礼の種は、春にまける種(冬にまける種はないので)。
 # 今日の中身は最初に決めた時点で保存する(収穫や売買で中身が変わらないように)。
 # 親しさ: 人ごとに、話すと +1、蜂を分けてもらうと +2、頼みごとに応えると +3。断っても減らない。
 # 親しくなるほど話す言葉が増え(Main)、話すだけの日にときどき贈り物を持ってくる(kind = gift)。
@@ -44,6 +46,9 @@ const ASK := {
 	"pryanik": 5, "sbiten": 2,
 }
 const BEEKEEPER := "fyodor"  # 蜂を分けてくれる人
+const FIREWOOD := "firewood"   # 冬の頼みごとの薪(Kitchen.firewood。市場では売れない)
+const FIREWOOD_ASK := 4        # 1 回に頼む薪(回分)。薪割り 2 回ぶん
+const FIREWOOD_PRICE := 50     # お礼を決めるときの薪 1 回分の値段(₽。丸太 1 本 300₽ = 10 回分より高い。冬は薪が要るので。仮の数字)
 
 # 親しさ。LEVELS[n] 以上で段階 n。同じ人は 10 日に 1 回来るので、頼みごとに応え続けると 顔なじみ 10 日・親しい 30 日・家族のよう 50 日(仮の数字)
 const LEVELS := [0, 3, 8, 15]
@@ -228,18 +233,34 @@ func _generate(day: int) -> Dictionary:
 		v.kind = "bees"
 		return v
 	var item: String = _choose_item(who)
+	# 冬は薪を頼む(今は持っていなくても、今日のうちに割って渡せるなら)
+	if forest.season == "winter" and can_ask_firewood():
+		item = FIREWOOD
 	if item == "" or rng.randf() < CHAT_CHANCE:
 		var chance: float = GIFT_CHANCE[level_of(who)]
 		if chance > 0.0 and rng.randf() < chance:
 			v.kind = "gift"
 			v.reward = _gift_reward(who, rng)
 		return v
-	var amount: int = mini(int(ASK[item]), available(item))
+	var amount: int = FIREWOOD_ASK if item == FIREWOOD else mini(int(ASK[item]), available(item))
 	v.kind = "request"
 	v.item = item
 	v.amount = amount
 	v.reward = _choose_reward(item, amount, rng)
 	return v
+
+# 薪を頼めるか: 小屋が建っていて、割ってある薪と今日割れる丸太で FIREWOOD_ASK に届く
+func can_ask_firewood() -> bool:
+	if kitchen == null or not kitchen.cabin.is_complete():
+		return false
+	var can_make: int = kitchen.firewood + kitchen.log_left + int(kitchen.cabin.materials.log) * kitchen.LOG_FIRES
+	return can_make >= FIREWOOD_ASK
+
+# 頼まれたものを今いくつ持っているか(薪は割ってある分)
+func have(item: String) -> int:
+	if item == FIREWOOD:
+		return kitchen.firewood if kitchen != null else 0
+	return market.count_of(item)
 
 # 今日渡せるもののうち、その人が頼むもの。なければ ""
 func _choose_item(who: String) -> String:
@@ -260,6 +281,8 @@ func available(item: String) -> int:
 	return n
 
 func value_of(item: String, amount: int) -> int:
+	if item == FIREWOOD:
+		return amount * FIREWOOD_PRICE
 	return amount * market.sell_price(item)  # 冬の保存食は市場でも高いので、お礼も今の値段から決める
 
 # お礼。市場で売るより少し高い。種や苗は値段に合う数だけ。今の季節に使えないものはお金にする
@@ -267,9 +290,10 @@ func _choose_reward(item: String, amount: int, rng: RandomNumberGenerator) -> Di
 	var worth: float = value_of(item, amount) * BONUS
 	var money := {"type": "money", "amount": ceili(worth / MONEY_ROUND) * MONEY_ROUND}
 	var options := []
+	var sow_season: String = "spring" if forest.season == "winter" else forest.season  # 冬は春にまける種
 	for kind in Garden.CROPS:
 		var crop: Dictionary = Garden.CROPS[kind]
-		if forest.season in crop.seasons and not crop.get("seedling_only", false):
+		if sow_season in crop.seasons and not crop.get("seedling_only", false):
 			options.append({"type": "crop_seed", "kind": kind, "count": maxi(1, int(worth / market.good(kind + "_seed").price))})
 	if forest.season in SEEDLING_SEASONS:
 		for kind in Seedlings.SEEDLING_CROPS:
@@ -291,11 +315,15 @@ func has_request() -> bool:
 func give() -> String:
 	if not has_request():
 		return "none"
-	if market.count_of(visit.item) < int(visit.amount):
+	if have(visit.item) < int(visit.amount):
 		return "short"
-	var pile: Dictionary = market.pile_of(visit.item)
-	var key: String = market.key_of(visit.item)
-	pile[key] = int(pile[key]) - int(visit.amount)
+	if visit.item == FIREWOOD:
+		kitchen.firewood -= int(visit.amount)
+		kitchen.changed.emit()
+	else:
+		var pile: Dictionary = market.pile_of(visit.item)
+		var key: String = market.key_of(visit.item)
+		pile[key] = int(pile[key]) - int(visit.amount)
 	_receive(visit.reward)
 	last_reward = visit.reward
 	visit.done = true

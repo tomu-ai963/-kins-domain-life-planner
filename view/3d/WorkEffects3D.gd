@@ -64,6 +64,8 @@ func _item_color(item: String) -> Color:
 		return TreesView.FRUIT_LOOKS[item].color
 	if item == "honey":
 		return Color(0.96, 0.70, 0.14)
+	if item == "firewood":
+		return WOOD
 	return TreesView.FRUIT
 
 # じょうろの水: 少しずつ注ぎ口から落とす
