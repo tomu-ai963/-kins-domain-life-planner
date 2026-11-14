@@ -74,6 +74,8 @@ const FOOD_COLORS := {
 
 var cabin: Cabin
 var kitchen: Kitchen
+var tools = null            # logic/Tools.gd(set_tools で渡す)
+var _shown_splitter := false
 var _night := 0.0
 var _lamp_light: OmniLight3D  # 完成するまでは null
 var _player: Node3D           # 3D のときだけ Main が渡す
@@ -142,6 +144,16 @@ func set_player(p: Node3D) -> void:
 	_player = p
 
 # 料理の様子を見せる(3D のときだけ Main が渡す)。日付が変わると鍋ができるのは forest.changed で描き直す
+# 道具(薪割り機を持っていれば、薪割り台の横に置く)。ジョウロの水が減るたびには作り直さない
+func set_tools(t) -> void:
+	tools = t
+	_shown_splitter = tools.has("splitter")
+	tools.changed.connect(func():
+		if tools.has("splitter") != _shown_splitter:
+			_shown_splitter = tools.has("splitter")
+			_rebuild())
+	_rebuild()
+
 func set_kitchen(k: Kitchen) -> void:
 	kitchen = k
 	kitchen.changed.connect(_rebuild)
@@ -300,6 +312,8 @@ func _yard(parent: Node3D) -> void:
 	shape.position = Vector3(c.x, CHOP_STUMP_H * 0.5, c.y)
 	body.add_child(shape)
 	spot.add_child(body)
+	if tools != null and tools.has("splitter"):
+		_splitter(spot)
 	if kitchen == null:
 		return
 	# 薪の山: 東の壁に沿って下の段から積む
@@ -310,6 +324,25 @@ func _yard(parent: Node3D) -> void:
 		var row: int = i / PILE_COLUMNS
 		var z: float = -1.15 + column * PILE_GAP + (0.1 if row % 2 == 1 else 0.0)
 		_piece(spot, _firewood, Vector3(x, 0.07 + row * 0.13, z), Vector3(0.4, 0.12, 0.13)).name = "Woodpile"
+
+# 薪割り機: 薪割り台の北に置く。黄色い横長の台に、くさびと押し板、横に小さなエンジン、車輪 2 つ
+func _splitter(spot: Node3D) -> void:
+	var c: Vector2 = Cabin.CHOP_OFFSET + Vector2(0.2, -1.6)
+	var node := Node3D.new()
+	node.name = "Splitter"
+	node.position = Vector3(c.x, 0, c.y)
+	spot.add_child(node)
+	var yellow := Look.mat(Color(0.93, 0.70, 0.16))
+	var dark := Look.mat(Color(0.18, 0.18, 0.18))
+	var red := Look.mat(Color(0.80, 0.20, 0.16))
+	node.add_child(Look.mesh_node(_box, yellow, Vector3(0, 0.42, 0), Vector3(0.18, 0.12, 1.1)))   # 台
+	node.add_child(Look.mesh_node(_box, dark, Vector3(0, 0.56, -0.48), Vector3(0.06, 0.18, 0.08)))  # くさび
+	node.add_child(Look.mesh_node(_box, yellow, Vector3(0, 0.56, 0.38), Vector3(0.2, 0.2, 0.06)))   # 押し板
+	node.add_child(Look.mesh_node(_box, red, Vector3(0.24, 0.42, 0.3), Vector3(0.26, 0.26, 0.3)))   # エンジン
+	node.add_child(Look.mesh_node(_box, dark, Vector3(0, 0.2, -0.45), Vector3(0.08, 0.4, 0.08)))   # 前の脚
+	for side in [-1.0, 1.0]:
+		var wheel := Look.mesh_node(_ball, dark, Vector3(side * 0.16, 0.16, 0.42), Vector3(0.08, 0.32, 0.32))
+		node.add_child(wheel)
 
 # 窓辺の鉢: 東の窓の下に棚を置き、鉢と芽を並べる。芽は育つと大きくなる
 func _pots(spot: Node3D) -> void:

@@ -23,9 +23,12 @@ const ACTIONS := {
 	"plant": {"seconds": 0.6, "hit": 0.3, "tool": ""},
 	"pull": {"seconds": 0.6, "hit": 0.35, "tool": ""},
 	"wave": {"seconds": 1.1, "hit": 0.0, "tool": ""},
+	"saw": {"seconds": 1.1, "hit": 0.35, "tool": "chainsaw"},   # チェーンソーで幹を切る(2026-11-14)
+	"draw": {"seconds": 1.0, "hit": 0.45, "tool": "can"},       # 井戸か池でジョウロに汲む
+	"machine": {"seconds": 0.8, "hit": 0.5, "tool": ""},        # エンジンのひもを引いて動かす(ポンプ・薪割り機)
 }
 # 道具を持つ角度(手に対する x 回転)。腕を振り下ろしたときに道具の先が前の低いところへ来るように
-const TOOL_ANGLES := {"can": -1.25, "hoe": -1.0, "axe": -1.3, "hammer": -1.0, "shears": -1.4, "shovel": -0.95, "bite": 0.0}
+const TOOL_ANGLES := {"can": -1.25, "hoe": -1.0, "axe": -1.3, "hammer": -1.0, "shears": -1.4, "shovel": -0.95, "bite": 0.0, "chainsaw": -1.5}
 const POUR_TILT := 0.55   # じょうろを傾ける角度(rad)
 const CAN_ARM := 1.25     # じょうろを持つ腕の角度(rad)
 const STEEL := Color(0.55, 0.57, 0.60)
@@ -174,6 +177,18 @@ func _apply_action(delta: float) -> void:
 		"eat":  # 手を口へ運んで、もぐもぐする
 			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.45 + 0.1 * sin(t * TAU * 4.0), e)
 			_upper.rotation.x = lerpf(_upper.rotation.x, 0.05, e)
+		"saw":  # 両手でチェーンソーを前に構え、幹に当てて小刻みに震える
+			var buzz: float = 0.04 * sin(t * TAU * 18.0) * smoothstep(0.25, 0.35, t)
+			_arm_l.rotation.x = lerpf(_arm_l.rotation.x, 1.2 + buzz, e)
+			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 1.2 - buzz, e)
+			_upper.rotation.x = lerpf(_upper.rotation.x, -0.3, e)
+		"draw":  # かがんでジョウロを水へ沈め、持ち上げる
+			_bow(e, -0.55 - 0.2 * sin(t * PI), 1.0 + 0.3 * sin(t * PI))
+		"machine":  # かがんでエンジンのひもを勢いよく引く
+			var pull: float = smoothstep(0.35, 0.5, t) * (1.0 - smoothstep(0.7, 0.95, t))
+			_upper.rotation.x = lerpf(_upper.rotation.x, -0.45 + 0.25 * pull, e)
+			_arm_l.rotation.x = lerpf(_arm_l.rotation.x, 0.7, e)
+			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 0.9 + 1.2 * pull, e)
 		"wave":  # 右手を上げて振る
 			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.8, e)
 			_arm_r.get_parent().rotation.z = ARM_SPREAD + e * (0.5 + 0.35 * sin(t * TAU * 3.0))
@@ -219,6 +234,10 @@ func _build_tools() -> void:
 	var shovel := _tool("shovel")
 	_box(shovel, handle, Vector3(0, 0, -0.33), Vector3(0.03, 0.03, 0.95))
 	_box(shovel, steel, Vector3(0, -0.03, -0.9), Vector3(0.3, 0.03, 0.3))
+	var saw := _tool("chainsaw")
+	_box(saw, Look.mat(Color(0.93, 0.48, 0.12)), Vector3(0, -0.02, -0.12), Vector3(0.14, 0.18, 0.3))  # エンジン(橙)
+	_box(saw, steel, Vector3(0, -0.02, -0.5), Vector3(0.03, 0.09, 0.5))                              # 刃
+	_box(saw, Look.mat(Color(0.18, 0.18, 0.18)), Vector3(0, 0.1, -0.1), Vector3(0.12, 0.03, 0.03))     # 取っ手
 	var shears := _tool("shears")
 	_box(shears, handle, Vector3(-0.025, 0, -0.08), Vector3(0.025, 0.025, 0.2))
 	_box(shears, handle, Vector3(0.025, 0, -0.08), Vector3(0.025, 0.025, 0.2))

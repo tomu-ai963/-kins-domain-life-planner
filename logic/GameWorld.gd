@@ -26,6 +26,8 @@ const WorldTime = preload("res://logic/WorldTime.gd")
 const SaveRead = preload("res://logic/SaveRead.gd")
 const Region = preload("res://logic/Region.gd")
 const Wilds = preload("res://logic/Wilds.gd")
+const Well = preload("res://logic/Well.gd")
+const Tools = preload("res://logic/Tools.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
 # セーブの版(2026-11-11 から書く。レビュー S4)。セーブの形を変える変更(名前・単位を変える、意味を変える)をしたら 1 上げ、
@@ -61,6 +63,9 @@ var time := WorldTime.new()      # ゲームの「今」。日付と時刻はこ
 var clock := DayClock.new()      # 光の見た目と HUD の時計だけに使う。ルールには使わない
 var region := Region.new()       # 土地のある都道府県と気候。はじめに 1 度だけ選ぶ(選ぶ前は今までのルール)
 var wilds := Wilds.new()         # 一族の土地の外の自然の林(県から決まる。保存しない)
+var well := Well.new()           # 井戸(2026-11-14)
+var tools := Tools.new()         # ジョウロ・斧・ガソリンで動く機械(2026-11-14)
+var last_pumped := [0, 0]        # 直前にポンプでまとめて水をやった [区画の数, 木の数](文言用・保存しない)
 var is_new_game := false         # 読み込むセーブがなかった(新しく始めた)。県を選んだときに、その土地のはじめの種を配る
 var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
@@ -119,7 +124,14 @@ func _init() -> void:
 	feeders.land = land
 	feeders.cabin = cabin
 	feeders.bees = bees
-	bees.taken_nearby = feeders.covers
+	bees.taken_nearby = _taken_nearby
+	well.forest = forest
+	well.is_blocked = bees.is_blocked  # 巣箱と同じ決まり(区画・小屋・池・木・巣箱・餌台・井戸のそばと土地の端には掘れない)
+	tools.forest = forest
+	market.tools = tools
+	market.well = well
+	guide.well = well
+	guide.tools = tools
 	wildlife.feeders = feeders
 	market.feeders = feeders
 	visitors.feeders = feeders
@@ -153,9 +165,15 @@ func _init() -> void:
 	feeders.dirty.connect(save_game)
 	nest_boxes.dirty.connect(save_game)
 	snow.dirty.connect(save_game)
+	well.dirty.connect(save_game)
+	tools.dirty.connect(save_game)
+
+# 巣箱・餌台・井戸を置く場所に、ほかの物(餌台・井戸)がかかるか(Bees.is_blocked から呼ぶ)
+func _taken_nearby(pos: Vector2, radius: float) -> bool:
+	return feeders.covers(pos, radius) or well.covers(pos, radius)
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
-# 結果: Garden.toggle_plot の結果か cabin / hive / feeder
+# 結果: Garden.toggle_plot の結果か cabin / hive / feeder / well
 func toggle_plot(pos: Vector2) -> String:
 	if land.plot_at(pos) == null and cabin.blocks_plot(land.plot_center(pos)):
 		return "cabin"
@@ -163,6 +181,8 @@ func toggle_plot(pos: Vector2) -> String:
 		return "hive"
 	if land.plot_at(pos) == null and feeders.blocks_plot(land.plot_center(pos), land.PLOT_SIZE * 0.5):
 		return "feeder"
+	if land.plot_at(pos) == null and well.blocks_plot(land.plot_center(pos), land.PLOT_SIZE * 0.5):
+		return "well"
 	return garden.toggle_plot(pos)
 
 # X: 足元の果樹を剪定する。切った枝は薪になる。結果は Forest.prune_nearest
@@ -183,7 +203,123 @@ func pond_action(pos: Vector2) -> String:
 		return "hive"
 	if feeders.covers(pos, land.POND_RADIUS + bees.CLEARANCE):
 		return "feeder"
+	if well.covers(pos, land.POND_RADIUS + bees.CLEARANCE):
+		return "well"
 	return land.toggle_pond(pos)
+
+# ── 水と道具(2026-11-14) ────────────────────────────────────
+# 足元が水を汲める場所か。結果: well / pond / pond_frozen / pond_empty / ""(どちらのそばでもない)
+func water_source(pos: Vector2) -> String:
+	if well.is_beside(pos):
+		return "well"
+	if pond.is_beside(pos):
+		if pond.is_frozen():
+			return "pond_frozen"
+		return "pond" if pond.water > 0 else "pond_empty"
+	return ""
+
+# 井戸か池のまわりの、水がいる [区画の数, 木の数](ポンプの案内用)。そばでなければ [0, 0]
+func dry_around_source(pos: Vector2) -> Array:
+	match water_source(pos):
+		"well":
+			return [garden.dry_within(well.site, well.WATER_RADIUS), forest.dry_within(well.site, well.WATER_RADIUS)]
+		"pond":
+			return pond.dry_around()
+	return [0, 0]
+
+# Q(井戸か池のそば・エンジンポンプを持っている): まわりの区画と木にまとめて水をやる。ガソリンを使う
+# 結果: pumped / no_pump / no_gas / nothing / far / frozen / low(池の水が足りない)
+func pump(pos: Vector2) -> String:
+	var src := water_source(pos)
+	if src == "":
+		return "far"
+	if not tools.has("pump"):
+		return "no_pump"
+	if src == "pond_frozen":
+		return "frozen"
+	var dry := dry_around_source(pos)
+	if dry[0] + dry[1] == 0:
+		return "nothing"
+	if src == "pond" or src == "pond_empty":
+		if pond.water < pond.WATER_COST:
+			return "low"
+	if not tools.can_run("pump"):
+		return "no_gas"
+	tools.use_gas("pump")
+	if src == "well":
+		last_pumped = [garden.water_within(well.site, well.WATER_RADIUS), forest.water_within(well.site, well.WATER_RADIUS)]
+	else:
+		pond.water_around(pos)  # 池の水も少し減る
+		last_pumped = pond.last_watered
+	return "pumped"
+
+# Q(井戸か池のそば): ジョウロに汲む。結果: filled / full / far / frozen / empty(池に水がない)
+func fill_can(pos: Vector2) -> String:
+	match water_source(pos):
+		"":
+			return "far"
+		"pond_frozen":
+			return "frozen"
+		"pond_empty":
+			return "empty"
+	if tools.can_full():
+		return "full"
+	tools.fill_can()
+	return "filled"
+
+# Q: 足元の区画にジョウロで水をやる(1L)。結果: Garden.water_at の結果か can_empty
+func water_plot(pos: Vector2) -> String:
+	var c: Dictionary = garden.crop_at(pos)
+	if not c.is_empty() and not garden.is_ripe(c) and not garden.watered_today(c) and tools.can_water <= 0:
+		return "can_empty"
+	var result: String = garden.water_at(pos)
+	if result == "watered":
+		tools.pour()
+	return result
+
+# Q: 2m 以内の木にジョウロで水をやる(1L)。結果: Forest.water_nearest の結果か can_empty
+func water_tree(pos: Vector2, max_dist: float) -> String:
+	var i: int = forest.nearest_index(pos, max_dist, "")
+	if i >= 0 and not forest.watered_today(forest.trees[i]) and tools.can_water <= 0:
+		return "can_empty"
+	var result: String = forest.water_nearest(pos, max_dist)
+	if result == "watered":
+		tools.pour()
+	return result
+
+# Z: 2m 以内の木が、斧でしか伐れず、今日はもう斧を振れないか(伐る前に見る。倒れる形を作る前に止めるため)
+func axe_tired_for(pos: Vector2, max_dist: float) -> bool:
+	var i: int = forest.nearest_index(pos, max_dist, "")
+	return i >= 0 and forest.wood_yield(forest.trees[i]) > 0 and not tools.can_run("chainsaw") and tools.axe_left() <= 0
+
+# Z: 2m 以内の木を伐る。丸太になる太さの木は斧かチェーンソーで、斧は 1 日 AXE_PER_DAY 本まで(細い木は手で抜くので数えない)。
+# 結果: Cabin.fell の結果(丸太の本数。木がなければ -1)。斧がもう振れなければ -2。使った道具は tools.last_machine
+func fell(pos: Vector2, max_dist: float) -> int:
+	var i: int = forest.nearest_index(pos, max_dist, "")
+	tools.last_machine = ""
+	if i >= 0 and forest.wood_yield(forest.trees[i]) > 0:
+		if tools.use_cutter() == "tired":
+			return -2
+	return cabin.fell(pos, max_dist)
+
+# H(薪割り台): 薪割り機があってガソリンが足りれば、積める量まで一度に割る。なければ斧で 1 回割る。
+# 結果: Kitchen.split の結果。薪割り機を使ったときは tools.last_machine == "splitter"
+func split_wood() -> String:
+	tools.last_machine = ""
+	var k := kitchen
+	if not tools.can_run("splitter") or k.firewood >= k.MAX_FIREWOOD:
+		return k.split()
+	var result: String = k.split()
+	if result != "split":
+		return result
+	while k.split() == "split":
+		pass
+	tools.use_gas("splitter")
+	return result
+
+# I: 井戸の場所を決める / 掘る。結果は Well.act
+func well_action(pos: Vector2, front: Vector2) -> String:
+	return well.act(pos, front)
 
 # 日付が変わっていたら、その日の発見を起こして id を返す(Forest.check_new_day)。
 # 雨は畑にも降り、池にたまる。冬を迎えた野菜は霜で枯れる
@@ -256,6 +392,8 @@ func save_game() -> void:
 	data["region"] = region.to_save()
 	data["quests"] = quests.to_save()
 	data["market"] = market.to_save()
+	data["well"] = well.to_save()
+	data["tools"] = tools.to_save()
 	_write_save(JSON.stringify(data))
 
 # 別の名前(.tmp)に書き、書けたことを確かめてから本物の名前に付け替える。
@@ -388,6 +526,9 @@ func load_game() -> void:
 	feeders.from_save(fd)
 	nest_boxes.from_save(nbd)
 	snow.from_save(snow_data)
+	# 井戸と道具の記録がないセーブ(2026-11-14 より前)は、井戸なし・5L のジョウロが満杯から
+	well.from_save(SaveRead.dict(data.get("well")))
+	tools.from_save(SaveRead.dict(data.get("tools")))
 	sound_level = clampi(SaveRead.whole(data, "sound_level", 3), 0, 3)
 	# 県の記録がないセーブ(2026-11-11 より前)は、開いたときに一度だけ選ぶ
 	region.from_save(data.get("region"))

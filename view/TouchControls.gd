@@ -29,7 +29,7 @@ const MENU := [
 	],
 	[
 		["birch", "白樺", KEY_1, true], ["fruit", "果樹", KEY_2, true], ["cedar", "シベリア杉", KEY_3, true],
-		["form", "種/苗木", KEY_V, true],
+		["form", "種/苗木", KEY_V, true], ["well", "井戸", KEY_I, false],
 	],
 	[
 		["crop_root", "根菜", KEY_4, true], ["crop_imo", "いも", KEY_5, true], ["crop_fruit", "実もの", KEY_6, true],

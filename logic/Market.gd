@@ -88,6 +88,12 @@ const GOODS := [
 	{"id": "furniture_rug", "species": "rug", "form": "furniture", "amount": 1, "price": 1500},
 	{"id": "furniture_lamp", "species": "lamp", "form": "furniture", "amount": 1, "price": 1200},
 	{"id": "furniture_clock", "species": "clock", "form": "furniture", "amount": 1, "price": 2000},
+	# 水と道具(2026-11-14。値段は仮の数字)。道具はひとつずつ。ガソリンは 1 回で 5L(amount は 0.1L 単位)
+	{"id": "big_can", "species": "big_can", "form": "tool", "amount": 1, "price": 500},
+	{"id": "pump", "species": "pump", "form": "tool", "amount": 1, "price": 6000},
+	{"id": "chainsaw", "species": "chainsaw", "form": "tool", "amount": 1, "price": 7000},
+	{"id": "splitter", "species": "splitter", "form": "tool", "amount": 1, "price": 9000},
+	{"id": "gasoline", "species": "gasoline", "form": "fuel", "amount": 50, "price": 300},
 ]
 # 買い取り値(リンゴは 1 個あたり、野菜は 1kg あたりの ₽)。店頭の値段の半分くらい
 # seedling_ は小屋で育てた苗(1 鉢 = 1 区画ぶん)の買い取り値。
@@ -128,6 +134,8 @@ var seedlings: Seedlings  # GameWorld が設定する(苗の持ち物は Seedlin
 var kitchen: Kitchen  # GameWorld が設定する(保存食の持ち物は Kitchen にある)
 var bees: Bees        # GameWorld が設定する(はちみつの持ち物は Bees にある)
 var feeders = null    # GameWorld が設定する(増築する場所に餌台がないか見る)
+var tools = null      # GameWorld が設定する(道具とガソリンの持ち物は Tools にある)
+var well = null       # GameWorld が設定する(増築する場所に井戸がないか見る)
 
 func is_near(pos: Vector2) -> bool:
 	return pos.distance_to(POS) <= REACH
@@ -148,7 +156,8 @@ func sells(g: Dictionary) -> bool:
 
 # 1 つ買う。結果: bought / no_money / unknown(並んでいない品も)。
 # 増築と家具はほかに: no_cabin(小屋が未完成) / exists・owned(もう頼んだ・持っている) / no_room(増築した部屋がない) /
-# edge・center・pond・plot・tree・hive・feeder(増築する場所がふさがっている)
+# edge・center・pond・plot・tree・hive・feeder・well(増築する場所がふさがっている)。
+# 道具はほかに owned(もう持っている)、ガソリンは full(もう入らない)
 func buy(id: String) -> String:
 	var g := good(id)
 	if g.is_empty() or not sells(g):
@@ -165,6 +174,10 @@ func buy(id: String) -> String:
 		return "bought"
 	if g.form == "furniture":
 		cabin.add_furniture(g.species)
+		changed.emit()
+		return "bought"
+	if g.form == "tool" or g.form == "fuel":
+		tools.receive(g.species, int(g.amount))
 		changed.emit()
 		return "bought"
 	var stock: Dictionary = forest.seeds
@@ -190,6 +203,14 @@ func _cabin_problem(g: Dictionary) -> String:
 			return "hive"
 		if feeders != null and feeders.feeders.any(func(f): return r.grow(bees.CLEARANCE).has_point(f.pos)):
 			return "feeder"
+		if well != null and well.is_placed() and r.grow(bees.CLEARANCE + well.RADIUS).has_point(well.site):
+			return "well"
+	elif g.form == "tool":
+		if tools.has(g.species):
+			return "owned"
+	elif g.form == "fuel":
+		if tools.gas + int(g.amount) > tools.MAX_GAS:
+			return "full"
 	elif g.form == "furniture":
 		if not cabin.has_extension():
 			return "no_room"
@@ -203,6 +224,8 @@ func is_owned(g: Dictionary) -> bool:
 		return cabin.ext_started()
 	if g.form == "furniture":
 		return cabin.has_furniture(g.species)
+	if g.form == "tool":
+		return tools.has(g.species)
 	return false
 
 # 注文できる野菜(この土地で育ち、春にまけて、苗からでなく種でまけるもの)

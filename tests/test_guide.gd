@@ -110,6 +110,10 @@ func _test_new_game_flow() -> void:
 	c.last_watered = w.forest.today()
 	_tick(w)
 	_check("water" in g.seen, "水をやると消える")
+	_check(_tick(w) == "well", "畑ができたら、井戸を掘ることを案内する")
+	w.well.site = Vector2(-10, -10)
+	_tick(w)
+	_check("well" in g.seen, "井戸の場所を決めると消える")
 	c.sown_day -= 10
 	_check(_tick(w) == "harvest", "育つと収穫を案内する")
 	w.garden.crops.clear()
@@ -208,7 +212,7 @@ func _test_current_save_shape() -> void:
 		shown.append(id)
 		g.dismiss()
 	_check(not ("walk" in shown or "plant" in shown or "plot" in shown or "sow" in shown), "済んでいることのヒントは出ない: %s" % str(shown))
-	_check(shown.size() >= 2 and shown[0] == "broke", "最初はお金と種が足りないときのヒント: %s" % str(shown))
+	_check(shown.size() >= 3 and shown[0] == "well" and shown[1] == "broke", "最初は井戸と、お金と種が足りないときのヒント: %s" % str(shown))
 	_check("cabin_logs" in shown, "丸太の集め方も出る: %s" % str(shown))
 
 func _test_stuck() -> void:
@@ -230,7 +234,7 @@ func _test_stuck() -> void:
 	var w2 := _world()
 	var g2 := w2.guide
 	g2.has_people = true
-	g2.seen = ["walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell"]
+	g2.seen = ["walk", "plant", "plot", "buy_seeds", "sow", "water", "well", "harvest", "sell"]
 	_add_tree(w2)
 	w2.land.plots.append(Vector2(1.5, 1.5))
 	_add_crop(w2, 0, 1)
@@ -315,7 +319,7 @@ func _test_season_and_pond() -> void:
 	print("季節と池")
 	var w := _world()
 	var g := w.guide
-	g.seen = ["walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell", "broke", "cabin_site"]
+	g.seen = ["walk", "plant", "plot", "buy_seeds", "sow", "water", "well", "harvest", "sell", "broke", "cabin_site"]
 	_add_tree(w, 8.0, "apple")
 	w.land.plots.append(Vector2(1.5, 1.5))
 	w.forest.season = "summer"
@@ -330,8 +334,10 @@ func _test_season_and_pond() -> void:
 	g.dismiss()
 	w.pond.water = 50
 	_add_crop(w)
+	_check(_tick(w, Vector2(-20, 25)) == "", "エンジンポンプがなければ、まとめて水やりは案内しない")
+	w.tools.owned.append("pump")
 	_check(_tick(w, FAR) == "", "池から離れていると、まとめて水やりは案内しない")
-	_check(_tick(w, Vector2(-20, 25)) == "pond_water", "池のそばで水のいるものがあれば、まとめて水やりを案内する")
+	_check(_tick(w, Vector2(-20, 25)) == "pond_water", "ポンプがあって池のそばで水のいるものがあれば、まとめて水やりを案内する")
 
 func _test_people() -> void:
 	print("訪問者と生き物(3D だけ)")

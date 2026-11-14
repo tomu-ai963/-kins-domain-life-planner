@@ -36,6 +36,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_garden()
 			_test_3d_cabin()
 			_test_3d_pond()
+			_test_3d_well()
 			_test_fell_confirm()
 			_test_hud()
 			_test_plot_limit()
@@ -2952,6 +2953,83 @@ func _test_furniture() -> void:
 	player.global_position = Vector3(20, 0, 23)
 	view._process(0.1)
 
+# 井戸・ポンプ・薪割り機・道具の動き(2026-11-14)
+func _test_3d_well() -> void:
+	print("井戸と道具")
+	var w = main.world
+	var view: Node3D = main.get_node("Well")
+	var player = main.get_node("Player")
+	var spot := Vector2(30, -30)
+	w.tools.owned.clear()  # 池のテストで買ったポンプを片付ける
+	w.tools.changed.emit()
+	_check(not w.bees.is_blocked(spot), "前提: 井戸を掘れる場所")
+	_check(view.get_node_or_null("Well") == null, "はじめは井戸がない")
+	_check(w.well_action(spot, spot) == "placed", "場所を決める")
+	var node: Node3D = view.get_node("Well")
+	_check(node.get_child_count() == 7 and is_equal_approx(node.position.x, 30.0), "縄の輪と杭 6 本が立つ")
+	w.well.days_dug = 1
+	w.well.changed.emit()
+	node = view.get_node("Well")
+	_check(node.get_node_or_null("WellHole") != null and node.get_node_or_null("WellDirt") != null, "掘りはじめると、穴と土の山")
+	var small: float = node.get_node("WellDirt").scale.x
+	w.well.days_dug = 2
+	w.well.changed.emit()
+	_check(view.get_node("Well/WellDirt").scale.x > small, "掘るほど土の山が大きくなる")
+	w.well.days_dug = w.well.DIG_DAYS
+	w.well.changed.emit()
+	node = view.get_node("Well")
+	_check(node.get_node_or_null("WellBucket") != null and node.get_node_or_null("WellWater") != null and node.get_node_or_null("WellBody") != null,
+		"掘り終えると、桶と水面と当たり判定")
+	_check(view.get_node_or_null("Pump") == null and view.get_node_or_null("WellReachRing") == null, "ポンプがなければ、ポンプも輪も出ない")
+	w.tools.receive("pump")
+	_check(view.get_node_or_null("Pump") != null and view.get_node_or_null("PumpHose") != null, "ポンプを買うと、井戸の横にホース付きで置く")
+	var ring: MeshInstance3D = view.get_node("WellReachRing")
+	player.global_position = Vector3(spot.x + 1.5, 0, spot.y)
+	view._process(0.1)
+	_check(ring.visible, "井戸のそばに立つと、まとめて水やりの輪が見える")
+	player.global_position = Vector3(spot.x + 10, 0, spot.y)
+	view._process(0.1)
+	_check(not ring.visible, "離れると輪は消える")
+	var count: int = view.get_child_count()
+	w.tools.gas = 30
+	w.tools.can_water = 2
+	w.tools.changed.emit()
+	_check(view.get_child_count() == count and view.get_node("Pump") != null, "ガソリンやジョウロの水が減っても作り直さない")
+	# 汲む動き
+	player.global_position = Vector3(spot.x + 1.5, 0, spot.y)
+	w.tools.can_water = 0
+	main._water()
+	var figure: Node3D = player.get_node("Body/Figure")
+	_check(w.tools.can_water == w.tools.can_size() and figure.current_action() == "draw" and figure.current_tool() == "can", "井戸のそばで Q を押すと、かがんでジョウロに汲む")
+	_check(main.get_node("HUD")._message.contains("井戸の水をジョウロに汲んだ"), "汲んだことを知らせる")
+	for i in range(40):
+		figure._process(0.05)
+	# チェーンソーとエンジンをかける動き
+	figure.play("saw")
+	_check(figure.current_tool() == "chainsaw", "チェーンソーを持つ")
+	for i in range(40):
+		figure._process(0.05)
+	figure.play("machine")
+	_check(figure.current_tool() == "", "エンジンのひもは手で引く")
+	for i in range(40):
+		figure._process(0.05)
+	# 薪割り機は小屋の東の庭に置く(小屋が完成しているときだけ見える)
+	var cabin_view: Node3D = main.get_node("Cabin")
+	w.tools.receive("splitter")
+	if w.cabin.is_complete():
+		_check(cabin_view.find_child("Splitter", true, false) != null, "薪割り機を買うと、薪割り台の横に置く")
+	else:
+		_check(cabin_view.find_child("Splitter", true, false) == null, "小屋が未完成なら薪割り機は見えない")
+	# あとのテストに残さない
+	w.tools.owned.clear()
+	w.tools.gas = 0
+	w.tools.can_water = w.tools.can_size()
+	w.well.site = null
+	w.well.days_dug = 0
+	w.well.changed.emit()
+	w.tools.changed.emit()
+	_check(view.get_child_count() == 0 or view.get_node_or_null("Pump") == null, "片付けた")
+
 func hud_has_ring_text(m) -> bool:
 	return m.get_node("HUD")._message.contains("水色の輪")
 
@@ -2968,7 +3046,10 @@ func _test_3d_pond() -> void:
 	_check(pieces.call() == 9, "P で場所を決めると、縄の輪と杭 8 本が立つ")
 	var ring: MeshInstance3D = view.get_node("ReachRing")
 	view._process(0.1)
-	_check(ring.visible and absf((ring.mesh as TorusMesh).outer_radius - p.WATER_RADIUS) < 0.2, "場所を決めると、まとめて水やりの範囲(20m)の輪が見える")
+	_check(not ring.visible, "エンジンポンプがなければ、まとめて水やりの輪は出ない")
+	w.tools.receive("pump")
+	view._process(0.1)
+	_check(ring.visible and absf((ring.mesh as TorusMesh).outer_radius - p.WATER_RADIUS) < 0.2, "ポンプがあれば、まとめて水やりの範囲(20m)の輪が見える")
 	_check(hud_has_ring_text(main), "場所を決めたときの知らせで輪のことを言う")
 	player.global_position = Vector3(-20, 0, -5)
 	view._process(0.1)
@@ -3017,10 +3098,13 @@ func _test_3d_pond() -> void:
 	f.last_day = f.today()
 	f.saplings.birch = 1
 	f.add_tree(Vector2(-20, -12), "birch", "sapling")
-	_check(main.pond_beside_line().contains("木 1"), "池のそばに、まとめて水やりの案内が出る")
+	_check(not main.pond_beside_line().contains("木 1"), "ガソリンがなければ、まとめて水やりの案内は出ない")
+	w.tools.receive("gasoline", 50)
+	w.tools.can_water = w.tools.can_size()  # 前の水やりで減ったジョウロ(汲む案内が出ないように)
+	_check(main.pond_beside_line().contains("木 1"), "ポンプがあれば、池のそばにまとめて水やりの案内が出る")
 	var water_before: int = p.water
 	main._water()
-	_check(f.watered_today(f.trees[-1]) and p.water == water_before - 5 and hud._message.contains("木 1"), "Q でまとめて水やりでき、池の水が減る")
+	_check(f.watered_today(f.trees[-1]) and p.water == water_before - 5 and hud._message.contains("木 1") and w.tools.gas == 45, "Q でまとめて水やりでき、池の水とガソリンが減る")
 	_check(main.pond_beside_line() == "", "水のいるものがなくなると、案内は消える")
 	main._water()
 	_check(hud._message.contains("水のいる木や区画がない") and p.water == water_before - 5, "もう何もなければ、その理由を出す(水は減らない)")

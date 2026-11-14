@@ -24,7 +24,7 @@ const MIN_PLOTS_FOR_CABIN := 4  # 畑に慣れてから小屋を案内する
 
 # 上にあるものを先に出す
 const HINTS := [
-	"walk", "plant", "plot", "buy_seeds", "sow", "water", "harvest", "sell", "stuck", "broke",
+	"walk", "plant", "plot", "buy_seeds", "sow", "water", "well", "harvest", "sell", "stuck", "broke",
 	"apple", "visitor", "pond_rain", "pond_water", "cabin_site", "cabin_logs",
 	"cabin_inside", "split", "stove", "bed", "table", "hive_make", "hive_bees", "honey", "winter", "shovel", "prune", "feeder", "feed", "creatures",
 ]
@@ -43,6 +43,8 @@ var wildlife: Wildlife
 var bees = null          # GameWorld が設定する
 var feeders = null       # GameWorld が設定する
 var snow = null          # GameWorld が設定する
+var well = null          # GameWorld が設定する
+var tools = null         # GameWorld が設定する
 var has_people := false  # 訪問者の姿があるか(3D だけ Main が true にする)
 
 var seen := []           # 出し終えたヒントの id
@@ -159,7 +161,13 @@ func _wants(id: String) -> bool:
 			return has_people and visitors.is_here()
 		"pond_rain":
 			return pond.is_dug() and pond.water == 0
+		"well":
+			return not well.is_placed() and not garden.crops.is_empty()
 		"pond_water":
+			if not tools.has("pump"):
+				return false
+			if well.is_beside(_pos):
+				return garden.dry_within(well.site, well.WATER_RADIUS) + forest.dry_within(well.site, well.WATER_RADIUS) > 0
 			return pond.is_dug() and not pond.is_frozen() and pond.water >= pond.WATER_COST and pond.is_beside(_pos) and (pond.dry_around()[0] + pond.dry_around()[1]) > 0
 		"cabin_site":
 			return cabin.site == null and land.plots.size() >= MIN_PLOTS_FOR_CABIN
@@ -210,6 +218,8 @@ func _is_done(id: String) -> bool:
 			return not garden.crops.is_empty()
 		"water":
 			return _any_watered()
+		"well":
+			return well.is_placed()
 		"harvest":
 			return not _any_ripe()
 		"sell":

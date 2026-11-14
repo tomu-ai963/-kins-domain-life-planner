@@ -32,6 +32,7 @@ var _duck := Look.mat(Color(0.52, 0.40, 0.28))
 var _duck_head := Look.mat(Color(0.12, 0.42, 0.26))
 var _reach_mat := Look.mat(Color(0.45, 0.72, 0.98, 0.75), true)  # まとめて水やりの範囲の輪(草にも雪にも見える水色)
 var _player: Node3D = null       # 3D のときだけ Main が渡す
+var tools = null                 # logic/Tools.gd。まとめて水やりはエンジンポンプがあるときだけ(2026-11-14)
 var _reach_ring: MeshInstance3D = null  # 池の中心から WATER_RADIUS の輪。池のそばに立ったときだけ見せる
 
 func setup(p: Pond) -> void:
@@ -52,7 +53,7 @@ func _process(delta: float) -> void:
 	_t += delta
 	if _reach_ring != null:
 		# 池のそば(場所を決めただけでも)に立つと、まとめて水をやれる範囲が見える。凍っている冬は運べないので出さない
-		_reach_ring.visible = _player != null and pond.is_near(_player.ground_pos()) and not pond.is_frozen()
+		_reach_ring.visible = _player != null and pond.is_near(_player.ground_pos()) and not pond.is_frozen() 				and (tools == null or tools.has("pump"))
 	for m in _movers:
 		var a: float = _t * m.speed + m.phase
 		var n: Node3D = m.node
