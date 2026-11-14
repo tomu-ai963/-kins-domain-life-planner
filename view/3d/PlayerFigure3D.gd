@@ -25,7 +25,8 @@ const ACTIONS := {
 	"wave": {"seconds": 1.1, "hit": 0.0, "tool": ""},
 	"saw": {"seconds": 1.1, "hit": 0.35, "tool": "chainsaw"},   # チェーンソーで幹を切る(2026-11-14)
 	"draw": {"seconds": 1.0, "hit": 0.45, "tool": "can"},       # 井戸か池でジョウロに汲む
-	"machine": {"seconds": 0.8, "hit": 0.5, "tool": ""},        # エンジンのひもを引いて動かす(ポンプ・薪割り機)
+	"machine": {"seconds": 0.8, "hit": 0.5, "tool": ""},        # エンジンのひもを引いて動かす(ポンプ・薪割り機・製粉機)
+	"grind": {"seconds": 1.2, "hit": 0.6, "tool": ""},          # 石臼の取っ手を回す(2026-11-14)
 }
 # 道具を持つ角度(手に対する x 回転)。腕を振り下ろしたときに道具の先が前の低いところへ来るように
 const TOOL_ANGLES := {"can": -1.25, "hoe": -1.0, "axe": -1.3, "hammer": -1.0, "shears": -1.4, "shovel": -0.95, "bite": 0.0, "chainsaw": -1.5}
@@ -189,6 +190,12 @@ func _apply_action(delta: float) -> void:
 			_upper.rotation.x = lerpf(_upper.rotation.x, -0.45 + 0.25 * pull, e)
 			_arm_l.rotation.x = lerpf(_arm_l.rotation.x, 0.7, e)
 			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 0.9 + 1.2 * pull, e)
+		"grind":  # 少しかがんで、石臼の取っ手を右手で回す(腕が前で輪を描く)
+			var a: float = t * TAU * 2.0
+			_upper.rotation.x = lerpf(_upper.rotation.x, -0.25, e)
+			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 1.0 + 0.3 * sin(a), e)
+			_arm_r.get_parent().rotation.z = ARM_SPREAD + e * 0.25 * cos(a)
+			_arm_l.rotation.x = lerpf(_arm_l.rotation.x, 0.8, e)
 		"wave":  # 右手を上げて振る
 			_arm_r.rotation.x = lerpf(_arm_r.rotation.x, 2.8, e)
 			_arm_r.get_parent().rotation.z = ARM_SPREAD + e * (0.5 + 0.35 * sin(t * TAU * 3.0))

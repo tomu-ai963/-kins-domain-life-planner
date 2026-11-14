@@ -26,7 +26,7 @@ const MIN_PLOTS_FOR_CABIN := 4  # 畑に慣れてから小屋を案内する
 const HINTS := [
 	"walk", "plant", "plot", "buy_seeds", "sow", "water", "well", "harvest", "sell", "stuck", "broke",
 	"apple", "visitor", "pond_rain", "pond_water", "cabin_site", "cabin_logs",
-	"cabin_inside", "split", "stove", "bed", "table", "hive_make", "hive_bees", "honey", "winter", "shovel", "prune", "feeder", "feed", "creatures",
+	"cabin_inside", "split", "stove", "bed", "table", "hive_make", "hive_bees", "honey", "mill", "winter", "shovel", "prune", "feeder", "feed", "creatures",
 ]
 # お知らせのヒント(やることではなく、知らせるだけ)
 const NOTICES := ["apple", "visitor", "pond_rain", "pond_water", "bed", "winter", "creatures"]
@@ -45,6 +45,7 @@ var feeders = null       # GameWorld が設定する
 var snow = null          # GameWorld が設定する
 var well = null          # GameWorld が設定する
 var tools = null         # GameWorld が設定する
+var mill = null          # GameWorld が設定する
 var has_people := false  # 訪問者の姿があるか(3D だけ Main が true にする)
 
 var seen := []           # 出し終えたヒントの id
@@ -193,6 +194,8 @@ func _wants(id: String) -> bool:
 			return bees.ready_count() > 0
 		"winter":
 			return forest.season == "winter"
+		"mill":
+			return mill.total_grain() > 0
 		"prune":
 			return forest.season == "winter" and forest.prunable_count() > 0
 		"feeder":
@@ -220,6 +223,8 @@ func _is_done(id: String) -> bool:
 			return _any_watered()
 		"well":
 			return well.is_placed()
+		"mill":
+			return mill.is_placed()
 		"harvest":
 			return not _any_ripe()
 		"sell":

@@ -70,6 +70,8 @@ const FOOD_COLORS := {
 	"hakusai_zuke": Color(0.88, 0.92, 0.74), "nasu_zuke": Color(0.36, 0.16, 0.40), "hoshiimo": Color(0.86, 0.62, 0.30),
 	"goya_champuru": Color(0.52, 0.70, 0.32), "zunda": Color(0.58, 0.76, 0.34), "pumpkin_soup": Color(0.94, 0.66, 0.20),
 	"imoni": Color(0.62, 0.48, 0.32),
+	"rye_bread": Color(0.36, 0.24, 0.16), "bliny": Color(0.94, 0.78, 0.46), "udon": Color(0.96, 0.94, 0.88),
+	"soba_noodle": Color(0.56, 0.48, 0.40), "kibi_dango": Color(0.96, 0.86, 0.48), "kasha": Color(0.62, 0.44, 0.28),
 }
 
 var cabin: Cabin

@@ -18,6 +18,7 @@ const TWIG := Color(0.38, 0.26, 0.16)
 const GRAIN := Color(0.93, 0.80, 0.42)
 const SNOW := Color(0.96, 0.97, 1.0)
 const SMOKE := Color(0.62, 0.62, 0.64)
+const FLOUR := Color(0.96, 0.93, 0.84)
 
 var figure: Node3D  # じょうろの注ぎ口の位置を聞く(PlayerFigure3D)
 var _mats := {}
@@ -63,6 +64,8 @@ func play(kind: String, spot: Vector3, item := "") -> void:
 			_scatter(SMOKE, spot + Vector3(0, 0.6, 0), 5, 0.16, 0.3, 1.4)
 			if item == "pump":
 				_scatter(WATER, spot + Vector3(0, 0.4, 0), 10, 0.07, 1.4, 2.2)
+		"grind":  # 石臼のすき間から粉がこぼれる
+			_scatter(FLOUR, spot + Vector3(0, 0.75, 0), 8, 0.05, 0.5, 0.4)
 		"feed":  # 手から台の上へ種をまく
 			_scatter(GRAIN, spot + Vector3(0, 1.25, 0), 7, 0.05, 0.35, 0.8)
 

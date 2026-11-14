@@ -48,6 +48,14 @@ const CROPS := {
 	"komatsuna": {"name": "コマツナ", "seed_name": "コマツナの種", "seasons": ["spring", "summer", "autumn"], "grow_days": 3, "yield_kg": 7, "keep_days": 3, "hardy": true, "group": "leaf", "regional": true},  # 現実 約 30 日
 	"edamame": {"name": "エダマメ", "seed_name": "エダマメの種", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 6, "keep_days": 2, "group": "bean", "regional": true},  # 現実 約 80 日。採りどきが短い
 	"corn": {"name": "トウモロコシ", "seed_name": "トウモロコシの種", "seasons": ["spring"], "grow_days": 7, "yield_kg": 9, "keep_days": 2, "group": "bean", "regional": true},  # 現実 約 90 日。採ってすぐ甘みが落ちる
+	# ── 穀物(2026-11-14。石臼で挽くと粉になる。Mill.FLOURS)。grain: 穀物。日数は今の野菜と同じく 3〜7 日に縮めた。収量は現実の 1m² あたりの目安 × 9 ──
+	"wheat": {"name": "小麦", "seed_name": "小麦の種もみ", "seasons": ["spring", "autumn"], "grow_days": 7, "yield_kg": 4, "keep_days": 10, "hardy": true, "group": "bean", "grain": true, "regional": true,
+		"zones": ["hokkaido", "tohoku", "snowy", "highland", "pacific", "setouchi", "south"]},  # 現実 秋まきで約 8 か月・春まきで約 4 か月。1m² で約 0.4〜0.5kg。沖縄ではほとんど作らない
+	"rye": {"name": "ライ麦", "seed_name": "ライ麦の種", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 3, "keep_days": 10, "hardy": true, "group": "bean", "grain": true, "regional": true,
+		"zones": ["hokkaido", "tohoku", "snowy", "highland", "pacific"]},  # 現実 秋まきで約 9 か月。寒さに強く、ロシアの黒パンの麦。1m² で約 0.3kg
+	"soba": {"name": "ソバ", "seed_name": "ソバの種", "seasons": ["spring", "summer"], "grow_days": 5, "yield_kg": 2, "keep_days": 7, "group": "bean", "grain": true, "regional": true,
+		"zones": ["hokkaido", "tohoku", "snowy", "highland", "pacific", "setouchi", "south"]},  # 現実 約 75 日。やせた涼しい土地向き(北海道・長野)。1m² で約 0.1〜0.2kg
+	"kibi": {"name": "キビ", "seed_name": "キビの種", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 2, "keep_days": 10, "group": "bean", "grain": true, "regional": true, "warm": true},  # 現実 約 100 日。どこでも育つ雑穀。1m² で約 0.2kg
 	"onion": {"name": "タマネギ", "seed_name": "タマネギの苗", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 30, "keep_days": 20, "hardy": true, "group": "aroma", "regional": true},  # 現実 秋に植えて翌初夏(約 7 か月)
 	"negi": {"name": "ネギ", "seed_name": "ネギの種", "seasons": ["spring", "autumn"], "grow_days": 7, "yield_kg": 15, "keep_days": 10, "hardy": true, "group": "aroma", "regional": true},  # 現実 約 4 か月以上
 }

@@ -7,6 +7,7 @@ extends Node
 const GameWorld = preload("res://logic/GameWorld.gd")
 const WildWoodsView = preload("res://view/3d/WildWoodsView3D.gd")
 const WellView = preload("res://view/3d/WellView3D.gd")
+const MillView = preload("res://view/3d/MillView3D.gd")
 const REACH := 2.0    # 足元 2m 以内
 const PICKUP_RADIUS := 1.2  # 落ちている種は、これだけ近づくと拾う
 const FELL_CONFIRM_SECONDS := 4.0  # 根付いた木は、この時間内にもう一度 Z を押すと伐れる
@@ -50,6 +51,7 @@ const GUIDE_TEXTS := {
 	"prune": "冬は果樹のそばで X を押すと剪定できる。\n次の収穫が増えて、切った枝は薪になる。",
 	"feeder": "L を押すと、丸太1本で鳥の餌台を立てられる。\n秋と冬に白樺の種を置くと、鳥が集まる。",
 	"feed": "餌台のそばで L を押すと、白樺の種を3粒置ける。\n餌は翌日まで残る。近づきすぎると鳥は逃げる。",
+	"mill": "穀物は石臼で挽くと粉になる(市場で買い、O で置く)。\n粉は売れて、ストーブでパンや麺にできる。",
 	"creatures": "見かけた生き物は、Tab の持ち物で見られる。\n木や畑が増えると、来る生き物も増える。",
 }
 
@@ -69,28 +71,32 @@ const BUY_PAGES := [
 	{"name": "果樹の苗木", "forms": ["sapling"], "tree_groups": ["fruit"]},
 	{"name": "根菜といもの種", "forms": ["crop_seed"], "groups": ["root", "imo"]},
 	{"name": "実もの野菜の種と苗", "forms": ["crop_seed"], "groups": ["fruit"]},
-	{"name": "葉もの・豆・香味野菜の種", "forms": ["crop_seed"], "groups": ["leaf", "bean", "aroma"]},
+	{"name": "葉ものと香味野菜の種", "forms": ["crop_seed"], "groups": ["leaf", "aroma"]},
+	{"name": "豆と穀物の種", "forms": ["crop_seed"], "groups": ["bean"]},  # 穀物を足して 1 列 15 行を超えるため分けた(2026-11-14)
 	{"name": "丸太", "forms": ["material"]},
 	{"name": "小屋", "forms": ["extension", "furniture"]},
 	{"name": "道具と燃料", "forms": ["tool", "fuel"]},
 ]
 const TOOL_NAMES := {"big_can": "10Lのジョウロ(1杯で10か所)", "pump": "エンジンポンプ(井戸か池からまとめて水やり)",
-	"chainsaw": "チェーンソー(何本でも伐れる)", "splitter": "薪割り機(薪を一度に割る)"}
+	"chainsaw": "チェーンソー(何本でも伐れる)", "splitter": "薪割り機(薪を一度に割る)",
+	"quern": "石臼(穀物を挽いて粉にする)", "mill": "製粉機(石臼のそばで穀物を一度に挽く)"}
 # 道具を買ったときの使い方の案内
 const TOOL_BOUGHT := {
 	"big_can": "1杯で10か所に水をやれる",
 	"pump": "井戸か池のそばで Q を押すと、まわりの畑と木にまとめて水をやれる(ガソリン 0.5L)",
 	"chainsaw": "ガソリンがあれば、Z で何本でも伐れる(1本 0.2L)",
 	"splitter": "小屋の東の薪割り台で H を押すと、積める量まで一度に割れる(ガソリン 0.5L)",
+	"quern": "O で体の前に置く。そばで O を押すと、穀物を 1kg ずつ挽ける(手で 1日5kg まで)",
+	"mill": "石臼のそばで O を押すと、穀物を一度に全部挽ける(ガソリン 0.5L)",
 }
-const MACHINE_NAMES := {"pump": "エンジンポンプ", "chainsaw": "チェーンソー", "splitter": "薪割り機"}
+const MACHINE_NAMES := {"pump": "エンジンポンプ", "chainsaw": "チェーンソー", "splitter": "薪割り機", "mill": "製粉機"}
 const FURNITURE_NAMES := {"shelf": "保存食の棚", "rocking_chair": "揺り椅子", "rug": "じゅうたん", "lamp": "ランプ", "clock": "掛け時計"}
 # 売る列のページ。果物ははちみつも、実もの野菜は苗も。野菜の組は SELL_GROUPS(果樹と野菜が増えて 1 列 15 行を超えるため分けた)
-const SELL_PAGES := ["果物", "根菜といも", "実もの野菜と苗", "葉もの・豆・香味野菜", "果物とはちみつの保存食", "野菜の保存食", "自然の木の種 1", "自然の木の種 2"]
+const SELL_PAGES := ["果物", "根菜といも", "実もの野菜と苗", "葉もの・香味野菜", "豆と穀物と粉", "果物とはちみつの保存食", "野菜の保存食", "穀物と粉の料理", "自然の木の種 1", "自然の木の種 2"]
 const WILD_SEEDS_PER_PAGE := 10  # 自然の木の種の売る列は 10 種類ずつ(ほかの土地の種を持つこともあるので)
 # ストーブと腰掛けの画面のページ(料理が増えて 1 列 15 行を超えるため分けた。材料が果物かはちみつか、野菜か)
-const COOK_PAGES := ["果物とはちみつ", "野菜"]
-const SELL_GROUPS := {"root": 1, "imo": 1, "fruit": 2, "leaf": 3, "bean": 3, "aroma": 3}
+const COOK_PAGES := ["果物とはちみつ", "野菜", "穀物と粉"]
+const SELL_GROUPS := {"root": 1, "imo": 1, "fruit": 2, "leaf": 3, "bean": 4, "aroma": 3}
 
 # 野菜の組を選ぶキー(押すたびに、その組のうちこの土地で育つ次の野菜。HUD の並びもこの順)
 const CROP_KEYS := {KEY_4: "root", KEY_5: "imo", KEY_6: "fruit", KEY_7: "leaf", KEY_8: "bean", KEY_9: "aroma"}
@@ -177,6 +183,10 @@ func _setup_3d_only() -> void:
 	add_child(well_view)
 	well_view.setup(world.well, world.tools, world.pond)
 	well_view.set_player($Player)
+	var mill_view := MillView.new()
+	mill_view.name = "Mill"
+	add_child(mill_view)
+	mill_view.setup(world.mill, world.tools)
 	$Cabin.set_kitchen(world.kitchen)
 	$Wildlife.setup(world.wildlife, $Player)
 	$Visitor.setup(world.visitors, $Player)
@@ -890,6 +900,7 @@ const PLOT_MESSAGES := {
 	"hive": "巣箱にかかる場所には作れない",
 	"feeder": "餌台にかかる場所には作れない",
 	"well": "井戸にかかる場所には作れない",
+	"mill": "石臼にかかる場所には作れない",
 	"limit": "新しく耕せるのは1日%d区画まで(続きは明日)",
 }
 const POND_MESSAGES := {
@@ -899,6 +910,7 @@ const POND_MESSAGES := {
 	"hive": "巣箱にかかる場所には掘れない",
 	"feeder": "餌台にかかる場所には掘れない",
 	"well": "井戸にかかる場所には掘れない",
+	"mill": "石臼にかかる場所には掘れない",
 	"dug": "池を掘った(続きは明日)",
 	"finished": "池を掘り終えた。底から水が湧いて、半分までたまった。あとは雨でたまる",
 	"far": "池はひとつまで(今の池の近くで P を押すと掘る)",
@@ -937,6 +949,7 @@ const EXTENSION_MESSAGES := {
 	"hive": "小屋の西に巣箱があって増築できない",
 	"feeder": "小屋の西に餌台があって増築できない",
 	"well": "小屋の西に井戸があって増築できない",
+	"mill": "小屋の西に石臼があって増築できない",
 	"no_room": "家具は、小屋を増築した部屋に置く(先に増築を頼む)",
 	"owned": "もう持っている",
 	"full": "ガソリンはもう入らない(携行缶に20Lまで)",
@@ -950,6 +963,15 @@ const WELL_MESSAGES := {
 	"far": "井戸はひとつまで(今の井戸のそばで I を押すと掘る)",
 	"already": "井戸はもう掘り終えている(Q でジョウロに汲む)",
 	"done_today": "今日はもう掘った(続きは明日)",
+}
+# 石臼(Mill.act)の結果ごとの文言(ground と engine は _mill_action で組み立てる)
+const MILL_MESSAGES := {
+	"placed": "石臼を置いた。穀物を持ってそばで O を押すと、粉に挽ける",
+	"no_quern": "石臼がない(市場の「道具と燃料」で買える)",
+	"blocked": "ここには置けない(区画・小屋・池・木・巣箱・餌台・井戸のそばや、土地の端は空ける)",
+	"far": "石臼のそばで O を押すと挽ける",
+	"no_grain": "挽く穀物がない(小麦・ライ麦・ソバ・キビを畑で育てる。豆・穀物の組にある)",
+	"tired": "今日はもう手で%dkg挽いて、腕が疲れた。続きは明日(製粉機なら一度に挽ける)",
 }
 # ジョウロに汲めない・ポンプが動かない理由
 const FILL_MESSAGES := {
@@ -1006,6 +1028,9 @@ func _on_plant_tree(pos: Vector2) -> void:
 		return
 	if world.well.covers(pos, world.bees.CLEARANCE):
 		$HUD.show_message("井戸の近くには植えられない")
+		return
+	if world.mill.covers(pos, world.bees.CLEARANCE):
+		$HUD.show_message("石臼の近くには植えられない")
 		return
 	if world.cabin.in_yard(pos):
 		$HUD.show_message("小屋の東の庭には植えられない(薪割り台と薪を置く場所)")
@@ -1085,6 +1110,9 @@ func _cabin_action() -> void:
 			return
 		if world.well.is_placed() and c.rect_at(pos.round()).grow(world.bees.CLEARANCE + world.well.RADIUS).has_point(world.well.site):
 			$HUD.show_message("井戸にかかる場所には建てられない")
+			return
+		if world.mill.is_placed() and c.rect_at(pos.round()).grow(world.bees.CLEARANCE + world.mill.RADIUS).has_point(world.mill.site):
+			$HUD.show_message("石臼にかかる場所には建てられない")
 			return
 		$HUD.show_message(CABIN_PLACE_MESSAGES[c.place(pos)], 5.0)
 		return
@@ -1682,6 +1710,8 @@ func produce_name(item: String) -> String:
 		return world.garden.CROPS[item.trim_prefix("seedling_")].name + "の苗"
 	if world.kitchen.RECIPES.has(item):
 		return world.kitchen.RECIPES[item].name
+	if item.begins_with("flour_"):
+		return world.mill.FLOURS[item.trim_prefix("flour_")].name
 	return world.garden.CROPS[item].name
 
 func produce_unit(item: String) -> String:
@@ -1706,6 +1736,8 @@ func produce_count(item: String) -> int:
 		return int(world.seedlings.ready[item.trim_prefix("seedling_")])
 	if world.kitchen.RECIPES.has(item):
 		return int(world.kitchen.stock[item])
+	if item.begins_with("flour_"):
+		return int(world.mill.flour[item.trim_prefix("flour_")])
 	return int(world.garden.produce[item])
 
 # ── 市場 ──────────────────────────────────────────────────
@@ -1817,7 +1849,11 @@ func _sell_page_of(item: String) -> int:
 		var seeds: Array = world.market.SELL_PRICES.keys().filter(func(k): return k.begins_with("seed_"))
 		return SELL_PAGES.find("自然の木の種 1") + mini(1, int(seeds.find(item) / float(WILD_SEEDS_PER_PAGE)))
 	if world.kitchen.RECIPES.has(item):
+		if world.kitchen.from_grain(item):
+			return SELL_PAGES.find("穀物と粉の料理")
 		return SELL_PAGES.find("果物とはちみつの保存食" if world.kitchen.from_tree(item) else "野菜の保存食")
+	if item.begins_with("flour_"):
+		return SELL_PAGES.find("豆と穀物と粉")
 	if world.forest.FRUITS.has(item) or item == "honey":
 		return 0
 	return SELL_GROUPS[world.garden.CROPS[item.trim_prefix("seedling_")].group]
@@ -1837,6 +1873,8 @@ func visible_shop_rows() -> Array:
 
 # ストーブと腰掛けの料理のページ
 func _cook_page_of(id: String) -> int:
+	if world.kitchen.from_grain(id):
+		return 2
 	return 0 if world.kitchen.from_tree(id) else 1
 
 # ストーブの画面に並べる料理: この土地で材料が採れるか、材料かできた品を持っている
@@ -2162,6 +2200,40 @@ func _well_action() -> void:
 	if result == "dug" or result == "finished":
 		_act("dig", world.well.site)
 
+# O: 石臼を置く / 挽く。選んでいる野菜が穀物なら、それを先に挽く
+func _mill_action() -> void:
+	var m := world.mill
+	var front: Vector2 = player_pos() + $Player.facing() * HIVE_FRONT if $Player.has_method("facing") else player_pos()
+	var result: String = world.mill_action(player_pos(), front, selected_crop)
+	match result:
+		"ground":
+			var g: String = m.last_ground.keys()[0]
+			_act("grind", m.site)
+			$HUD.show_message("%sを%dkg挽いた(%s %dkg。手で今日あと%dkg)" % [world.garden.CROPS[g].name, int(m.last_ground[g]), m.FLOURS[g].name, int(m.flour[g]), m.hand_left()])
+		"engine":
+			var parts := PackedStringArray()
+			for g in m.last_ground:
+				parts.append("%s %dkg" % [m.FLOURS[g].name, int(m.last_ground[g])])
+			_act("machine", m.site, "mill")
+			$HUD.show_message("製粉機で挽いた(%s。ガソリン -%s・残り %s)" % ["・".join(parts), gas_text(world.tools.gas_needed("mill")), gas_text(world.tools.gas)], 5.0)
+		"placed":
+			_act("build", m.site)
+			$HUD.show_message(MILL_MESSAGES.placed, 5.0)
+		"tired":
+			$HUD.show_message(MILL_MESSAGES.tired % m.HAND_KG_PER_DAY, 5.0)
+		_:
+			$HUD.show_message(MILL_MESSAGES[result], 5.0)
+
+# HUD に出す、石臼のそばでの案内。そばにいなければ ""
+func mill_line() -> String:
+	var m := world.mill
+	if not m.is_near(player_pos()):
+		return ""
+	if m.total_grain() <= 0:
+		return "石臼のそば: 挽く穀物がない"
+	var how := "製粉機で全部挽く(ガソリン -%s)" % gas_text(world.tools.gas_needed("mill")) if world.tools.can_run("mill") else "1kg挽く(手で今日あと%dkg)" % m.hand_left()
+	return "石臼のそば: O で%s  穀物 %dkg" % [how, m.total_grain()]
+
 # HUD に出す、井戸の 1 行(掘っているあいだだけ)
 func well_line() -> String:
 	var w := world.well
@@ -2307,6 +2379,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_pond_action()
 		KEY_I:
 			_well_action()
+		KEY_O:
+			_mill_action()
 		KEY_T:
 			world.forest.advance_years(1.0)   # 1年先送り(プレビュー。保存しない)
 		KEY_G:

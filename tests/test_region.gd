@@ -468,7 +468,7 @@ func _test_recipes() -> void:
 	var Cabin3D = load("res://view/3d/CabinView3D.gd")
 	for id in Kitchen.RECIPES:
 		var r: Dictionary = Kitchen.RECIPES[id]
-		var input_ok: bool = r.input == "honey" or Forest.FRUITS.has(r.input) or Garden.CROPS.has(r.input)
+		var input_ok: bool = r.input == "honey" or Forest.FRUITS.has(r.input) or Garden.CROPS.has(r.input) 				or (r.input.begins_with("flour_") and load("res://logic/Mill.gd").FLOURS.has(r.input.trim_prefix("flour_")))
 		var ok: bool = input_ok and Market.SELL_PRICES.has(id) and Cabin3D.FOOD_COLORS.has(id) and Visitors.ASK.has(id) and Kitchen.MEALS.has(r.meal) and int(r.days) in [1, 3]
 		_check(ok, "%s: 材料・買い取り値・瓶の色・頼みごと・効果がある" % r.name)
 		if r.input != "honey" and Kitchen.RECIPES.keys().find(id) > Kitchen.RECIPES.keys().find("sbiten"):  # 今回足した料理(ピロシキなど前からの品は値段を変えない)

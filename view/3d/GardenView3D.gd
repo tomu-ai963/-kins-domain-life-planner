@@ -36,6 +36,11 @@ const LOOKS := {
 	"komatsuna": {"leaf": Color(0.22, 0.52, 0.22), "size": Vector3(0.28, 0.28, 0.28), "ball": true, "ripe": Color(0.28, 0.60, 0.24), "ripe_size": Vector3(0.18, 0.14, 0.18)},
 	"edamame": {"leaf": Color(0.32, 0.56, 0.22), "size": Vector3(0.40, 0.55, 0.40), "ball": true, "ripe": Color(0.52, 0.72, 0.30), "ripe_size": Vector3(0.14, 0.08, 0.14)},
 	"corn": {"leaf": Color(0.36, 0.62, 0.24), "size": Vector3(0.20, 1.30, 0.20), "ball": false, "ripe": Color(0.96, 0.84, 0.30), "ripe_size": Vector3(0.10, 0.24, 0.10)},  # 背が高い
+	# 穀物(2026-11-14): 細い茎が立ち、実ると穂が色づく
+	"wheat": {"leaf": Color(0.48, 0.66, 0.28), "size": Vector3(0.22, 0.85, 0.22), "ball": false, "ripe": Color(0.90, 0.74, 0.34), "ripe_size": Vector3(0.10, 0.22, 0.10)},  # 黄金色の穂
+	"rye": {"leaf": Color(0.42, 0.60, 0.30), "size": Vector3(0.20, 1.15, 0.20), "ball": false, "ripe": Color(0.74, 0.66, 0.44), "ripe_size": Vector3(0.08, 0.26, 0.08)},  # 小麦より背が高く、穂は灰色がかる
+	"soba": {"leaf": Color(0.40, 0.62, 0.30), "size": Vector3(0.45, 0.65, 0.45), "ball": true, "ripe": Color(0.94, 0.92, 0.90), "ripe_size": Vector3(0.24, 0.10, 0.24)},  # 白い花の上に実がつく
+	"kibi": {"leaf": Color(0.44, 0.64, 0.26), "size": Vector3(0.26, 1.0, 0.26), "ball": false, "ripe": Color(0.96, 0.86, 0.36), "ripe_size": Vector3(0.14, 0.18, 0.14)},  # 垂れた黄色い穂
 	"onion": {"leaf": Color(0.40, 0.64, 0.30), "size": Vector3(0.10, 0.50, 0.10), "ball": false, "ripe": Color(0.80, 0.58, 0.30), "ripe_size": Vector3(0.20, 0.18, 0.20)},
 	"negi": {"leaf": Color(0.36, 0.62, 0.30), "size": Vector3(0.10, 0.70, 0.10), "ball": false, "ripe": Color(0.95, 0.95, 0.90), "ripe_size": Vector3(0.08, 0.14, 0.08)},
 }

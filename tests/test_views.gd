@@ -37,6 +37,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_cabin()
 			_test_3d_pond()
 			_test_3d_well()
+			_test_3d_mill()
 			_test_fell_confirm()
 			_test_hud()
 			_test_plot_limit()
@@ -3029,6 +3030,40 @@ func _test_3d_well() -> void:
 	w.well.changed.emit()
 	w.tools.changed.emit()
 	_check(view.get_child_count() == 0 or view.get_node_or_null("Pump") == null, "片付けた")
+
+# 石臼・粉袋・製粉機・挽く動き(2026-11-14)
+func _test_3d_mill() -> void:
+	print("石臼と粉")
+	var w = main.world
+	var view: Node3D = main.get_node("Mill")
+	var player = main.get_node("Player")
+	var spot := Vector2(30, -36)
+	_check(view.get_child_count() == 0, "はじめは石臼がない")
+	w.tools.receive("quern")
+	_check(w.mill_action(spot, spot) == "placed", "石臼を置く")
+	var q: Node3D = view.get_node("Quern")
+	_check(q.get_node_or_null("QuernTop") != null and q.get_node_or_null("QuernHandle") != null and q.get_node_or_null("QuernBody") != null, "台と石と取っ手、当たり判定がある")
+	_check(q.get_node_or_null("FlourSack") == null and q.get_node_or_null("MillMachine") == null, "粉がなければ袋はない・製粉機もない")
+	w.garden.produce.wheat = 3
+	player.global_position = Vector3(spot.x + 1.2, 0, spot.y)
+	_check(main.mill_line().contains("O で1kg挽く"), "そばに立つと、挽く案内が出る")
+	main._mill_action()
+	var figure: Node3D = player.get_node("Body/Figure")
+	_check(w.mill.flour.wheat == 1 and figure.current_action() == "grind", "O で取っ手を回して挽く")
+	_check(main.get_node("HUD")._message.contains("小麦粉 1kg"), "挽いたことを知らせる")
+	_check(view.get_node("Quern").get_node_or_null("FlourSack") != null, "粉ができると、粉袋が置かれる")
+	for i in range(40):
+		figure._process(0.05)
+	w.tools.receive("mill")
+	_check(view.get_node("Quern").get_node_or_null("MillMachine") != null, "製粉機を買うと、石臼の横に置く")
+	_check(main.produce_name("flour_wheat") == "小麦粉" and main.produce_count("flour_wheat") == 1, "持ち物と市場では「小麦粉」と出る")
+	# 片付け
+	w.tools.owned.clear()
+	w.mill.site = null
+	w.mill.flour.wheat = 0
+	w.garden.produce.wheat = 0
+	w.mill.changed.emit()
+	_check(view.get_child_count() == 0, "片付けた")
 
 func hud_has_ring_text(m) -> bool:
 	return m.get_node("HUD")._message.contains("水色の輪")

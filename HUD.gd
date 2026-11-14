@@ -324,6 +324,9 @@ func _status_lines() -> PackedStringArray:
 	var plot: String = _main.plot_line()
 	if plot != "":
 		lines.append(plot)
+	var mill: String = _main.mill_line()
+	if mill != "":
+		lines.append(mill)
 	var beside: String = _main.pond_beside_line()
 	if beside != "":
 		lines.append(beside)
@@ -395,7 +398,7 @@ func _touch_help_lines() -> PackedStringArray:
 		"植える: 木を植える/区画にまく  水やり  収穫  抜く: 抜く/伐る",
 		"小屋: 場所を決める/作業/苗づくり  使う: 家具のそばで使う",
 		"市場・話す・雪かき: 使えるときだけボタンが出る(市場は南の境界の外)",
-		"メニュー: 菜園 池 井戸 巣箱 餌台 剪定",
+		"メニュー: 菜園 池 井戸 石臼 巣箱 餌台 剪定",
 		"メニュー: 植える木と野菜を選ぶ  種/苗木  持ち物  音量",
 		"メニュー: +1年 +10年 +1時間 今に戻す(未来をプレビュー)",
 	])
@@ -411,6 +414,7 @@ func _help_lines() -> PackedStringArray:
 		"[1]%s [2]果樹(押すたびに %s) [3]%s [V]種/苗木" % [_main.group_keys_text("broadleaf"), _main.group_keys_text("fruit", false), _main.group_keys_text("conifer")],
 		_main.crop_keys_text(),
 		"SPACE:植える/区画にまく  Q:水やり/井戸と池で汲む  E:収穫  Z:抜く/伐る(斧は1日3本)",
-		"F:菜園  P:池  I:井戸  H:小屋(完成したら 苗づくり / ストーブの前で料理 / ベッドのそばで日記)  K:ヒントを閉じる",
+		"O:石臼を置く/穀物を挽く  I:井戸を掘る",
+		"F:菜園  P:池  H:小屋(完成したら 苗づくり / ストーブの前で料理 / ベッドのそばで日記)  K:ヒントを閉じる",
 		"T:+1年  G:+10年  N:+1時間  R:今に戻す(未来をプレビュー)",
 	])

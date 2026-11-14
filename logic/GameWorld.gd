@@ -28,6 +28,7 @@ const Region = preload("res://logic/Region.gd")
 const Wilds = preload("res://logic/Wilds.gd")
 const Well = preload("res://logic/Well.gd")
 const Tools = preload("res://logic/Tools.gd")
+const Mill = preload("res://logic/Mill.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
 # セーブの版(2026-11-11 から書く。レビュー S4)。セーブの形を変える変更(名前・単位を変える、意味を変える)をしたら 1 上げ、
@@ -65,6 +66,7 @@ var region := Region.new()       # 土地のある都道府県と気候。はじ
 var wilds := Wilds.new()         # 一族の土地の外の自然の林(県から決まる。保存しない)
 var well := Well.new()           # 井戸(2026-11-14)
 var tools := Tools.new()         # ジョウロ・斧・ガソリンで動く機械(2026-11-14)
+var mill := Mill.new()           # 石臼と粉(2026-11-14)
 var last_pumped := [0, 0]        # 直前にポンプでまとめて水をやった [区画の数, 木の数](文言用・保存しない)
 var is_new_game := false         # 読み込むセーブがなかった(新しく始めた)。県を選んだときに、その土地のはじめの種を配る
 var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
@@ -130,6 +132,13 @@ func _init() -> void:
 	tools.forest = forest
 	market.tools = tools
 	market.well = well
+	mill.forest = forest
+	mill.garden = garden
+	mill.tools = tools
+	mill.is_blocked = bees.is_blocked
+	kitchen.mill = mill
+	market.mill = mill
+	guide.mill = mill
 	guide.well = well
 	guide.tools = tools
 	wildlife.feeders = feeders
@@ -167,13 +176,14 @@ func _init() -> void:
 	snow.dirty.connect(save_game)
 	well.dirty.connect(save_game)
 	tools.dirty.connect(save_game)
+	mill.dirty.connect(save_game)
 
 # 巣箱・餌台・井戸を置く場所に、ほかの物(餌台・井戸)がかかるか(Bees.is_blocked から呼ぶ)
 func _taken_nearby(pos: Vector2, radius: float) -> bool:
-	return feeders.covers(pos, radius) or well.covers(pos, radius)
+	return feeders.covers(pos, radius) or well.covers(pos, radius) or mill.covers(pos, radius)
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
-# 結果: Garden.toggle_plot の結果か cabin / hive / feeder / well
+# 結果: Garden.toggle_plot の結果か cabin / hive / feeder / well / mill
 func toggle_plot(pos: Vector2) -> String:
 	if land.plot_at(pos) == null and cabin.blocks_plot(land.plot_center(pos)):
 		return "cabin"
@@ -183,6 +193,8 @@ func toggle_plot(pos: Vector2) -> String:
 		return "feeder"
 	if land.plot_at(pos) == null and well.blocks_plot(land.plot_center(pos), land.PLOT_SIZE * 0.5):
 		return "well"
+	if land.plot_at(pos) == null and mill.blocks_plot(land.plot_center(pos), land.PLOT_SIZE * 0.5):
+		return "mill"
 	return garden.toggle_plot(pos)
 
 # X: 足元の果樹を剪定する。切った枝は薪になる。結果は Forest.prune_nearest
@@ -205,6 +217,8 @@ func pond_action(pos: Vector2) -> String:
 		return "feeder"
 	if well.covers(pos, land.POND_RADIUS + bees.CLEARANCE):
 		return "well"
+	if mill.covers(pos, land.POND_RADIUS + bees.CLEARANCE):
+		return "mill"
 	return land.toggle_pond(pos)
 
 # ── 水と道具(2026-11-14) ────────────────────────────────────
@@ -317,6 +331,10 @@ func split_wood() -> String:
 	tools.use_gas("splitter")
 	return result
 
+# O: 石臼を置く / 挽く(prefer は選んでいる穀物)。結果は Mill.act
+func mill_action(pos: Vector2, front: Vector2, prefer := "") -> String:
+	return mill.act(pos, front, prefer)
+
 # I: 井戸の場所を決める / 掘る。結果は Well.act
 func well_action(pos: Vector2, front: Vector2) -> String:
 	return well.act(pos, front)
@@ -394,6 +412,7 @@ func save_game() -> void:
 	data["market"] = market.to_save()
 	data["well"] = well.to_save()
 	data["tools"] = tools.to_save()
+	data["mill"] = mill.to_save()
 	_write_save(JSON.stringify(data))
 
 # 別の名前(.tmp)に書き、書けたことを確かめてから本物の名前に付け替える。
@@ -529,6 +548,7 @@ func load_game() -> void:
 	# 井戸と道具の記録がないセーブ(2026-11-14 より前)は、井戸なし・5L のジョウロが満杯から
 	well.from_save(SaveRead.dict(data.get("well")))
 	tools.from_save(SaveRead.dict(data.get("tools")))
+	mill.from_save(SaveRead.dict(data.get("mill")))  # 石臼の記録がないセーブ(2026-11-14 より前)は、石臼なし・粉なし
 	sound_level = clampi(SaveRead.whole(data, "sound_level", 3), 0, 3)
 	# 県の記録がないセーブ(2026-11-11 より前)は、開いたときに一度だけ選ぶ
 	region.from_save(data.get("region"))

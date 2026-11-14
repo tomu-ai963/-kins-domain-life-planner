@@ -80,6 +80,11 @@ const GOODS := [
 	{"id": "corn_seed", "species": "corn", "form": "crop_seed", "amount": 1, "price": 60},
 	{"id": "onion_seed", "species": "onion", "form": "crop_seed", "amount": 1, "price": 150},
 	{"id": "negi_seed", "species": "negi", "form": "crop_seed", "amount": 1, "price": 60},
+	# 穀物(2026-11-14。値段は仮の数字)
+	{"id": "wheat_seed", "species": "wheat", "form": "crop_seed", "amount": 1, "price": 50},
+	{"id": "rye_seed", "species": "rye", "form": "crop_seed", "amount": 1, "price": 50},
+	{"id": "soba_seed", "species": "soba", "form": "crop_seed", "amount": 1, "price": 60},
+	{"id": "kibi_seed", "species": "kibi", "form": "crop_seed", "amount": 1, "price": 60},
 	{"id": "logs", "species": "log", "form": "material", "amount": 5, "price": 1500},
 	# 小屋(2026-11-11 とむ決定。値段は仮の数字)。増築は窓ガラス・かまど・釘の代金で、丸太(14 本)は別に要る。家具は増築した部屋に置く
 	{"id": "cabin_extension", "species": "extension", "form": "extension", "amount": 1, "price": 8000},
@@ -94,6 +99,9 @@ const GOODS := [
 	{"id": "chainsaw", "species": "chainsaw", "form": "tool", "amount": 1, "price": 7000},
 	{"id": "splitter", "species": "splitter", "form": "tool", "amount": 1, "price": 9000},
 	{"id": "gasoline", "species": "gasoline", "form": "fuel", "amount": 50, "price": 300},
+	# 穀物と粉(2026-11-14。値段は仮の数字)。石臼は手回し、製粉機はガソリンで動く
+	{"id": "quern", "species": "quern", "form": "tool", "amount": 1, "price": 2000},
+	{"id": "mill", "species": "mill", "form": "tool", "amount": 1, "price": 8000},
 ]
 # 買い取り値(リンゴは 1 個あたり、野菜は 1kg あたりの ₽)。店頭の値段の半分くらい
 # seedling_ は小屋で育てた苗(1 鉢 = 1 区画ぶん)の買い取り値。
@@ -102,6 +110,9 @@ const SELL_PRICES := {
 	"apple": 15, "cherry": 60, "plum": 40, "pear": 18, "kaki": 20, "mikan": 12, "shikuwasa": 50, "ume": 50, "kuri": 60, "mango": 30, "papaya": 20, "radish": 40, "carrot": 20, "cucumber": 25, "potato": 20, "garlic": 120, "tomato": 40,
 	"daikon": 15, "kabu": 25, "sweet_potato": 35, "taro": 40, "eggplant": 35, "pepper": 50, "pumpkin": 30, "goya": 50,
 	"cabbage": 20, "hakusai": 15, "spinach": 60, "komatsuna": 40, "edamame": 80, "corn": 60, "onion": 20, "negi": 40,
+	# 穀物(1kg あたり)と粉(flour_ + 穀物。挽く手間のぶん穀物の 1.5 倍)。2026-11-14 の仮の数字
+	"wheat": 40, "rye": 45, "soba": 90, "kibi": 80,
+	"flour_wheat": 60, "flour_rye": 70, "flour_soba": 135, "flour_kibi": 120,
 	"seedling_tomato": 150, "seedling_cucumber": 120,
 	"jam": 75, "sauce": 150, "pickles": 35, "garlic_pickle": 120, "pirozhki": 12,
 	"cherry_jam": 80, "plum_jam": 90, "pear_compote": 120,
@@ -111,6 +122,8 @@ const SELL_PRICES := {
 	"hoshigaki": 40, "marmalade": 60, "shikuwasa_juice": 35, "umeboshi": 50, "kuri_kanroni": 60, "dried_mango": 36, "papaya_pickle": 27,
 	"takuan": 30, "sauerkraut": 50, "hakusai_zuke": 38, "nasu_zuke": 44, "hoshiimo": 42, "goya_champuru": 50, "zunda": 32,
 	"pumpkin_soup": 60, "imoni": 53,
+	# 穀物と粉の料理。材料を売るよりおよそ 2 倍(今までと同じ置き方)
+	"rye_bread": 70, "bliny": 20, "udon": 40, "soba_noodle": 68, "kibi_dango": 24, "kasha": 45,
 	# 自然の木の種(seed_ + 樹種。1 粒あたり。2026-11-11 とむ決定: 売れるが買えない)。外の林で年に数日しか拾えないので、市場の種より少し高い
 	"seed_buna": 15, "seed_mizunara": 8, "seed_harunire": 4, "seed_nanakamado": 6, "seed_oyamazakura": 8, "seed_yamazakura": 8,
 	"seed_akashide": 4, "seed_mizuki": 5, "seed_enoki": 5, "seed_hannoki": 3, "seed_egonoki": 5, "seed_tsuge": 10,
@@ -136,6 +149,7 @@ var bees: Bees        # GameWorld が設定する(はちみつの持ち物は Be
 var feeders = null    # GameWorld が設定する(増築する場所に餌台がないか見る)
 var tools = null      # GameWorld が設定する(道具とガソリンの持ち物は Tools にある)
 var well = null       # GameWorld が設定する(増築する場所に井戸がないか見る)
+var mill = null       # GameWorld が設定する(粉の持ち物は Mill にある)
 
 func is_near(pos: Vector2) -> bool:
 	return pos.distance_to(POS) <= REACH
@@ -205,6 +219,8 @@ func _cabin_problem(g: Dictionary) -> String:
 			return "feeder"
 		if well != null and well.is_placed() and r.grow(bees.CLEARANCE + well.RADIUS).has_point(well.site):
 			return "well"
+		if mill != null and mill.is_placed() and r.grow(bees.CLEARANCE + mill.RADIUS).has_point(mill.site):
+			return "mill"
 	elif g.form == "tool":
 		if tools.has(g.species):
 			return "owned"
@@ -283,9 +299,13 @@ func pile_of(item: String) -> Dictionary:
 		return kitchen.stock
 	if item == "honey":
 		return bees.stock
+	if item.begins_with("flour_"):
+		return mill.flour
 	return garden.produce if garden.produce.has(item) else forest.produce
 
 func key_of(item: String) -> String:
+	if item.begins_with("flour_"):
+		return item.trim_prefix("flour_")
 	return item.trim_prefix("seed_") if item.begins_with("seed_") else item.trim_prefix("seedling_")
 
 # 収穫物 item をいくつ持っているか

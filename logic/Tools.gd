@@ -17,9 +17,10 @@ const CAN_BIG := 10      # 市場で買える大きいジョウロ(L)
 const AXE_PER_DAY := 3   # 斧で伐れる木の数(1 日)
 const MAX_GAS := 200     # 持てるガソリン(0.1L 単位。20L の携行缶 1 つ)
 # 1 回に使うガソリン(0.1L 単位。仮の数字): ポンプ 1 回 0.5L・チェーンソー 1 本 0.2L・薪割り機 1 回 0.5L
-const GAS_USE := {"pump": 5, "chainsaw": 2, "splitter": 5}
-const MACHINES := ["pump", "chainsaw", "splitter"]
-const ITEMS := ["big_can", "pump", "chainsaw", "splitter"]  # 市場で買う道具(ひとつずつ)
+# 製粉機 1 回 0.5L(2026-11-14 穀物と粉で足した)
+const GAS_USE := {"pump": 5, "chainsaw": 2, "splitter": 5, "mill": 5}
+const MACHINES := ["pump", "chainsaw", "splitter", "mill"]
+const ITEMS := ["big_can", "pump", "chainsaw", "splitter", "quern", "mill"]  # 市場で買う道具(ひとつずつ)。quern = 石臼
 
 var forest: Forest  # GameWorld が設定する
 

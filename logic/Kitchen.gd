@@ -3,7 +3,8 @@ extends RefCounted
 # ── 小屋のストーブ(描画を持たない) ──────────────────────────────
 # 完成した小屋のストーブで、収穫物を保存食に加工する。鍋はひとつで、仕込む → 日数を待つ → 受け取る の順。
 # 仕込むたびに薪を 1 回分使う。薪は小屋の東の薪割り台で丸太から割る(1 本 ≒ 0.1m³ を 5 回割って 10 回分)。
-# 瓶・砂糖・塩・粉は売値に含めて、別に買わない(手間を増やしすぎないため)。
+# 瓶・砂糖・塩は売値に含めて、別に買わない(手間を増やしすぎないため)。今までの料理(ピロシキなど)の粉も売値に含める。
+# 2026-11-14 からは、石臼で挽いた粉(Mill)を材料にする料理もある(粉は flour_ + 穀物の id)。
 # 文言は Main、値段は Market、見た目は view/ が決める
 const SaveRead = preload("res://logic/SaveRead.gd")
 const Forest = preload("res://logic/Forest.gd")
@@ -61,12 +62,20 @@ const RECIPES := {
 	"zunda": {"name": "ずんだ餅", "input": "edamame", "amount": 2, "output": 10, "unit": "個", "days": 1, "meal": "sweet"},
 	"pumpkin_soup": {"name": "カボチャのスープ", "input": "pumpkin", "amount": 6, "output": 6, "unit": "瓶", "days": 1, "meal": "warm"},
 	"imoni": {"name": "芋煮", "input": "taro", "amount": 4, "output": 6, "unit": "皿", "days": 1, "meal": "warm"},
+	# ── 穀物と粉の料理(2026-11-14)。パンは 1 日で焼け、麺と団子もその日のうちにできる ──
+	"rye_bread": {"name": "ライ麦パン", "input": "flour_rye", "amount": 2, "output": 4, "unit": "斤", "days": 1, "meal": "strength"},  # ロシアの黒パン(チョールヌイ・フレープ)
+	"bliny": {"name": "ブリヌイ", "input": "flour_wheat", "amount": 1, "output": 6, "unit": "枚", "days": 1, "meal": "sweet"},  # ロシアの薄焼き。はちみつやジャムを添える
+	"udon": {"name": "手打ちうどん", "input": "flour_wheat", "amount": 2, "output": 6, "unit": "玉", "days": 1, "meal": "warm"},
+	"soba_noodle": {"name": "手打ちそば", "input": "flour_soba", "amount": 1, "output": 4, "unit": "皿", "days": 1, "meal": "strength"},
+	"kibi_dango": {"name": "きびだんご", "input": "flour_kibi", "amount": 1, "output": 10, "unit": "個", "days": 1, "meal": "sweet"},
+	"kasha": {"name": "そばの実のカーシャ", "input": "soba", "amount": 1, "output": 4, "unit": "皿", "days": 1, "meal": "warm"},  # ロシアのそばの実の粥(粉にしない)
 }
 
 var forest: Forest  # GameWorld が設定する(リンゴの持ち物は Forest にある)
 var garden: Garden  # GameWorld が設定する(野菜の持ち物は Garden にある)
 var cabin: Cabin    # GameWorld が設定する(丸太の持ち物は Cabin にある)
 var bees: Bees      # GameWorld が設定する(はちみつの持ち物は Bees にある)
+var mill = null     # GameWorld が設定する(粉の持ち物は Mill にある)
 
 # 鍋の中身 {recipe, start_day: int}。空なら {}。[0] = 母屋のストーブ、[1] = 増築した部屋のかまど(2026-11-11)
 var pots := [{}, {}]
@@ -98,11 +107,21 @@ func _commit() -> void:
 	dirty.emit()
 	changed.emit()
 
-# 材料の持ち物(果物は Forest、はちみつは Bees、野菜は Garden)
+# 材料の持ち物(果物は Forest、はちみつは Bees、粉は Mill、野菜と穀物は Garden)。キーは _key
 func _pile(input: String) -> Dictionary:
 	if input == "honey":
 		return bees.stock
+	if input.begins_with("flour_"):
+		return mill.flour
 	return forest.produce if forest.produce.has(input) else garden.produce
+
+static func _key(input: String) -> String:
+	return input.trim_prefix("flour_")
+
+# 材料が穀物か粉か(画面のページ分け用)
+static func from_grain(id: String) -> bool:
+	var input: String = RECIPES[id].input
+	return input.begins_with("flour_") or bool(Garden.CROPS.get(input, {}).get("grain", false))
 
 # 材料が果物かはちみつか(画面のページ分け用。違えば野菜)
 static func from_tree(id: String) -> bool:
@@ -114,11 +133,11 @@ func grows_here(id: String) -> bool:
 	var input: String = RECIPES[id].input
 	if input == "honey":
 		return true
-	return forest.grows_here(input) if Forest.FRUITS.has(input) else garden.grows_here(input)
+	return forest.grows_here(input) if Forest.FRUITS.has(input) else garden.grows_here(_key(input))
 
 func input_count(id: String) -> int:
 	var input: String = RECIPES[id].input
-	return int(_pile(input).get(input, 0))
+	return int(_pile(input).get(_key(input), 0))
 
 func is_empty() -> bool:
 	return pot.is_empty()
@@ -168,7 +187,7 @@ func start(id: String) -> String:
 		return "no_wood"
 	firewood -= 1
 	cooked = true
-	_pile(r.input)[r.input] -= int(r.amount)
+	_pile(r.input)[_key(r.input)] -= int(r.amount)
 	pot = {"recipe": id, "start_day": forest.day_number()}
 	_commit()
 	return "started"
