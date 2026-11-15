@@ -14,6 +14,7 @@ const MIN_SCALE := 0.2 # まいたばかりの芽の大きさ(育ちきった葉
 const SPOILED := Color(0.36, 0.26, 0.14)  # 傷んだ実の色
 const WEED := Color(0.70, 0.74, 0.26)     # 雑草の色(野菜の葉と見分けられるよう、黄色っぽく明るい)
 const STRAW := Color(0.80, 0.68, 0.40)    # 敷いたわらの色
+const PADDY_WATER := Color(0.42, 0.62, 0.74, 0.8)  # 田んぼに張った水の色(空を映した水色)
 const MAX_WEEDS := 8                      # 1 区画に見せる雑草の株の数(生えて 4 日でいっぱい)
 
 # size: 育ちきった葉の幅・高さ・奥行き(m) / ball: 丸い葉(false なら細長い円錐)
@@ -44,6 +45,7 @@ const LOOKS := {
 	"wheat": {"leaf": Color(0.48, 0.66, 0.28), "size": Vector3(0.22, 0.85, 0.22), "ball": false, "ripe": Color(0.90, 0.74, 0.34), "ripe_size": Vector3(0.10, 0.22, 0.10)},  # 黄金色の穂
 	"rye": {"leaf": Color(0.42, 0.60, 0.30), "size": Vector3(0.20, 1.15, 0.20), "ball": false, "ripe": Color(0.74, 0.66, 0.44), "ripe_size": Vector3(0.08, 0.26, 0.08)},  # 小麦より背が高く、穂は灰色がかる
 	"soba": {"leaf": Color(0.40, 0.62, 0.30), "size": Vector3(0.45, 0.65, 0.45), "ball": true, "ripe": Color(0.94, 0.92, 0.90), "ripe_size": Vector3(0.24, 0.10, 0.24)},  # 白い花の上に実がつく
+	"rice": {"leaf": Color(0.42, 0.66, 0.26), "size": Vector3(0.16, 0.8, 0.16), "ball": false, "ripe": Color(0.92, 0.80, 0.40), "ripe_size": Vector3(0.12, 0.2, 0.12)},  # 細い株。実ると穂が黄金色に垂れる
 	"kibi": {"leaf": Color(0.44, 0.64, 0.26), "size": Vector3(0.26, 1.0, 0.26), "ball": false, "ripe": Color(0.96, 0.86, 0.36), "ripe_size": Vector3(0.14, 0.18, 0.14)},  # 垂れた黄色い穂
 	"onion": {"leaf": Color(0.40, 0.64, 0.30), "size": Vector3(0.10, 0.50, 0.10), "ball": false, "ripe": Color(0.80, 0.58, 0.30), "ripe_size": Vector3(0.20, 0.18, 0.20)},
 	"negi": {"leaf": Color(0.36, 0.62, 0.30), "size": Vector3(0.10, 0.70, 0.10), "ball": false, "ripe": Color(0.95, 0.95, 0.90), "ripe_size": Vector3(0.08, 0.14, 0.08)},
@@ -93,6 +95,10 @@ func _rebuild() -> void:
 			var wet := Look.mesh_node(_wet_mesh, _wet_mat, Look.at(c.pos, BED_TOP + 0.005))
 			wet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(wet)
+		if garden.CROPS[c.kind].get("paddy", false):
+			var water := Look.mesh_node(_straw_mesh, _mat(PADDY_WATER), Look.at(c.pos, BED_TOP + 0.02))
+			water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(water)
 		if c.get("mulched", false):
 			var straw := Look.mesh_node(_straw_mesh, _mat(STRAW), Look.at(c.pos, BED_TOP + 0.015))
 			straw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

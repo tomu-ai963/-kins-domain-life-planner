@@ -2,11 +2,12 @@ extends RefCounted
 
 # ── 一族の土地の外の、自然の林(描画を持たない) ─────────────────────
 # 境界(±50m)の外から歩ける端(Player3D.WALK_LIMIT = 78m)までの帯に、その土地に自生する木の林がある(2026-11-11 とむ決定)。
-# 外の林でできるのは種を拾うことだけ。種は木ごとに決まった日にだけ根元に落ちる(樹種ごとに、実る月のうち年 DROP_DAYS 日)。
+# 外の林でできるのは種を拾うことだけ(例外: 北の川で水を汲む。logic/River.gd)。種は木ごとに決まった日にだけ根元に落ちる(樹種ごとに、実る月のうち年 DROP_DAYS 日)。
 # その日を逃すと拾えない。落ちた種は Forest.pickups に入れるので、拾い方・見た目・保存は自分の木の種と同じ。
 # 外の林でしか手に入らない木(Forest.SPECIES の wild_only)の種は、市場で売れるが買えない。自分の土地に植えて育てれば種を増やせる。
 # 林の木の場所・樹種・樹齢は、県(気候区分)から毎回同じに決まるので保存しない。座標の単位は m
 const Forest = preload("res://logic/Forest.gd")
+const River = preload("res://logic/River.gd")
 
 const BAND_IN := 54.0        # 林の内側の端(境界の 4m 外)
 const BAND_OUT := 75.0       # 林の外側の端(歩ける端の 3m 内)
@@ -19,6 +20,7 @@ const AGE_MIN := 30.0        # 林の木の樹齢
 const AGE_MAX := 90.0
 const DROP_DAYS := 3         # 樹種ごとの、1 年で種が落ちる日の数
 const DROP_SPREAD := 1.8     # 種は根元からこの距離に落ちる
+const RIVER_CLEAR := 2.5     # 川の岸からこの幅には木を生やさない(2026-11-15 川を足した)
 
 var forest: Forest   # GameWorld が設定する
 var trees := []      # [{pos: Vector2, species, age: float}]
@@ -50,6 +52,8 @@ func refresh() -> void:
 		if maxf(absf(pos.x), absf(pos.y)) < BAND_IN:
 			continue
 		if pos.distance_to(MARKET_POS) < MARKET_CLEAR or (pos.y > 0.0 and absf(pos.x) < PATH_CLEAR):
+			continue
+		if River.line_distance(pos) < River.HALF_WIDTH + RIVER_CLEAR:
 			continue
 		if trees.any(func(t): return t.pos.distance_to(pos) < MIN_GAP):
 			continue

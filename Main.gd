@@ -6,6 +6,7 @@ extends Node
 # Main・HUD は 2D と 3D で共通。位置は Player.ground_pos() で m の Vector2(x, y)を受け取る
 const GameWorld = preload("res://logic/GameWorld.gd")
 const WildWoodsView = preload("res://view/3d/WildWoodsView3D.gd")
+const RiverView = preload("res://view/3d/RiverView3D.gd")
 const WellView = preload("res://view/3d/WellView3D.gd")
 const MillView = preload("res://view/3d/MillView3D.gd")
 const REACH := 2.0    # 足元 2m 以内
@@ -27,7 +28,7 @@ const GUIDE_TEXTS := {
 	"buy_seeds": "野菜の種は市場で買える。\n市場は南の境界の外にある(前に立って B で開く)。",
 	"sow": "区画の上で SPACE を押すと種をまく。\n[4]〜[9] で野菜を選ぶ。まける季節は野菜ごとに違う。",
 	"water": "野菜の上で Q を押すと、ジョウロで水をやれる(1L で1か所)。\n水をやった日は1日ぶん、やらない日は半日ぶん育つ。",
-	"well": "I で井戸を掘れる(1日1回・3日)。ジョウロが空になったら、\n井戸か池のそばで Q を押して汲む。",
+	"well": "I で井戸を掘れる(1日1回・3日)。ジョウロが空になったら、\n井戸か池か、北の境界の外の川のそばで Q を押して汲む。",
 	"harvest": "育った野菜は E で収穫する。\n放っておくと傷んで、収穫が半分になる。",
 	"sell": "収穫物は市場で売れる。\n市場は南の境界の外(前に立って B で開く)。",
 	"broke": "お金と種が足りないときは、畑の野菜を収穫して市場で売ろう。\n訪ねてくる人の頼みごとでも、お金や種がもらえる。",
@@ -35,7 +36,7 @@ const GUIDE_TEXTS := {
 	"apple": "果樹に実がなっている(季節と樹齢で実る)。\n木のそばで E を押すと収穫できる。",
 	"visitor": "訪ねてくる人がいる。そばで C を押すと話せる。\n頼みごとは断ってもいい。",
 	"pond_rain": "池の水は雨でたまる。\n半分を超えると、生き物が来るようになる。",
-	"pond_water": "エンジンポンプがあるので、井戸か池のそばで Q を押すと、\nまわりの畑と木にまとめて水をやれる(ガソリンを使う)。",
+	"pond_water": "エンジンポンプがあるので、井戸か池か川のそばで Q を押すと、\nまわりの畑と木にまとめて水をやれる(ガソリンを使う)。",
 	"cabin_site": "H で足元を小屋の場所に決められる。\n丸太を集めて、1日1回ずつ建てていく。",
 	"cabin_logs": "小屋の丸太は、市場で買う(5本 1,500₽)か、\n育った木を Z で伐って集める(白樺は樹齢15年から)。",
 	"cabin_inside": "小屋が建った。南のドアから中に入れる。\n窓辺で苗づくり、ストーブで料理、ベッドで日記。",
@@ -77,13 +78,13 @@ const BUY_PAGES := [
 	{"name": "小屋", "forms": ["extension", "furniture"]},
 	{"name": "道具と燃料", "forms": ["tool", "fuel", "straw"]},
 ]
-const TOOL_NAMES := {"big_can": "10Lのジョウロ(1杯で10か所)", "pump": "エンジンポンプ(井戸か池からまとめて水やり)",
+const TOOL_NAMES := {"big_can": "10Lのジョウロ(1杯で10か所)", "pump": "エンジンポンプ(井戸・池・川からまとめて水やり)",
 	"chainsaw": "チェーンソー(何本でも伐れる)", "splitter": "薪割り機(薪を一度に割る)",
 	"quern": "石臼(穀物を挽いて粉にする)", "mill": "製粉機(石臼のそばで穀物を一度に挽く)"}
 # 道具を買ったときの使い方の案内
 const TOOL_BOUGHT := {
 	"big_can": "1杯で10か所に水をやれる",
-	"pump": "井戸か池のそばで Q を押すと、まわりの畑と木にまとめて水をやれる(ガソリン 0.5L)",
+	"pump": "井戸か池か川のそばで Q を押すと、まわりの畑と木にまとめて水をやれる(ガソリン 0.5L)",
 	"chainsaw": "ガソリンがあれば、Z で何本でも伐れる(1本 0.2L)",
 	"splitter": "小屋の東の薪割り台で H を押すと、積める量まで一度に割れる(ガソリン 0.5L)",
 	"quern": "O で体の前に置く。そばで O を押すと、穀物を 1kg ずつ挽ける(手で 1日5kg まで)",
@@ -204,6 +205,10 @@ func _setup_3d_only() -> void:
 	woods.name = "WildWoods"
 	add_child(woods)
 	woods.setup(world.wilds)
+	var river_view := RiverView.new()
+	river_view.name = "River"
+	add_child(river_view)
+	river_view.setup(world.river)
 
 func _process(delta: float) -> void:
 	_guide_timer += delta
@@ -1580,16 +1585,29 @@ func _pond_action() -> void:
 		world.save_game()
 		_check_quests(POND_MESSAGES[result])
 
-# HUD に出す、井戸か池のそばでの案内。そばにいなければ ""
+# 水の出どころ(GameWorld.water_source)の名前
+func source_name(source: String) -> String:
+	return {"well": "井戸", "river": "川"}.get(source, "池")
+
+# 水の出どころへ向く場所(人物の動き用)。川は足元の近くの川の中
+func source_spot(source: String, pos: Vector2) -> Vector2:
+	match source:
+		"well":
+			return world.well.site
+		"river":
+			return Vector2(pos.x, world.river.center_y(pos.x))
+	return world.land.pond
+
+# HUD に出す、井戸か池か川のそばでの案内。そばにいなければ ""
 func pond_beside_line() -> String:
 	var pos := player_pos()
 	var source: String = world.water_source(pos)
 	if source == "" or source == "pond_frozen" or source == "pond_empty":
 		return ""
 	var t := world.tools
-	var place := "井戸" if source == "well" else "池"
+	var place := source_name(source)
 	var dry: Array = world.dry_around_source(pos)
-	if t.can_run("pump") and dry[0] + dry[1] > 0 and (source == "well" or world.pond.water >= world.pond.WATER_COST):
+	if t.can_run("pump") and dry[0] + dry[1] > 0 and (source != "pond" or world.pond.water >= world.pond.WATER_COST):
 		var cost := "池の水 -%d%%・" % world.pond.WATER_COST if source == "pond" else ""
 		return "%sのそば: Q でポンプ 区画 %d・木 %d にまとめて水やり(%sガソリン -%s)" % [place, dry[0], dry[1], cost, gas_text(t.gas_needed("pump"))]
 	if not t.can_full():
@@ -1633,10 +1651,14 @@ func _sow(pos: Vector2) -> void:
 			if g.misses_frost(planted):
 				# まくのは止めない。間に合わないことだけ知らせる
 				$HUD.show_message("%s%s。ただ、霜(%s)まであと%d日で、育ちきる(%d日)前に枯れてしまう" % [crop.name, verb, g.frost_date_text(), g.days_to_frost(), g.days_left(planted)], 7.0)
+			elif g.CROPS[selected_crop].get("paddy", false):
+				$HUD.show_message("%sを田植えした(田んぼに水を張った)。毎日水をやれば%d日で収穫できる。水を切らすとほとんど育たない" % [crop.seed_name, g.days_left(planted)], 6.0)
 			else:
 				$HUD.show_message("%s%s(毎日水をやれば%d日で収穫できる)" % [crop.name, verb, g.days_left(planted)], 5.0)
 		"needs_seedling":
 			$HUD.show_message("%sは苗から育てる(完成した小屋で H を押して鉢にまく)" % crop.name, 5.0)
+		"needs_paddy":
+			$HUD.show_message("田んぼは、川か池から水が引ける区画にだけ作れる(川か、掘った池から %dm 以内)" % int(world.river.PADDY_REACH), 6.0)
 		"occupied":
 			$HUD.show_message("この区画にはもう%sが育っている" % g.CROPS[g.crop_at(pos).kind].name)
 		"not_season":
@@ -1672,6 +1694,10 @@ func plot_line() -> String:
 	if g.is_ripe(c):
 		return "足元の区画: %s 収穫できる(E・あと%d日で傷む)" % [crop_name, g.days_until_spoiled(c)]
 	var water := "水やり済み" if g.watered_today(c) else "Q で水やり"
+	if g.CROPS[c.kind].get("paddy", false):
+		crop_name = "田んぼの稲"
+		if not g.watered_today(c):
+			water = "Q で水やり・水を切らすとほとんど育たない"
 	if g.has_weeds(c):
 		water += "・雑草 E で抜く"
 	elif c.get("mulched", false):
@@ -2192,16 +2218,16 @@ func _water() -> void:
 		pump_result = world.pump(pos)
 		if pump_result == "pumped":
 			var n: Array = world.last_pumped
-			var place := "井戸" if source == "well" else "池"
-			var left := "池の水 %d%%・" % world.pond.water if source != "well" else ""
-			_act("machine", world.well.site if source == "well" else world.land.pond, "pump")
+			var place := source_name(source)
+			var left := "池の水 %d%%・" % world.pond.water if source == "pond" else ""
+			_act("machine", source_spot(source, pos), "pump")
 			$HUD.show_message("エンジンポンプで%sの水をまいた(区画 %d・木 %d に水やり。%sガソリン -%s・残り %s)" % [place, n[0], n[1], left, gas_text(t.gas_needed("pump")), gas_text(t.gas)], 5.0)
 			return
 		var fill: String = world.fill_can(pos)
 		if fill == "filled":
-			_act("draw", world.well.site if source == "well" else world.land.pond)
+			_act("draw", source_spot(source, pos))
 			var note := "。ポンプはガソリンがなくて動かない" if pump_result == "no_gas" else ""
-			$HUD.show_message("%sの水をジョウロに汲んだ(%d/%dL)%s" % ["井戸" if source == "well" else "池", t.can_water, t.can_size(), note])
+			$HUD.show_message("%sの水をジョウロに汲んだ(%d/%dL)%s" % [source_name(source), t.can_water, t.can_size(), note])
 			return
 		if FILL_MESSAGES.has(fill) and g.crop_at(pos).is_empty() and f.nearest_index(pos, REACH, "") < 0:
 			$HUD.show_message(PUMP_MESSAGES.get(pump_result, FILL_MESSAGES[fill]))
@@ -2244,6 +2270,8 @@ func _water() -> void:
 # ジョウロが空のときの文言(汲める場所を添える)
 func can_empty_text() -> String:
 	var where := "井戸か池" if world.well.is_dug() and world.pond.is_dug() else ("井戸" if world.well.is_dug() else ("池" if world.pond.is_dug() else ""))
+	if world.river.exists():
+		where = "川" if where == "" else where + "か川"
 	if where == "":
 		return "ジョウロが空(I で井戸を掘ると汲める。雨の日は畑にも木にも降る)"
 	return "ジョウロが空(%sのそばで Q を押して汲む)" % where

@@ -414,7 +414,7 @@ func _help_lines() -> PackedStringArray:
 		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者と話す",
 		"[1]%s [2]果樹(押すたびに %s) [3]%s [V]種/苗木" % [_main.group_keys_text("broadleaf"), _main.group_keys_text("fruit", false), _main.group_keys_text("conifer")],
 		_main.crop_keys_text(),
-		"SPACE:植える/区画にまく  Q:水やり/井戸と池で汲む  E:収穫/草取り/わら  Z:抜く/伐る(斧は1日3本)",
+		"SPACE:植える/区画にまく  Q:水やり/井戸・池・川で汲む  E:収穫/草取り/わら  Z:抜く/伐る(斧は1日3本)",
 		"O:石臼を置く/穀物を挽く  I:井戸を掘る",
 		"F:菜園  P:池  H:小屋(完成したら 苗づくり / ストーブの前で料理 / ベッドのそばで日記)  K:ヒントを閉じる",
 		"T:+1年  G:+10年  N:+1時間  R:今に戻す(未来をプレビュー)",

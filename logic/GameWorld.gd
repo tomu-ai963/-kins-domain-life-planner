@@ -30,6 +30,7 @@ const Well = preload("res://logic/Well.gd")
 const Tools = preload("res://logic/Tools.gd")
 const Mill = preload("res://logic/Mill.gd")
 const Pests = preload("res://logic/Pests.gd")
+const River = preload("res://logic/River.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
 # セーブの版(2026-11-11 から書く。レビュー S4)。セーブの形を変える変更(名前・単位を変える、意味を変える)をしたら 1 上げ、
@@ -69,6 +70,7 @@ var well := Well.new()           # 井戸(2026-11-14)
 var tools := Tools.new()         # ジョウロ・斧・ガソリンで動く機械(2026-11-14)
 var mill := Mill.new()           # 石臼と粉(2026-11-14)
 var pests := Pests.new()         # 畑を荒らす生き物と仲良し度(2026-11-15)
+var river := River.new()         # 土地の外の川(2026-11-15。県を選んでから。保存しない)
 var last_pumped := [0, 0]        # 直前にポンプでまとめて水をやった [区画の数, 木の数](文言用・保存しない)
 var is_new_game := false         # 読み込むセーブがなかった(新しく始めた)。県を選んだときに、その土地のはじめの種を配る
 var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
@@ -145,6 +147,8 @@ func _init() -> void:
 	guide.tools = tools
 	wildlife.feeders = feeders
 	feeders.garden = garden
+	river.forest = forest
+	garden.paddy_ok = _paddy_ok
 	pests.forest = forest
 	pests.garden = garden
 	pests.wildlife = wildlife
@@ -185,6 +189,12 @@ func _init() -> void:
 	tools.dirty.connect(save_game)
 	mill.dirty.connect(save_game)
 	pests.dirty.connect(save_game)
+
+# 区画(中心 c)を田んぼにできるか: 川か、掘り終えた池から水が引ける範囲(ポンプで水が届く 20m)
+func _paddy_ok(c: Vector2) -> bool:
+	if river.feeds_paddy(c):
+		return true
+	return pond.is_dug() and land.pond != null and c.distance_to(land.pond) <= Pond.WATER_RADIUS
 
 # 巣箱・餌台・井戸を置く場所に、ほかの物(餌台・井戸)がかかるか(Bees.is_blocked から呼ぶ)
 func _taken_nearby(pos: Vector2, radius: float) -> bool:
@@ -238,6 +248,8 @@ func water_source(pos: Vector2) -> String:
 		if pond.is_frozen():
 			return "pond_frozen"
 		return "pond" if pond.water > 0 else "pond_empty"
+	if river.is_beside(pos):
+		return "river"  # 外の土地だが、川で水を汲むことだけはできる(2026-11-15 とむ決定)
 	return ""
 
 # 井戸か池のまわりの、水がいる [区画の数, 木の数](ポンプの案内用)。そばでなければ [0, 0]
@@ -247,6 +259,8 @@ func dry_around_source(pos: Vector2) -> Array:
 			return [garden.dry_within(well.site, well.WATER_RADIUS), forest.dry_within(well.site, well.WATER_RADIUS)]
 		"pond":
 			return pond.dry_around()
+		"river":  # 川は長いので、足元からの距離で数える
+			return [garden.dry_within(pos, River.WATER_RADIUS), forest.dry_within(pos, River.WATER_RADIUS)]
 	return [0, 0]
 
 # Q(井戸か池のそば・エンジンポンプを持っている): まわりの区画と木にまとめて水をやる。ガソリンを使う
@@ -270,6 +284,8 @@ func pump(pos: Vector2) -> String:
 	tools.use_gas("pump")
 	if src == "well":
 		last_pumped = [garden.water_within(well.site, well.WATER_RADIUS), forest.water_within(well.site, well.WATER_RADIUS)]
+	elif src == "river":
+		last_pumped = [garden.water_within(pos, River.WATER_RADIUS), forest.water_within(pos, River.WATER_RADIUS)]
 	else:
 		pond.water_around(pos)  # 池の水も少し減る
 		last_pumped = pond.last_watered

@@ -69,6 +69,7 @@ const RECIPES := {
 	"soba_noodle": {"name": "手打ちそば", "input": "flour_soba", "amount": 1, "output": 4, "unit": "皿", "days": 1, "meal": "strength"},
 	"kibi_dango": {"name": "きびだんご", "input": "flour_kibi", "amount": 1, "output": 10, "unit": "個", "days": 1, "meal": "sweet"},
 	"kasha": {"name": "そばの実のカーシャ", "input": "soba", "amount": 1, "output": 4, "unit": "皿", "days": 1, "meal": "warm"},  # ロシアのそばの実の粥(粉にしない)
+	"onigiri": {"name": "おにぎり", "input": "rice", "amount": 1, "output": 4, "unit": "個", "days": 1, "meal": "strength"},  # 田んぼの米を炊いて握る(2026-11-15)
 }
 
 var forest: Forest  # GameWorld が設定する(リンゴの持ち物は Forest にある)

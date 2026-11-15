@@ -66,6 +66,10 @@ const CROPS := {
 	"soba": {"name": "ソバ", "seed_name": "ソバの種", "seasons": ["spring", "summer"], "grow_days": 5, "yield_kg": 2, "keep_days": 7, "group": "bean", "grain": true, "regional": true,
 		"zones": ["hokkaido", "tohoku", "snowy", "highland", "pacific", "setouchi", "south"]},  # 現実 約 75 日。やせた涼しい土地向き(北海道・長野)。1m² で約 0.1〜0.2kg
 	"kibi": {"name": "キビ", "seed_name": "キビの種", "seasons": ["spring", "summer"], "grow_days": 6, "yield_kg": 2, "keep_days": 10, "group": "bean", "grain": true, "regional": true, "warm": true},  # 現実 約 100 日。どこでも育つ雑穀。1m² で約 0.2kg
+	# ── 米(2026-11-15 川と一緒に足した)。paddy: 田んぼでしか育たない(川か池から水が引ける区画。GameWorld が paddy_ok を設定する) /
+	# dry_growth: 水をやらなかった日の育ち(田んぼは水を切らすとほとんど育たない)。苗を買って田植えする。収穫すると稲わらが取れる ──
+	"rice": {"name": "米", "seed_name": "稲の苗", "seasons": ["spring", "summer"], "grow_days": 7, "yield_kg": 5, "keep_days": 10, "group": "bean", "grain": true, "regional": true, "warm": true,
+		"paddy": true, "dry_growth": 0.2},  # 現実 田植えから約 120 日。1m² で玄米約 0.5kg。北海道から沖縄まで作る
 	"onion": {"name": "タマネギ", "seed_name": "タマネギの苗", "seasons": ["autumn"], "grow_days": 7, "yield_kg": 30, "keep_days": 20, "hardy": true, "group": "aroma", "regional": true},  # 現実 秋に植えて翌初夏(約 7 か月)
 	"negi": {"name": "ネギ", "seed_name": "ネギの種", "seasons": ["spring", "autumn"], "grow_days": 7, "yield_kg": 15, "keep_days": 10, "hardy": true, "group": "aroma", "regional": true},  # 現実 約 4 か月以上
 }
@@ -87,6 +91,7 @@ var last_meal_extra := 0  # 直前の収穫のうち、食べたもので増え�
 var last_weed_loss := 0   # 直前の収穫で、雑草で減った割合(%。文言用)
 var last_bitten := false  # 直前の収穫が、かじられていたか(文言用)
 var last_straw := 0       # 直前の収穫で取れたわら(束。文言用)
+var paddy_ok := Callable()  # (区画の中心: Vector2) -> bool。GameWorld が設定する(川か池から水が引けるか)
 var harvest_rate := Callable()  # () -> float。GameWorld が Kitchen.harvest_rate を設定する(台所は畑を持つので、互いに持つと解放されない)
 var last_frost := {}      # 今日の確認で霜で枯れた区画の数 {kind: 数}(知らせる用・保存しない)
 var tilled_day := ""      # 最後に区画を耕した日(YYYY-MM-DD)
@@ -129,6 +134,8 @@ func sow(pos: Vector2, kind: String, from_seedling := false) -> String:
 		return "occupied"
 	if not can_sow_now(kind):
 		return "not_season"
+	if CROPS[kind].get("paddy", false) and not is_paddy_spot(c):
+		return "needs_paddy"
 	if not from_seedling:
 		if CROPS[kind].get("seedling_only", false):
 			return "needs_seedling"
@@ -145,6 +152,14 @@ func sow(pos: Vector2, kind: String, from_seedling := false) -> String:
 		_water(crops[-1])
 	_commit()
 	return "sown"
+
+# 区画(中心 c)を田んぼにできるか(川か池から水が引ける)
+func is_paddy_spot(c: Vector2) -> bool:
+	return paddy_ok.is_valid() and bool(paddy_ok.call(c))
+
+# その野菜の、水をやらなかった日の育ち(1 日あたり)
+static func dry_rate(kind: String) -> float:
+	return float(CROPS[kind].get("dry_growth", DRY_GROWTH))
 
 # この土地で育てられる野菜か(県を選ぶ前は、今までの野菜だけ)
 func grows_here(kind: String) -> bool:
@@ -348,14 +363,15 @@ func toggle_plot(pos: Vector2) -> String:
 func growth_days(c: Dictionary) -> float:
 	var elapsed: int = day_number() - int(c.sown_day)
 	var wet: int = int(c.water_days) - (1 if watered_today(c) else 0)
-	return elapsed * DRY_GROWTH + wet * (1.0 - DRY_GROWTH) + float(c.get("head", 0.0))
+	var dry := dry_rate(c.kind)
+	return elapsed * dry + wet * (1.0 - dry) + float(c.get("head", 0.0))
 
 func is_ripe(c: Dictionary) -> bool:
 	return growth_days(c) >= float(CROPS[c.kind].grow_days)
 
-# 収穫できるようになってからの日数。そのあとは水をやらないので、育ちは 1 日に DRY_GROWTH ずつ増える
+# 収穫できるようになってからの日数。そのあとは水をやらないので、育ちは 1 日に dry_rate ずつ増える
 func days_since_ripe(c: Dictionary) -> float:
-	return maxf(0.0, (growth_days(c) - float(CROPS[c.kind].grow_days)) / DRY_GROWTH)
+	return maxf(0.0, (growth_days(c) - float(CROPS[c.kind].grow_days)) / dry_rate(c.kind))
 
 func is_spoiled(c: Dictionary) -> bool:
 	return is_ripe(c) and days_since_ripe(c) > float(CROPS[c.kind].keep_days)
@@ -367,7 +383,8 @@ func days_until_spoiled(c: Dictionary) -> int:
 # 明日の時点の育った日数(今日までの水やりはすべて数える)
 func _growth_tomorrow(c: Dictionary) -> float:
 	var elapsed: int = day_number() + 1 - int(c.sown_day)
-	return elapsed * DRY_GROWTH + int(c.water_days) * (1.0 - DRY_GROWTH) + float(c.get("head", 0.0))
+	var dry := dry_rate(c.kind)
+	return elapsed * dry + int(c.water_days) * (1.0 - dry) + float(c.get("head", 0.0))
 
 # 明日の畑の見込み(日記用)。ripe: 収穫できる区画(今できているものも含む) / spoiling: 明日傷みはじめる区画
 # 明日の霜で枯れる分はここでは引かない(霜は frost_is_near で別に知らせる)
@@ -377,7 +394,7 @@ func tomorrow_counts() -> Dictionary:
 		var over: float = _growth_tomorrow(c) - float(CROPS[c.kind].grow_days)
 		if over >= 0.0:
 			counts.ripe += 1
-			if over / DRY_GROWTH > float(CROPS[c.kind].keep_days) and not is_spoiled(c):
+			if over / dry_rate(c.kind) > float(CROPS[c.kind].keep_days) and not is_spoiled(c):
 				counts.spoiling += 1
 	return counts
 

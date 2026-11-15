@@ -85,6 +85,7 @@ const GOODS := [
 	{"id": "rye_seed", "species": "rye", "form": "crop_seed", "amount": 1, "price": 50},
 	{"id": "soba_seed", "species": "soba", "form": "crop_seed", "amount": 1, "price": 60},
 	{"id": "kibi_seed", "species": "kibi", "form": "crop_seed", "amount": 1, "price": 60},
+	{"id": "rice_seed", "species": "rice", "form": "crop_seed", "amount": 1, "price": 80},  # 稲の苗 1 区画ぶん(2026-11-15。仮の数字)
 	{"id": "logs", "species": "log", "form": "material", "amount": 5, "price": 1500},
 	# 小屋(2026-11-11 とむ決定。値段は仮の数字)。増築は窓ガラス・かまど・釘の代金で、丸太(14 本)は別に要る。家具は増築した部屋に置く
 	{"id": "cabin_extension", "species": "extension", "form": "extension", "amount": 1, "price": 8000},
@@ -114,6 +115,7 @@ const SELL_PRICES := {
 	"cabbage": 20, "hakusai": 15, "spinach": 60, "komatsuna": 40, "edamame": 80, "corn": 60, "onion": 20, "negi": 40,
 	# 穀物(1kg あたり)と粉(flour_ + 穀物。挽く手間のぶん穀物の 1.5 倍)。2026-11-14 の仮の数字
 	"wheat": 40, "rye": 45, "soba": 90, "kibi": 80,
+	"rice": 50,  # 米(玄米 1kg。2026-11-15 の仮の数字)
 	"flour_wheat": 60, "flour_rye": 70, "flour_soba": 135, "flour_kibi": 120,
 	"seedling_tomato": 150, "seedling_cucumber": 120,
 	"jam": 75, "sauce": 150, "pickles": 35, "garlic_pickle": 120, "pirozhki": 12,
@@ -126,6 +128,7 @@ const SELL_PRICES := {
 	"pumpkin_soup": 60, "imoni": 53,
 	# 穀物と粉の料理。材料を売るよりおよそ 2 倍(今までと同じ置き方)
 	"rye_bread": 70, "bliny": 20, "udon": 40, "soba_noodle": 68, "kibi_dango": 24, "kasha": 45,
+	"onigiri": 25,  # 米 1kg → 4 個。材料を売るよりおよそ 2 倍
 	# 自然の木の種(seed_ + 樹種。1 粒あたり。2026-11-11 とむ決定: 売れるが買えない)。外の林で年に数日しか拾えないので、市場の種より少し高い
 	"seed_buna": 15, "seed_mizunara": 8, "seed_harunire": 4, "seed_nanakamado": 6, "seed_oyamazakura": 8, "seed_yamazakura": 8,
 	"seed_akashide": 4, "seed_mizuki": 5, "seed_enoki": 5, "seed_hannoki": 3, "seed_egonoki": 5, "seed_tsuge": 10,

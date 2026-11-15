@@ -50,8 +50,8 @@ const ASK := {
 	"hoshigaki": 3, "marmalade": 1, "shikuwasa_juice": 2, "umeboshi": 1, "kuri_kanroni": 1, "dried_mango": 2, "papaya_pickle": 1,
 	"takuan": 2, "sauerkraut": 1, "hakusai_zuke": 1, "nasu_zuke": 1, "hoshiimo": 3, "goya_champuru": 2, "zunda": 3, "pumpkin_soup": 1, "imoni": 2,
 	# 穀物と粉の料理(2026-11-14)
-	"wheat": 2, "rye": 2, "soba": 1, "kibi": 1,
-	"rye_bread": 1, "bliny": 3, "udon": 2, "soba_noodle": 1, "kibi_dango": 3, "kasha": 1,
+	"wheat": 2, "rye": 2, "soba": 1, "kibi": 1, "rice": 2,
+	"rye_bread": 1, "bliny": 3, "udon": 2, "soba_noodle": 1, "kibi_dango": 3, "kasha": 1, "onigiri": 3,
 }
 const BEEKEEPER := "fyodor"  # 蜂を分けてくれる人
 const FIREWOOD := "firewood"   # 冬の頼みごとの薪(Kitchen.firewood。市場では売れない)
