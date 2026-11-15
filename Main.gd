@@ -75,7 +75,7 @@ const BUY_PAGES := [
 	{"name": "豆と穀物の種", "forms": ["crop_seed"], "groups": ["bean"]},  # 穀物を足して 1 列 15 行を超えるため分けた(2026-11-14)
 	{"name": "丸太", "forms": ["material"]},
 	{"name": "小屋", "forms": ["extension", "furniture"]},
-	{"name": "道具と燃料", "forms": ["tool", "fuel"]},
+	{"name": "道具と燃料", "forms": ["tool", "fuel", "straw"]},
 ]
 const TOOL_NAMES := {"big_can": "10Lのジョウロ(1杯で10か所)", "pump": "エンジンポンプ(井戸か池からまとめて水やり)",
 	"chainsaw": "チェーンソー(何本でも伐れる)", "splitter": "薪割り機(薪を一度に割る)",
@@ -269,6 +269,14 @@ func _check_new_day() -> void:
 	var g := world.garden
 	for kind in g.last_frost:
 		lines.append("霜で%sが枯れた(%d区画)" % [g.CROPS[kind].name, g.last_frost[kind]])
+	var p := world.pests
+	for d in p.last_damage:
+		lines.append(damage_text(d))
+	if not p.last_damage.is_empty():
+		lines.append("(餌台に餌や野菜を置いて生き物と仲良くなると、畑を荒らさなくなる。仲良し度 %d/%d・%d で荒らさない)" % [p.friendship, p.FRIEND_MAX, p.FRIEND_SAFE])
+	var weedy: int = g.weedy_count()
+	if weedy > 0:
+		lines.append("雑草が生えている区画がある(%d区画。E で抜く。わらを敷いた区画には生えない)" % weedy)
 	if g.frost_is_near(f.today()):
 		lines.append("もうすぐ霜が降りる(%s)。霜に弱い野菜は枯れるので、早めに収穫を" % g.frost_date_text())
 	if has_node("Visitor") and world.visitors.is_here():
@@ -285,6 +293,22 @@ func _check_new_day() -> void:
 	if not world.market.last_delivered.is_empty():
 		lines.append("冬に注文した春の種が届いた(%s)" % orders_text(world.market.last_delivered))
 	$HUD.show_message("\n".join(PackedStringArray(lines)), 15.0 if notice != "" else 10.0)
+
+# ゆうべ荒らされた区画の知らせ(Pests.last_damage の 1 件)
+func damage_text(d: Dictionary) -> String:
+	var who: String = world.wildlife.SPECIES[d.id].name
+	var crop: String = world.garden.CROPS[d.kind].name
+	if d.dug:
+		return "ゆうべ%sが来て、%sの区画を掘り返した(区画が空いた)" % [who, crop]
+	if d.gone:
+		return "ゆうべ%sが来て、%sを食べ尽くした(区画が空いた)" % [who, crop]
+	return "ゆうべ%sが来て、%sをかじった(その区画の収量が半分に)" % [who, crop]
+
+# 持ち物に出す、生き物との仲良し度
+func friendship_line() -> String:
+	var p := world.pests
+	var note := "畑を荒らさない" if p.is_safe() else "%d で畑を荒らさなくなる" % p.FRIEND_SAFE
+	return "%d/%d(%s。餌台に餌や野菜を置くと上がり、機械の音で下がる)" % [p.friendship, p.FRIEND_MAX, note]
 
 # ── 巣箱とはちみつ ─────────────────────────────────────────
 # J: 足元に巣箱を作る / くり抜く / はちみつを採る
@@ -348,25 +372,37 @@ func _feeder_action() -> void:
 		_nest_box_action(pos)
 		return
 	var front = pos + $Player.facing() * HIVE_FRONT if $Player.has_method("facing") else null
-	match fd.act(pos, front):
+	var p := world.pests
+	match world.feeder_action(pos, front, selected_crop):
 		"placed":
 			_act("build", fd.last_fed.pos)
-			$HUD.show_message(local_text("鳥の餌台を立てた(丸太 -%d本)。L で白樺の種を%d粒置くと鳥が来る(秋と冬)" % [fd.LOG_COST, fd.FEED_SEEDS]), 6.0)
+			$HUD.show_message(local_text("鳥の餌台を立てた(丸太 -%d本)。L で白樺の種を%d粒置くと鳥が来る(秋と冬)。畑の野菜を置くと、生き物と仲良くなれる" % [fd.LOG_COST, fd.FEED_SEEDS]), 6.0)
 		"fed":
 			_act("feed", fd.last_fed.pos)
-			$HUD.show_message(local_text("餌台に白樺の種を置いた(-%d粒)。少し離れて待つと鳥が来る(餌は翌日まで残る)" % fd.FEED_SEEDS), 6.0)
+			$HUD.show_message(local_text("餌台に白樺の種を置いた(-%d粒)。少し離れて待つと鳥が来る(餌は翌日まで残る)" % fd.FEED_SEEDS) + _friend_gain_text(), 6.0)
+		"offered":
+			_act("feed", fd.last_fed.pos)
+			$HUD.show_message("餌台の根元に%sを%dkg置いた。夜のあいだに生き物が食べに来る" % [world.garden.CROPS[fd.last_offered].name, fd.OFFER_KG] + _friend_gain_text(), 6.0)
 		"full":
-			$HUD.show_message("今日はもう餌を置いた(翌日まで残る)")
+			$HUD.show_message("今日はもうこの餌台に餌を置いた(仲良し度 %d/%d)" % [p.friendship, p.FRIEND_MAX])
 		"not_season":
-			$HUD.show_message("餌を置くのは秋と冬(ほかの季節は、鳥は自分で餌を見つけられる)", 5.0)
+			$HUD.show_message("置く野菜がない(鳥の餌の種を置くのは秋と冬。春と夏は、収穫した野菜を%dkg置ける)" % fd.OFFER_KG, 5.0)
 		"no_seed":
-			$HUD.show_message(local_text("白樺の種が%d粒いる(今 %d粒。白樺の根元に落ちるのを拾うか、市場で買える)" % [fd.FEED_SEEDS, int(world.forest.seeds[fd.feed_species()])]), 5.0)
+			$HUD.show_message(local_text("白樺の種が%d粒いる(今 %d粒。白樺の根元に落ちるのを拾うか、市場で買える)。収穫した野菜があれば、それを置ける" % [fd.FEED_SEEDS, int(world.forest.seeds[fd.feed_species()])]), 5.0)
 		"no_wood":
 			$HUD.show_message("丸太が%d本いる(市場で買うか、育った木を Z で伐る)" % fd.LOG_COST)
 		"too_many":
 			$HUD.show_message("餌台は%dつまで(種を置くときは、餌台のそばで L)" % fd.MAX_FEEDERS, 5.0)
 		"blocked":
 			$HUD.show_message("ここには立てられない(区画・小屋・池・木・巣箱のそばや、土地の端は空ける)", 5.0)
+
+# 餌を置いて上がった仲良し度の文言。例: 「。仲良し度 +5(45/100)」
+func _friend_gain_text() -> String:
+	var p := world.pests
+	if p.last_gain <= 0:
+		return "(仲良し度 %d/%d)" % [p.friendship, p.FRIEND_MAX]
+	var safe := "。もう畑を荒らさない" if p.is_safe() else ""
+	return "。仲良し度 +%d(%d/%d)%s" % [p.last_gain, p.friendship, p.FRIEND_MAX, safe]
 
 # L(育った木のそば): ムクドリの巣箱を作る / 続きを作る
 func _nest_box_action(pos: Vector2) -> void:
@@ -419,11 +455,14 @@ func feeder_line() -> String:
 	var near: Dictionary = fd.feeder_near(player_pos())
 	if near.is_empty():
 		return ""
+	var friend := "  仲良し度 %d/%d" % [world.pests.friendship, world.pests.FRIEND_MAX]
+	if fd.offered_today(near):
+		return "餌台: 今日は野菜を置いた" + friend
 	if not fd.can_feed_now():
-		return "餌台(餌を置くのは秋と冬)"
+		return "餌台: L で収穫した野菜を%dkg置ける" % fd.OFFER_KG + friend
 	var birds := _feeder_birds_text(near)
 	if fd.fed_today(near):
-		return "餌台: 今日は餌を置いた" + birds
+		return "餌台: 今日は餌を置いた" + birds + friend
 	if fd.is_fed(near):
 		return local_text("餌台: 餌が残っている(L で足す・白樺の種 %d粒)" % fd.FEED_SEEDS) + birds
 	return local_text("餌台: 餌がない(L で白樺の種を %d粒置く)" % fd.FEED_SEEDS)
@@ -883,6 +922,9 @@ const GUIDE_HINTS := {
 	"mejiro": "秋と冬、餌台に白樺の種を置くと来る",
 	"kogera": "冬の昼、育った木が3本あれば来る",
 	"starling": "春と夏、ムクドリの巣箱を掛けると来る",
+	"crow": "畑に野菜が4区画あれば昼に来る",
+	"boar": "区画が12あれば夜に来る",
+	"ezo_deer": "区画が12あれば夕方から朝に来る",
 	"strider": "池の水が半分を超えて2日(春〜秋)",
 	"reed": "池の水が半分を超えて5日",
 	"frog": "池の水が半分を超えて7日(春と夏)",
@@ -1630,6 +1672,14 @@ func plot_line() -> String:
 	if g.is_ripe(c):
 		return "足元の区画: %s 収穫できる(E・あと%d日で傷む)" % [crop_name, g.days_until_spoiled(c)]
 	var water := "水やり済み" if g.watered_today(c) else "Q で水やり"
+	if g.has_weeds(c):
+		water += "・雑草 E で抜く"
+	elif c.get("mulched", false):
+		water += "・わら"
+	elif g.straw > 0:
+		water += "・E でわらを敷く"
+	if int(c.get("bites", 0)) > 0:
+		water += "・かじられた"
 	return "足元の区画: %s あと%d日(%s)" % [crop_name, g.days_left(c), water]
 
 # n 個ごとに折り返して並べる(市場の画面と重ならない幅にするため)
@@ -1753,6 +1803,8 @@ func good_name(g: Dictionary) -> String:
 		return FURNITURE_NAMES[g.species]
 	if g.form == "material":
 		return "丸太(%d本)" % g.amount
+	if g.form == "straw":
+		return "わら(%d束・敷くと雑草が生えない・持っている %d束)" % [g.amount, world.garden.straw]
 	if g.species == "tomato":
 		return "%s(小屋で苗にする)" % world.garden.CROPS.tomato.seed_name
 	if g.form == "crop_seed":
@@ -2090,6 +2142,12 @@ func _harvest() -> void:
 		var kind: String = c.kind
 		_act("pick", c.pos, kind)
 		var spoiled := "傷んでいて半分だけ。" if g.last_harvest_spoiled else ""
+		if g.last_weed_loss > 0:
+			spoiled += "雑草で -%d%%。" % g.last_weed_loss
+		if g.last_bitten:
+			spoiled += "かじられていた。"
+		if g.last_straw > 0:
+			spoiled += "わら +%d束。" % g.last_straw
 		if g.last_meal_extra > 0:
 			spoiled += "漬物で +%dkg。" % g.last_meal_extra
 		$HUD.show_message("%sを%dkg収穫した(%s市場で1kg %d₽で売れる)" % [g.CROPS[kind].name, g.last_harvest_kg, spoiled, world.market.SELL_PRICES[kind]])
@@ -2097,9 +2155,21 @@ func _harvest() -> void:
 	if crop == "preview":
 		$HUD.show_message(HARVEST_MESSAGES.preview)
 		return
+	# 育っている区画に雑草が生えていれば抜く
+	if crop == "growing" and g.weed_at(pos) == "weeded":
+		_act("pull", c.pos)
+		var lost := "。ここまでで収量 -%d%%" % roundi(g.weed_loss(c) * 100.0) if g.weed_loss(c) > 0.0 else ""
+		var tip := "" if g.straw > 0 else "。わらを敷くと生えない(穀物の収穫か市場で)"
+		$HUD.show_message("%sの区画の雑草を抜いた%s。%d日たつとまた生える%s" % [g.CROPS[c.kind].name, lost, g.WEED_FREE_DAYS, tip], 5.0)
+		return
 	# 足元 2m 以内の果樹を収穫する
 	var result: String = world.forest.harvest_nearest(pos, REACH)
 	if crop == "growing" and result != "harvested":
+		# 果樹がなければ、わらを敷く
+		if g.mulch_at(pos) == "mulched":
+			_act("plant", c.pos)
+			$HUD.show_message("%sの区画にわらを敷いた(残り %d束)。収穫まで雑草が生えない" % [g.CROPS[c.kind].name, g.straw])
+			return
 		$HUD.show_message("%sはまだ育っている(あと%d日)" % [g.CROPS[c.kind].name, g.days_left(c)])
 		return
 	if result == "harvested":
@@ -2258,7 +2328,8 @@ func tools_owned_text() -> String:
 	for m in t.MACHINES:
 		if t.has(m):
 			names.append(MACHINE_NAMES[m])
-	return "・".join(names) + "  ガソリン %s(%sまで)" % [gas_text(t.gas), gas_text(t.MAX_GAS)]
+	var straw := "  わら %d束" % world.garden.straw if world.garden.straw > 0 else ""
+	return "・".join(names) + "  ガソリン %s(%sまで)" % [gas_text(t.gas), gas_text(t.MAX_GAS)] + straw
 
 # 足元の野菜を抜く。なければ 2m 以内の木を伐る(育った木は丸太になる。種は戻らない。
 # 達成済みのクエストは戻らない)。木もなければ、作業を始める前の小屋・池の場所を取り消す

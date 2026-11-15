@@ -102,6 +102,8 @@ const GOODS := [
 	# 穀物と粉(2026-11-14。値段は仮の数字)。石臼は手回し、製粉機はガソリンで動く
 	{"id": "quern", "species": "quern", "form": "tool", "amount": 1, "price": 2000},
 	{"id": "mill", "species": "mill", "form": "tool", "amount": 1, "price": 8000},
+	# 畑を守る(2026-11-15。値段は仮の数字)。わら 5 束(1 束で 1 区画に敷ける)。穀物を収穫しても取れる
+	{"id": "straw", "species": "straw", "form": "straw", "amount": 5, "price": 150},
 ]
 # 買い取り値(リンゴは 1 個あたり、野菜は 1kg あたりの ₽)。店頭の値段の半分くらい
 # seedling_ は小屋で育てた苗(1 鉢 = 1 区画ぶん)の買い取り値。
@@ -192,6 +194,10 @@ func buy(id: String) -> String:
 		return "bought"
 	if g.form == "tool" or g.form == "fuel":
 		tools.receive(g.species, int(g.amount))
+		changed.emit()
+		return "bought"
+	if g.form == "straw":
+		garden.straw += int(g.amount)
 		changed.emit()
 		return "bought"
 	var stock: Dictionary = forest.seeds

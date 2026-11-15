@@ -2,7 +2,8 @@ extends Node3D
 
 # ── 畑の野菜の 3D 表示 ───────────────────────────────────────
 # 状態とルールは logic/Garden.gd。区画(LandView3D の土の箱)の上に、畝に沿って 3 列 × 4 株を並べる。
-# 葉は育ち具合で大きくなり、収穫できる野菜には実を付ける。今日水をあげた区画は土が濡れて暗くなる
+# 葉は育ち具合で大きくなり、収穫できる野菜には実を付ける。今日水をあげた区画は土が濡れて暗くなる。
+# 雑草が生えた区画は、株のあいだに草が増える(生えて長いほど多い)。わらを敷いた区画は、土の上が黄土色になる
 const Garden = preload("res://logic/Garden.gd")
 const Look = preload("res://view/3d/Look.gd")
 
@@ -11,6 +12,9 @@ const COLUMNS := 4
 const BED_TOP := 0.12  # LandView3D の土の箱の上面
 const MIN_SCALE := 0.2 # まいたばかりの芽の大きさ(育ちきった葉に対する割合)
 const SPOILED := Color(0.36, 0.26, 0.14)  # 傷んだ実の色
+const WEED := Color(0.70, 0.74, 0.26)     # 雑草の色(野菜の葉と見分けられるよう、黄色っぽく明るい)
+const STRAW := Color(0.80, 0.68, 0.40)    # 敷いたわらの色
+const MAX_WEEDS := 8                      # 1 区画に見せる雑草の株の数(生えて 4 日でいっぱい)
 
 # size: 育ちきった葉の幅・高さ・奥行き(m) / ball: 丸い葉(false なら細長い円錐)
 # ripe / ripe_size: 収穫できるときに見える実の色と大きさ
@@ -50,6 +54,7 @@ var _ball := SphereMesh.new()
 var _cone := CylinderMesh.new()
 var _wet_mesh := BoxMesh.new()
 var _wet_mat := Look.mat(Color(0.14, 0.09, 0.06, 0.55))
+var _straw_mesh := BoxMesh.new()
 var _mats := {}
 
 func setup(g: Garden) -> void:
@@ -65,6 +70,7 @@ func setup(g: Garden) -> void:
 	_cone.rings = 1
 	var size: float = garden.land.PLOT_SIZE - 0.3
 	_wet_mesh.size = Vector3(size, 0.01, size)
+	_straw_mesh.size = Vector3(size, 0.03, size)
 	garden.changed.connect(_rebuild)
 	garden.forest.changed.connect(_rebuild)  # 先送りプレビュー・日付の変化
 	_rebuild()
@@ -87,6 +93,11 @@ func _rebuild() -> void:
 			var wet := Look.mesh_node(_wet_mesh, _wet_mat, Look.at(c.pos, BED_TOP + 0.005))
 			wet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(wet)
+		if c.get("mulched", false):
+			var straw := Look.mesh_node(_straw_mesh, _mat(STRAW), Look.at(c.pos, BED_TOP + 0.015))
+			straw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(straw)
+		_add_weeds(c, plot)
 		for r in range(ROWS):
 			for k in range(COLUMNS):
 				var p := Vector2(
@@ -96,3 +107,15 @@ func _rebuild() -> void:
 				if ratio >= 1.0:
 					# 引いたカメラからも分かるように、実は葉の上に見せる
 					add_child(Look.mesh_node(_ball, _mat(fruit), Look.at(p, BED_TOP + leaf.y), look.ripe_size))
+
+# 雑草: 株と株のあいだ(畝のあいだ)に、尖った草の束を置く。場所は区画の位置から決まる(描き直しても動かない)
+func _add_weeds(c: Dictionary, plot: float) -> void:
+	var n: int = mini(MAX_WEEDS, garden.weeds_now(c) * 2)
+	if n <= 0:
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = ("weed:%.1f:%.1f" % [c.pos.x, c.pos.y]).hash()
+	for i in range(n):
+		var p := Vector2(c.pos.x + rng.randf_range(-0.45, 0.45) * plot, c.pos.y - plot * 0.5 + plot * (rng.randi_range(0, ROWS) + 0.5) / (ROWS + 1.0))
+		var h: float = rng.randf_range(0.22, 0.4)
+		add_child(Look.mesh_node(_cone, _mat(WEED), Look.at(p, BED_TOP + h * 0.5), Vector3(0.22, h, 0.22)))

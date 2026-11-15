@@ -11,6 +11,7 @@ const Forest = preload("res://logic/Forest.gd")
 
 signal changed  # 見た目に関わる状態が変わった
 signal dirty    # セーブに入る状態が変わった
+signal machine_used(machine: String)  # ガソリンで動く機械を動かした(音で生き物が逃げる。Pests.on_machine)
 
 const CAN_SMALL := 5     # はじめのジョウロ(L)。1L で 1 か所(区画 1 つか木 1 本)
 const CAN_BIG := 10      # 市場で買える大きいジョウロ(L)
@@ -102,6 +103,7 @@ func use_gas(machine: String) -> bool:
 	gas -= gas_needed(machine)
 	last_machine = machine
 	_commit()
+	machine_used.emit(machine)
 	return true
 
 # 市場で買ったものを受け取る。結果: bought / owned(道具はひとつずつ) / full(ガソリンはもう入らない) / unknown

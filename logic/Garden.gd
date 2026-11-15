@@ -15,6 +15,16 @@ signal dirty    # セーブに入る状態が変わった
 const DRY_GROWTH := 0.5  # 水をやらなかった日の育ち(1 日あたり)
 const SEEDLING_HEAD_START := 2.0  # 苗から植えると、これだけ育った状態から始まる(日)
 const NEW_PLOTS_PER_DAY := 2  # 1 日に新しく耕せる区画の数(手で耕すのは重労働。区画はお金がかからないので、ここで増え方を決める)
+# ── 畑を守る(2026-11-15。数字は仮) ──
+# 雑草: まいてから(抜いてから)WEED_FREE_DAYS 日たつと生えはじめ、生えている 1 日ごとに収量が WEED_LOSS ずつ減る(WEED_MAX_LOSS まで)。
+# 枯れはしない。E で抜く。わらを敷いた区画は、収穫まで生えない。わらは穀物を収穫すると取れ、市場でも買える
+const WEED_FREE_DAYS := 3
+const WEED_LOSS := 0.1
+const WEED_MAX_LOSS := 0.5
+const STRAW_PER_GRAIN := 2  # 穀物 1 区画の収穫で取れるわら(束。1 束で 1 区画に敷ける)
+# 食害(logic/Pests.gd): かじられた区画は、1 回ごとに収量が BITE_YIELD 倍になり、BITES_TO_LOSE 回で食べ尽くされる
+const BITE_YIELD := 0.5
+const BITES_TO_LOSE := 3
 
 # seasons: まける季節(苗を植えられる季節) / grow_days: 毎日水をやったときの日数(現実の日数から縮めたもの)
 # yield_kg: 1 区画(9m²)の収量。現実の 1m² あたりの目安 × 9
@@ -66,12 +76,17 @@ const SPOILED_YIELD := 0.5  # 傷んだ野菜の収量の割合
 var land: Land      # GameWorld が設定する
 var forest: Forest  # 季節・日付・雨・先送りプレビューは Forest が持っている
 
-var crops := []    # [{pos: Vector2(区画の中心), kind, sown_day: int, water_days: int, last_watered}]
+var crops := []    # [{pos: Vector2(区画の中心), kind, sown_day: int, water_days: int, last_watered, head,
+                   #   weeded_day: int(最後に草を抜いた日。はじめはまいた日), weed_days: int(抜く前に生えていた日数の合計), mulched: bool, bites: int}]
+var straw := 0     # わら(束)
 var seeds := {}    # 野菜ごとの種の数(1 つで 1 区画ぶん)
 var produce := {}  # 野菜ごとの収穫物(kg)。市場で売る
 var last_harvest_kg := 0  # 直前の収穫の量(文言用)
 var last_harvest_spoiled := false  # 直前の収穫が傷んでいたか(文言用)
 var last_meal_extra := 0  # 直前の収穫のうち、食べたもので増えた量(文言用)
+var last_weed_loss := 0   # 直前の収穫で、雑草で減った割合(%。文言用)
+var last_bitten := false  # 直前の収穫が、かじられていたか(文言用)
+var last_straw := 0       # 直前の収穫で取れたわら(束。文言用)
 var harvest_rate := Callable()  # () -> float。GameWorld が Kitchen.harvest_rate を設定する(台所は畑を持つので、互いに持つと解放されない)
 var last_frost := {}      # 今日の確認で霜で枯れた区画の数 {kind: 数}(知らせる用・保存しない)
 var tilled_day := ""      # 最後に区画を耕した日(YYYY-MM-DD)
@@ -123,6 +138,7 @@ func sow(pos: Vector2, kind: String, from_seedling := false) -> String:
 	crops.append({
 		"pos": c, "kind": kind, "sown_day": day_number(), "water_days": 0, "last_watered": "",
 		"head": SEEDLING_HEAD_START if from_seedling else 0.0,
+		"weeded_day": day_number(), "weed_days": 0, "mulched": false, "bites": 0,
 	})
 	# 雨の日は一日中降っている扱い。あとからまいた区画も水やり済みにする
 	if forest.is_raining():
@@ -210,9 +226,17 @@ func harvest_at(pos: Vector2) -> String:
 	if not is_ripe(c):
 		return "growing"
 	last_harvest_spoiled = is_spoiled(c)
+	last_weed_loss = roundi(weed_loss(c) * 100.0)
+	last_bitten = int(c.get("bites", 0)) > 0
 	last_harvest_kg = int(CROPS[c.kind].yield_kg)
 	if last_harvest_spoiled:
 		last_harvest_kg = ceili(last_harvest_kg * SPOILED_YIELD)
+	# 雑草とかじられた分(どちらもない区画は今までと同じ量)
+	if last_weed_loss > 0 or last_bitten:
+		var kg: float = last_harvest_kg * (1.0 - weed_loss(c)) * pow(BITE_YIELD, int(c.get("bites", 0)))
+		last_harvest_kg = maxi(1, ceili(kg - 0.001))
+	last_straw = STRAW_PER_GRAIN if CROPS[c.kind].get("grain", false) else 0
+	straw += last_straw
 	var before_meal := last_harvest_kg
 	if harvest_rate.is_valid():
 		last_harvest_kg = ceili(last_harvest_kg * float(harvest_rate.call()))
@@ -221,6 +245,70 @@ func harvest_at(pos: Vector2) -> String:
 	crops.erase(c)
 	_commit()
 	return "harvested"
+
+# ── 雑草とわら ─────────────────────────────────────────────
+# 今生えている雑草の日数(0 なら生えていない)。わらを敷いた区画には生えない
+func weeds_now(c: Dictionary) -> int:
+	if c.get("mulched", false):
+		return 0
+	return maxi(0, day_number() - int(c.get("weeded_day", day_number())) - WEED_FREE_DAYS)
+
+func has_weeds(c: Dictionary) -> bool:
+	return weeds_now(c) > 0
+
+# 雑草で減る収量の割合(0〜WEED_MAX_LOSS)。抜く前に生えていた日数も数える
+func weed_loss(c: Dictionary) -> float:
+	return minf(WEED_MAX_LOSS, (int(c.get("weed_days", 0)) + weeds_now(c)) * WEED_LOSS)
+
+# 雑草が生えている区画の数(日記用)
+func weedy_count() -> int:
+	return crops.filter(func(c): return has_weeds(c)).size()
+
+# 草が生えはじめるまでの日数を、今日から数え直す
+func _clear_weeds(c: Dictionary) -> void:
+	c.weed_days = int(c.get("weed_days", 0)) + weeds_now(c)
+	c.weeded_day = day_number()
+
+# E(育っている区画): 雑草を抜く。結果: weeded / none / no_weeds
+func weed_at(pos: Vector2) -> String:
+	var c := crop_at(pos)
+	if c.is_empty():
+		return "none"
+	if not has_weeds(c):
+		return "no_weeds"
+	_clear_weeds(c)
+	_commit()
+	return "weeded"
+
+# E(育っている区画): わらを 1 束敷く。結果: mulched / none / already / no_straw
+func mulch_at(pos: Vector2) -> String:
+	var c := crop_at(pos)
+	if c.is_empty():
+		return "none"
+	if c.get("mulched", false):
+		return "already"
+	if straw <= 0:
+		return "no_straw"
+	straw -= 1
+	_clear_weeds(c)
+	c.mulched = true
+	_commit()
+	return "mulched"
+
+# ── 食害(logic/Pests.gd が呼ぶ) ─────────────────────────────────
+# c をかじる。BITES_TO_LOSE 回で食べ尽くされて区画が空く。食べ尽くされたら true
+func bite(c: Dictionary) -> bool:
+	c.bites = int(c.get("bites", 0)) + 1
+	var gone: bool = c.bites >= BITES_TO_LOSE
+	if gone:
+		crops.erase(c)
+	_commit()
+	return gone
+
+# c を掘り返す(イノシシ・シカ。区画が空く)
+func dig_up(c: Dictionary) -> void:
+	crops.erase(c)
+	_commit()
 
 # 足元の野菜を抜く(種は戻らない)。抜いたら true
 func remove_at(pos: Vector2) -> bool:
@@ -374,12 +462,14 @@ func to_save() -> Dictionary:
 		list.append({
 			"x": c.pos.x, "y": c.pos.y, "kind": c.kind, "sown_day": c.sown_day,
 			"water_days": c.water_days, "last_watered": c.last_watered, "head": c.get("head", 0.0),
+			"weeded_day": c.get("weeded_day", day_number()), "weed_days": c.get("weed_days", 0), "mulched": c.get("mulched", false), "bites": c.get("bites", 0),
 		})
-	return {"crops": list, "seeds": seeds, "produce": produce, "tilled_day": tilled_day, "tilled_count": tilled_count}
+	return {"crops": list, "seeds": seeds, "produce": produce, "tilled_day": tilled_day, "tilled_count": tilled_count, "straw": straw}
 
 func from_save(d: Dictionary) -> void:
 	tilled_day = SaveRead.text(d, "tilled_day")
 	tilled_count = SaveRead.count(d, "tilled_count")
+	straw = SaveRead.count(d, "straw")
 	seeds = _zero_counts()
 	produce = _zero_counts()
 	var saved_seeds := SaveRead.dict(d.get("seeds"))
@@ -401,5 +491,10 @@ func from_save(d: Dictionary) -> void:
 			"water_days": SaveRead.count(c, "water_days"),
 			"last_watered": SaveRead.text(c, "last_watered"),
 			"head": maxf(0.0, SaveRead.num(c, "head")),
+			# 雑草の記録がない古いセーブの区画は、読んだ日から数える(読んだとたんに草だらけにならないように)
+			"weeded_day": SaveRead.whole(c, "weeded_day") if SaveRead.is_num(c.get("weeded_day")) else day_number(),
+			"weed_days": SaveRead.count(c, "weed_days"),
+			"mulched": c.get("mulched", false) == true,
+			"bites": mini(BITES_TO_LOSE - 1, SaveRead.count(c, "bites")),
 		})
 	changed.emit()

@@ -39,6 +39,10 @@ const MOVES := {
 	"yamagara": {"roam": 0.26, "speed": 0.45, "flee": 8.0, "run": 8.0, "hop": 0.05, "hop_rate": 16.0, "wings": true, "arc": 2.5, "perch": Feeders.TABLE_H, "back": 5.0},
 	"mejiro": {"roam": 0.26, "speed": 0.5, "flee": 8.0, "run": 8.0, "hop": 0.05, "hop_rate": 17.0, "wings": true, "arc": 2.5, "perch": Feeders.TABLE_H, "back": 5.0},
 	"kogera": {"roam": 0.08, "speed": 0.12, "flee": 7.0, "run": 9.0, "hop": 0.07, "hop_rate": 11.0, "wings": true, "arc": 2.5, "perch": 1.7, "back": 4.5, "perch_r": 0.14, "side": true},
+	# ── 畑を守るで足した生き物(2026-11-15) ──
+	"crow": {"roam": 3.0, "speed": 0.9, "flee": 6.0, "run": 14.0, "hop": 0.06, "hop_rate": 10.0, "wings": true, "arc": 3.0},  # 畑を歩いてつつく
+	"boar": {"roam": 5.0, "speed": 0.9, "flee": 4.0, "run": 12.0, "hop": 0.03, "hop_rate": 8.0, "wings": false, "arc": 0.0},  # 鼻で土を掘りながら歩く
+	"ezo_deer": {"roam": 6.0, "speed": 1.1, "flee": 8.0, "run": 18.0, "hop": 0.1, "hop_rate": 7.0, "wings": false, "arc": 0.0},
 }
 # 飛び回る生き物(MOVES にないもの)の飛び方。なければ虫(チョウ・ミツバチ)と同じ
 #   speed: 回る速さ / radius: 住みかのまわりを飛ぶ広さ(m) / y: 高さ / bob・bob_rate: 上下の揺れ / flap・amount: 羽ばたき
@@ -52,7 +56,8 @@ const BUTTERFLY_COLORS := [Color(0.96, 0.96, 0.88), Color(0.96, 0.82, 0.25), Col
 const FOLD_ANGLE := 1.4       # 鳥が羽を背中へたたむ角度(rad)
 # 見下ろしのカメラから見えるように、形に掛ける倍率(いつものカメラの距離で点にならないところ)
 const DISPLAY_SCALE := {"sparrow": 1.5,"squirrel": 1.8, "butterfly": 2.2, "bee": 2.4, "hare": 1.5, "hedgehog": 1.7, "migrant": 1.0, "tit": 1.0, "bullfinch": 1.1, "starling": 1.5, "woodpecker": 1.5,
-	"ezo_squirrel": 1.8, "snow_hare": 1.5, "kuina": 1.6, "tanuki": 1.5, "fox": 1.4, "fruit_bat": 1.6, "yamagara": 1.05, "mejiro": 1.0, "kogera": 1.25}
+	"ezo_squirrel": 1.8, "snow_hare": 1.5, "kuina": 1.6, "tanuki": 1.5, "fox": 1.4, "fruit_bat": 1.6, "yamagara": 1.05, "mejiro": 1.0, "kogera": 1.25,
+	"crow": 1.4, "boar": 1.3, "ezo_deer": 1.25}
 const PERCH_SLOTS := 3        # 台の上の持ち場の数(餌台 1 つに来る鳥の数)。鳥が重なって、かたまりに見えないように分ける
 const PERCH_R := 0.3          # 持ち場の、台の中心からの距離(m)
 const ON_TABLE_DIST := 0.5    # 住みかからこの距離までは台の上にいる
@@ -343,6 +348,12 @@ func _build(id: String, a: Dictionary) -> Node3D:
 			_tit(n, a, MEJIRO)
 		"kogera":
 			_woodpecker(n, a, KOGERA)
+		"crow":
+			_crow(n, a)
+		"boar":
+			_boar(n)
+		"ezo_deer":
+			_deer(n)
 	n.scale = Vector3.ONE * float(DISPLAY_SCALE[id])
 	if MOVES.has(id):
 		_fold(a)
@@ -540,6 +551,55 @@ func _fox(n: Node3D) -> void:
 	var tail := _part(n, _ball, fur, Vector3(0, 0.24, 0.36), Vector3(0.13, 0.13, 0.34))
 	tail.rotation.x = 0.35
 	_part(n, _ball, white, Vector3(0, 0.17, 0.52), Vector3.ONE * 0.09)
+
+# カラス: 黒い体に太いくちばし。見下ろしでも黒く見えるよう、少しだけ青みのある黒
+func _crow(n: Node3D, a: Dictionary) -> void:
+	var black := Color(0.12, 0.12, 0.16)
+	_part(n, _ball, black, Vector3(0, 0.2, 0.02), Vector3(0.24, 0.24, 0.42))
+	_part(n, _ball, black, Vector3(0, 0.34, -0.17), Vector3.ONE * 0.19)
+	_part(n, _cone, Color(0.16, 0.16, 0.18), Vector3(0, 0.33, -0.31), Vector3(0.07, 0.14, 0.06)).rotation.x = -PI * 0.5
+	_part(n, _box, black, Vector3(0, 0.22, 0.28), Vector3(0.1, 0.03, 0.2))
+	for side in [-1.0, 1.0]:
+		_part(n, _box, Color(0.20, 0.18, 0.16), Vector3(side * 0.05, 0.05, 0.02), Vector3(0.025, 0.12, 0.025))
+		_wing(a, n, Color(0.16, 0.16, 0.22), Vector3(side * 0.1, 0.25, 0.03), Vector3(0.24, 0.02, 0.22), side)
+
+# イノシシ: 灰茶色のずんぐりした体、長い鼻先、小さな耳、白い牙。夜でも見えるように実物より明るい色
+func _boar(n: Node3D) -> void:
+	var fur := Color(0.46, 0.38, 0.30)
+	var dark := Color(0.20, 0.16, 0.13)
+	_part(n, _ball, fur, Vector3(0, 0.3, 0.05), Vector3(0.38, 0.38, 0.62))
+	_part(n, _ball, fur.darkened(0.15), Vector3(0, 0.42, -0.02), Vector3(0.2, 0.14, 0.5))  # 背中のたてがみ
+	for x in [-0.1, 0.1]:
+		for z in [-0.16, 0.24]:
+			_part(n, _box, dark, Vector3(x, 0.08, z), Vector3(0.07, 0.16, 0.07))
+	_part(n, _ball, fur, Vector3(0, 0.3, -0.3), Vector3(0.26, 0.26, 0.26))
+	_part(n, _box, fur.darkened(0.1), Vector3(0, 0.24, -0.46), Vector3(0.12, 0.11, 0.18))
+	_part(n, _box, Color(0.30, 0.22, 0.20), Vector3(0, 0.24, -0.56), Vector3(0.11, 0.1, 0.03))
+	for side in [-1.0, 1.0]:
+		_part(n, _cone, Color(0.94, 0.92, 0.84), Vector3(side * 0.06, 0.24, -0.5), Vector3(0.025, 0.08, 0.025))
+		_part(n, _cone, fur, Vector3(side * 0.09, 0.45, -0.28), Vector3(0.07, 0.09, 0.04))
+	_part(n, _box, dark, Vector3(0, 0.3, 0.37), Vector3(0.03, 0.12, 0.03))
+
+# エゾシカ: 赤茶色の体、白いお尻、長い脚。雄は枝分かれした角
+func _deer(n: Node3D) -> void:
+	var fur := Color(0.62, 0.42, 0.26)
+	var white := Color(0.96, 0.94, 0.90)
+	_part(n, _ball, fur, Vector3(0, 0.6, 0.02), Vector3(0.3, 0.32, 0.66))
+	_part(n, _ball, white, Vector3(0, 0.62, 0.32), Vector3(0.2, 0.22, 0.1))
+	for x in [-0.09, 0.09]:
+		for z in [-0.2, 0.22]:
+			_part(n, _box, fur.darkened(0.25), Vector3(x, 0.24, z), Vector3(0.05, 0.48, 0.05))
+	var neck := _part(n, _box, fur, Vector3(0, 0.8, -0.28), Vector3(0.12, 0.34, 0.12))
+	neck.rotation.x = 0.4
+	_part(n, _ball, fur, Vector3(0, 0.98, -0.38), Vector3(0.14, 0.15, 0.24))
+	_part(n, _ball, Color(0.16, 0.12, 0.10), Vector3(0, 0.95, -0.5), Vector3.ONE * 0.05)
+	var antler := Color(0.84, 0.76, 0.62)
+	for side in [-1.0, 1.0]:
+		_part(n, _cone, fur, Vector3(side * 0.09, 1.06, -0.34), Vector3(0.06, 0.1, 0.04)).rotation.z = -side * 0.9
+		var beam := _part(n, _box, antler, Vector3(side * 0.07, 1.2, -0.32), Vector3(0.03, 0.3, 0.03))
+		beam.rotation.z = -side * 0.35
+		var tine := _part(n, _box, antler, Vector3(side * 0.1, 1.24, -0.4), Vector3(0.025, 0.16, 0.025))
+		tine.rotation.x = -0.6
 
 # オリイオオコウモリ: 黒っぽい体に金色の肩、大きな羽。夜の木の上を飛ぶ
 func _fruit_bat(n: Node3D, a: Dictionary) -> void:

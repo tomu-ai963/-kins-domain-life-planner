@@ -29,6 +29,7 @@ const Wilds = preload("res://logic/Wilds.gd")
 const Well = preload("res://logic/Well.gd")
 const Tools = preload("res://logic/Tools.gd")
 const Mill = preload("res://logic/Mill.gd")
+const Pests = preload("res://logic/Pests.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
 # セーブの版(2026-11-11 から書く。レビュー S4)。セーブの形を変える変更(名前・単位を変える、意味を変える)をしたら 1 上げ、
@@ -67,6 +68,7 @@ var wilds := Wilds.new()         # 一族の土地の外の自然の林(県か�
 var well := Well.new()           # 井戸(2026-11-14)
 var tools := Tools.new()         # ジョウロ・斧・ガソリンで動く機械(2026-11-14)
 var mill := Mill.new()           # 石臼と粉(2026-11-14)
+var pests := Pests.new()         # 畑を荒らす生き物と仲良し度(2026-11-15)
 var last_pumped := [0, 0]        # 直前にポンプでまとめて水をやった [区画の数, 木の数](文言用・保存しない)
 var is_new_game := false         # 読み込むセーブがなかった(新しく始めた)。県を選んだときに、その土地のはじめの種を配る
 var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
@@ -142,6 +144,11 @@ func _init() -> void:
 	guide.well = well
 	guide.tools = tools
 	wildlife.feeders = feeders
+	feeders.garden = garden
+	pests.forest = forest
+	pests.garden = garden
+	pests.wildlife = wildlife
+	tools.machine_used.connect(pests.on_machine)
 	market.feeders = feeders
 	visitors.feeders = feeders
 	guide.feeders = feeders
@@ -177,6 +184,7 @@ func _init() -> void:
 	well.dirty.connect(save_game)
 	tools.dirty.connect(save_game)
 	mill.dirty.connect(save_game)
+	pests.dirty.connect(save_game)
 
 # 巣箱・餌台・井戸を置く場所に、ほかの物(餌台・井戸)がかかるか(Bees.is_blocked から呼ぶ)
 func _taken_nearby(pos: Vector2, radius: float) -> bool:
@@ -335,6 +343,13 @@ func split_wood() -> String:
 func mill_action(pos: Vector2, front: Vector2, prefer := "") -> String:
 	return mill.act(pos, front, prefer)
 
+# L(餌台のそば): 餌を置く。置けたら、その餌台で今日はじめてなら仲良し度が上がる。結果は Feeders.act
+func feeder_action(pos: Vector2, front = null, prefer := "") -> String:
+	var result: String = feeders.act(pos, front, prefer)
+	if result == "fed" or result == "offered":
+		pests.befriend(feeders.last_fed.pos)
+	return result
+
 # I: 井戸の場所を決める / 掘る。結果は Well.act
 func well_action(pos: Vector2, front: Vector2) -> String:
 	return well.act(pos, front)
@@ -348,6 +363,7 @@ func check_new_day() -> String:
 		return id
 	wilds.drop_today()  # 外の林で、今日が種の落ちる日の木
 	garden.apply_frost()
+	pests.night_passed()  # ゆうべ来ていた生き物が畑を荒らす(仲良し度しだい)
 	if id == "rain":
 		garden.water_all()
 	pond.catch_up()
@@ -413,6 +429,7 @@ func save_game() -> void:
 	data["well"] = well.to_save()
 	data["tools"] = tools.to_save()
 	data["mill"] = mill.to_save()
+	data["pests"] = pests.to_save()
 	_write_save(JSON.stringify(data))
 
 # 別の名前(.tmp)に書き、書けたことを確かめてから本物の名前に付け替える。
@@ -549,6 +566,7 @@ func load_game() -> void:
 	well.from_save(SaveRead.dict(data.get("well")))
 	tools.from_save(SaveRead.dict(data.get("tools")))
 	mill.from_save(SaveRead.dict(data.get("mill")))  # 石臼の記録がないセーブ(2026-11-14 より前)は、石臼なし・粉なし
+	pests.from_save(SaveRead.dict(data.get("pests")))  # 仲良し度の記録がないセーブ(2026-11-15 より前)は、はじめの仲良し度
 	sound_level = clampi(SaveRead.whole(data, "sound_level", 3), 0, 3)
 	# 県の記録がないセーブ(2026-11-11 より前)は、開いたときに一度だけ選ぶ
 	region.from_save(data.get("region"))

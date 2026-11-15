@@ -1,7 +1,8 @@
 extends RefCounted
 
 # ── 土地に来る生き物(描画を持たない) ──────────────────────────────
-# 土地の様子・季節・時間帯・天気から、今どの生き物が何匹いるかを決める。見て楽しむだけで、ルールには関わらない。
+# 土地の様子・季節・時間帯・天気から、今どの生き物が何匹いるかを決める。
+# 見て楽しむのが中心で、畑を荒らす生き物(食害)だけはルールに関わる(logic/Pests.gd。2026-11-15)。
 # 木や畑が増えると来る生き物が増える(現実でも、木と作物があると生き物が集まる)。
 # はじめて来た生き物だけ覚えて知らせる。池の生き物は logic/Pond.gd が持つ。
 # 文言は Main、見た目は view/ が決める。座標の単位は m
@@ -56,6 +57,10 @@ const SPECIES := {
 	"yamagara": {"name": "ヤマガラ", "seasons": ["autumn", "winter"], "time": "day", "fair": false, "role": "bullfinch", "zones": WARM_ZONES, "regional": true},  # どんぐりが好き
 	"mejiro": {"name": "メジロ", "seasons": ["autumn", "winter"], "time": "day", "fair": false, "role": "bullfinch", "zones": ["nansei"], "regional": true},
 	"kogera": {"name": "コゲラ", "seasons": ["winter"], "time": "day", "fair": false, "role": "woodpecker", "zones": ["pacific", "setouchi", "south", "nansei"], "regional": true},
+	# ── 畑を守るで足した生き物(2026-11-15)。畑を荒らす(logic/Pests.gd) ──
+	"crow": {"name": "カラス", "seasons": ALL_YEAR, "time": "day", "fair": false, "regional": true},  # どこにでもいる。実った野菜や豆をつつく
+	"boar": {"name": "イノシシ", "seasons": ALL_YEAR, "time": "night", "fair": false, "zones": HONSHU_TO_KYUSHU + ["nansei"], "regional": true},  # 沖縄はリュウキュウイノシシ。いもを掘り返す
+	"ezo_deer": {"name": "エゾシカ", "seasons": ALL_YEAR, "time": "dusk", "fair": false, "role": "boar", "zones": ["hokkaido"], "regional": true},  # 北海道の畑の食害の主
 }
 const TITS_PER_FEEDER := 2       # 餌のある餌台 1 つに来るシジュウカラ(秋と冬)
 const BULLFINCHES_PER_FEEDER := 1  # 餌のある餌台 1 つに来るウソ(冬だけ。雪の上で赤い胸が映える冬の鳥)
@@ -165,7 +170,15 @@ func _wanted(id: String) -> int:
 			return nest_boxes.starlings() if nest_boxes != null else 0
 		"fruit_bat":  # 夜、育った木が 3 本あれば来る。10 本で 2 匹
 			return mini(3, 1 + int(trees[1] / 10.0)) if trees[1] >= 3 else 0
+		"crow":  # 畑に野菜が 4 区画あれば来る。12 区画ごとに 1 羽増える
+			return mini(3, 1 + int(crops / 12.0)) if crops >= 4 else 0
+		"boar":  # 区画が 12 あれば、山から下りてくる(広い畑ほど見つかりやすい)
+			return mini(2, 1 + int(plots / 40.0)) if plots >= 12 else 0
 	return 0
+
+# 時間帯と天気を見ずに、今の季節にこの土地へ来るか(夜のあいだの食害を決める用)
+func would_come(id: String) -> bool:
+	return lives_here(id) and forest.season in SPECIES[id].seasons and _wanted(id) > 0
 
 # 今いる生き物の数 {id: 数}。いないものは入らない
 func counts() -> Dictionary:
@@ -218,10 +231,10 @@ func home_for(id: String, rng: RandomNumberGenerator, near: Vector2) -> Vector2:
 					spots.append(t.pos)
 			if not spots.is_empty():
 				return spots[rng.randi_range(0, spots.size() - 1)]
-		"butterfly", "bee":
+		"butterfly", "bee", "crow":
 			if not garden.crops.is_empty():
 				return garden.crops[rng.randi_range(0, garden.crops.size() - 1)].pos
-		"hare", "hedgehog":
+		"hare", "hedgehog", "boar":
 			if not land.plots.is_empty():
 				return land.plots[rng.randi_range(0, land.plots.size() - 1)]
 		"migrant":
