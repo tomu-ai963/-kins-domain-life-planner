@@ -63,14 +63,18 @@ func _process(_delta: float) -> bool:
 			_test_visitor_collision_off()
 			_test_tree_collision_gone()
 			_test_extension_collision()
+			_test_family_view()  # ほかの当たり判定のテストのあと(家族が歩き回るので)
+			_wait_until = Time.get_ticks_msec() + 200
+		13:
+			_test_family_collision()
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
-		14:
+		15:
 			_test_2d_still_works()
 			main.queue_free()
 			_remove_save()
-		16:
+		17:
 			print("RESULT: %d passed, %d failed" % [_passed, _failed])
 			quit(1 if _failed > 0 else 0)
 	return false
@@ -3363,3 +3367,150 @@ func _test_2d_still_works() -> void:
 	main._pond_action()
 	main._pond_action()
 	_check(main.world.pond.days_dug == 1, "2D でも池を掘れる")
+
+# ── 家族(2026-11-16) ─────────────────────────────────────────
+func _test_family_view() -> void:
+	print("家族")
+	var w = main.world
+	var f = w.family
+	var view: Node3D = main.get_node("Family")
+	var player: CharacterBody3D = main.get_node("Player")
+	var hud = main.get_node("HUD")
+	var press := func(code: int) -> void:
+		var e := InputEventKey.new()
+		e.keycode = code
+		e.pressed = true
+		main._unhandled_input(e)
+	_check(view.people_ids().is_empty() and view.tent_node() == null, "家族を決める前は誰もいない")
+	_check(main.family_line() == "まだ決めていない", "持ち物: まだ決めていない")
+	w.forest.trees.clear()
+	w.cabin.site = null
+	w.cabin.stage = 0
+	w.forest.changed.emit()
+	player.global_position = Vector3(30, 0, 30)
+	view.set_night(0.0)
+	# 選ぶ画面
+	main.open_family_picker()
+	_check(hud.is_picker_open() and not player.is_physics_processing(), "家族を選ぶ画面が開き、そのあいだは歩かない")
+	hud.family_picker.press("アリョーナ(妻)")
+	hud.family_picker.press("3人(ワーニャ 9歳・マーシャ 6歳・ポーリャ 3歳)")
+	hud.family_picker.press("この家族で暮らす")
+	_check(not hud.is_picker_open() and player.is_physics_processing() and f.chosen, "決めると閉じて、歩けるようになる")
+	_check(hud._message.contains("アリョーナ・ワーニャ・マーシャ・ポーリャと一緒に"), "家族の名前を知らせる")
+	_check(view.people_ids().size() == 4, "家族 4 人の姿がある")
+	_check(main.family_line().contains("ワーニャ(息子 9歳)") and main.family_line().contains("テントで休む"), "持ち物に家族と住まい")
+	var tent: Node3D = view.tent_node()
+	_check(tent != null and Vector2(tent.position.x, tent.position.z).is_equal_approx(f.tent), "テントが立つ")
+	_check(tent != null and tent.get_node_or_null("Cloth") != null and tent.get_node_or_null("Door") != null, "テントは布と入口でできている")
+	_check(view.figure_of("polya").scale.x < view.figure_of("vanya").scale.x and view.figure_of("vanya").scale.x < view.figure_of("alyona").scale.x, "子どもは年齢に合わせて小さい")
+	_check(view.figure_of("vera") == null, "選ばなかった人はいない")
+	# 話す
+	var at: Vector2 = view.person_pos("alyona")
+	player.global_position = Vector3(at.x, 0, at.y + 1.5)
+	for id in view.people_ids():  # ほかの人を遠ざける(いちばん近い人に話しかけるので)
+		if id != "alyona":
+			view._people[id].pos = Vector2(-40, -40)
+	_check(main.family_near() == "alyona", "近くの家族に話せる")
+	_check(main.people_line() == "アリョーナ(妻)(C で話す)", "左上に「C で話す」")
+	press.call(KEY_C)
+	_check(hud._message.begins_with("アリョーナ「"), "C で話しかけると、言葉が出る(%s)" % hud._message.left(30))
+	_check(f.talked_today("alyona") and view.figure_of("alyona").current_action() == "wave", "話しかけると手を振る")
+	_check(view.state_of("alyona") == "stand", "話しているあいだは立ち止まる")
+	for _i in range(20):
+		view.step(0.1)
+	_check(view.state_of("alyona") == "stand", "少しのあいだは歩きださない")
+	press.call(KEY_C)
+	_check(not hud._message.contains("をもらった"), "同じ日の 2 回目は贈り物なし")
+	player.global_position = Vector3(30, 0, 30)
+	_check(main.family_near() == "" and main.people_line() == main.visitor_line(), "離れると話せない")
+	# 朝の手伝いの動き
+	var plot := Vector2(19.5, 19.5)
+	w.land.toggle_plot(plot)
+	view._people["alyona"].wait = 0.0
+	view._people["alyona"].talk_t = 0.0
+	view._people["alyona"].pos = Vector2(10, 10)
+	f.last_help = [{"who": "alyona", "kind": "water", "pos": plot}]
+	f.helped_day = w.forest.day_number() + 100  # 新しい日の手伝いとして
+	view.sync()
+	_check(view._people["alyona"].tasks.size() == 1, "手伝いの場所を覚える")
+	var watered := false
+	for _i in range(400):
+		view.step(0.1)
+		if view.figure_of("alyona").current_action() == "water":
+			watered = true
+			break
+	_check(watered and view.person_pos("alyona").distance_to(plot) < 1.6, "手伝いの区画へ行って水をやる動きをする")
+	view.sync()
+	_check(view._people["alyona"].tasks.is_empty(), "同じ日の手伝いを 2 回は動かない")
+	w.land.toggle_plot(plot)
+	# 歩き回る(木は回り込む)
+	f.forest.trees.append({"pos": Vector2(0, 20), "species": "birch", "form": "sapling", "planted_at": w.forest._now(), "start_age": 30.0, "sprouts": true, "last_harvest": "", "last_watered": "", "bonus_years": 0.0})
+	var pts: Array = view.route(Vector2(0, 25), Vector2(0, 15))
+	_check(pts.size() >= 2, "木があれば回り込む道になる")
+	var through := false
+	var prev := Vector2(0, 25)
+	for q in pts:
+		if view.Route.crosses(prev, q, Rect2(Vector2(0, 20) - Vector2.ONE * 0.5, Vector2.ONE)):
+			through = true
+		prev = q
+	_check(not through, "木の幹を通り抜けない")
+	f.forest.trees.clear()
+	_check(not view.is_free(f.tent), "テントの上には立たない")
+	var start: Vector2 = view.person_pos("masha")
+	view._people["masha"].wait = 0.0
+	var moved := false
+	for _i in range(200):
+		view.step(0.1)
+		if view.person_pos("masha").distance_to(start) > 1.0:
+			moved = true
+			break
+	_check(moved, "昼は歩き回る")
+	# 夜は家へ帰って中に入る
+	view.set_night(1.0)
+	for id in view.people_ids():
+		view._people[id].wait = 0.0
+	for _i in range(1500):
+		view.step(0.1)
+		if view.people_ids().all(func(id): return view.state_of(id) == "inside"):
+			break
+	_check(view.people_ids().all(func(id): return view.state_of(id) == "inside" and not view.figure_of(id).visible), "夜はみんなテントに入る(見えなくなる)")
+	player.global_position = Vector3(f.home_pos().x, 0, f.home_pos().y + 0.5)
+	_check(main.family_near() == "", "中にいる家族とは話せない")
+	view.set_night(0.0)
+	view.step(0.1)
+	_check(view.people_ids().all(func(id): return view.state_of(id) != "inside" and view.figure_of(id).visible), "朝になると出てくる")
+	_check(view.person_pos("vanya").distance_to(f.home_pos()) < 0.5, "家の入口から出てくる")
+	# 訪問者はテントを回り込む
+	var visitor: Node3D = main.get_node("Visitor")
+	_check(visitor._obstacles().any(func(r): return r.has_point(f.tent)), "訪問者はテントを回り込む")
+	# 小屋が完成するとテントを片付ける
+	w.cabin.site = Vector2(-20, -20)
+	w.cabin.stage = w.cabin.STAGES.size()
+	view._sync_tent()
+	_check(view.tent_node() == null and not f.has_tent(), "小屋が完成するとテントを片付ける")
+	_check(main.family_line().contains("小屋で暮らす"), "持ち物: 小屋で暮らす")
+	w.cabin.site = null
+	w.cabin.stage = 0
+	view._sync_tent()
+	_check(view.tent_node() != null, "小屋がなければテントがまた立つ")
+	# 当たり判定を確かめる準備: 家族を決まった場所に立たせる
+	var i := 0
+	for id in view.people_ids():
+		var p: Dictionary = view._people[id]
+		p.pos = Vector2(-40 + i * 3.0, 40)
+		p.wait = 999.0
+		view._stand(p)
+		view._place(p)
+		i += 1
+	player.global_position = Vector3(30, 0, 30)
+
+func _test_family_collision() -> void:
+	var view: Node3D = main.get_node("Family")
+	var player: CharacterBody3D = main.get_node("Player")
+	var at: Vector2 = view.person_pos("alyona")
+	var south := Transform3D(Basis.IDENTITY, Vector3(at.x, 0, at.y + 2.0))
+	_check(player.test_move(south, Vector3(0, 0, -2.0)), "立っている家族は通り抜けられない")
+	_check(not player.test_move(south, Vector3(1.4, 0, 0)), "家族の横は歩ける")
+	var t: Vector2 = main.world.family.tent
+	var from := Transform3D(Basis.IDENTITY, Vector3(t.x + 3.0, 0, t.y))
+	_check(player.test_move(from, Vector3(-3.0, 0, 0)), "テントは通り抜けられない")

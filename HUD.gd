@@ -10,6 +10,7 @@ extends CanvasLayer
 const Forest = preload("res://logic/Forest.gd")
 const TouchText = preload("res://view/TouchText.gd")
 const RegionPicker = preload("res://view/RegionPicker.gd")
+const FamilyPicker = preload("res://view/FamilyPicker.gd")
 const MESSAGE_SECONDS := 3.0
 const DIARY_FADE_SECONDS := 0.6
 const TOUCH_STATUS_SECONDS := 0.25  # タッチのときに左上の文字を更新する間隔
@@ -20,6 +21,7 @@ const SHOP_ROW_GAP := 4.0         # 行のあいだ(VBoxContainer の既定)
 
 signal shop_action(id)  # 市場の画面のボタン(品の id / "sell_<収穫物>" / "close")
 signal region_chosen(id)  # 土地のある都道府県を決めた(view/RegionPicker.gd)
+signal family_chosen(spouse, children)  # 一緒に暮らす家族を決めた(view/FamilyPicker.gd)
 
 @onready var _label: Label = $PositionLabel
 @onready var _bg: ColorRect = $BG
@@ -46,6 +48,7 @@ var _diary_fade: Tween
 var _hint_panel: PanelContainer
 var _hint_label: Label
 var picker: RegionPicker  # 都道府県を選ぶ画面(ゲームのはじめに一度だけ)
+var family_picker: FamilyPicker  # 家族を選ぶ画面(都道府県のあと、一度だけ)
 
 func setup(player: Node, trees: Forest, main: Node) -> void:
 	_player = player
@@ -58,14 +61,22 @@ func setup(player: Node, trees: Forest, main: Node) -> void:
 	picker = RegionPicker.new()
 	picker.chosen.connect(func(id): region_chosen.emit(id))
 	add_child(picker)
+	family_picker = FamilyPicker.new()
+	family_picker.chosen.connect(func(sp, n): family_chosen.emit(sp, n))
+	add_child(family_picker)
 
 # ── 都道府県を選ぶ画面 ──
 func open_region_picker() -> void:
 	picker.touch_mode = touch_mode
 	picker.open()
 
+func open_family_picker() -> void:
+	family_picker.touch_mode = touch_mode
+	family_picker.open()
+
+# 都道府県か家族を選ぶ画面が開いているか
 func is_picker_open() -> bool:
-	return picker != null and picker.visible
+	return (picker != null and picker.visible) or (family_picker != null and family_picker.visible)
 
 # 植えられない・収穫した などを数秒だけ出す
 func show_message(text: String, seconds: float = MESSAGE_SECONDS) -> void:
@@ -318,7 +329,7 @@ func _status_lines() -> PackedStringArray:
 	var furniture: String = _main.furniture_line()
 	if furniture != "":
 		lines.append(furniture)
-	var visitor: String = _main.visitor_line()
+	var visitor: String = _main.people_line()
 	if visitor != "":
 		lines.append(visitor)
 	var plot: String = _main.plot_line()
@@ -360,6 +371,7 @@ func _inventory_lines() -> PackedStringArray:
 		"仲良し度: " + _main.friendship_line(),
 		"木の節目: " + _main.milestones_line(),
 		"近所の人: " + _main.neighbors_line(),
+		"家族: " + _main.family_line(),
 		"道具: " + _main.tools_owned_text(),
 		"植えた木: %d本   いる場所: X %.0fm  Y %.0fm" % [_trees.trees.size(), pos.x, pos.y],
 	])

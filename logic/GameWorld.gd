@@ -2,7 +2,7 @@ extends RefCounted
 
 # ── ゲーム全体の状態(描画を持たない) ──────────────────────────
 # 木と種(Forest)・菜園と池の場所(Land)・畑の野菜(Garden)・池の作り込み(Pond)・小屋(Cabin)・段階クエスト(Quests)・お金と市場(Market)などをまとめ、
-# 1 つのセーブファイルに読み書きする。保存が必要な変更(dirty)を出す 13 の部品(_init の dirty.connect の並び)で自動保存する。
+# 1 つのセーブファイルに読み書きする。保存が必要な変更(dirty)を出す 18 の部品(_init の dirty.connect の並び)で自動保存する。
 # 今日の日付と時刻は WorldTime(time)から読む
 # 座標の単位は m(ドメイン中心が原点、境界は ±50m)
 const Forest = preload("res://logic/Forest.gd")
@@ -31,6 +31,7 @@ const Tools = preload("res://logic/Tools.gd")
 const Mill = preload("res://logic/Mill.gd")
 const Pests = preload("res://logic/Pests.gd")
 const River = preload("res://logic/River.gd")
+const Family = preload("res://logic/Family.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
 # セーブの版(2026-11-11 から書く。レビュー S4)。セーブの形を変える変更(名前・単位を変える、意味を変える)をしたら 1 上げ、
@@ -71,6 +72,7 @@ var tools := Tools.new()         # ジョウロ・斧・ガソリンで動く機
 var mill := Mill.new()           # 石臼と粉(2026-11-14)
 var pests := Pests.new()         # 畑を荒らす生き物と仲良し度(2026-11-15)
 var river := River.new()         # 土地の外の川(2026-11-15。県を選んでから。保存しない)
+var family := Family.new()       # 家族(2026-11-16。はじめに 1 度だけ選ぶ)
 var last_pumped := [0, 0]        # 直前にポンプでまとめて水をやった [区画の数, 木の数](文言用・保存しない)
 var is_new_game := false         # 読み込むセーブがなかった(新しく始めた)。県を選んだときに、その土地のはじめの種を配る
 var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
@@ -156,6 +158,12 @@ func _init() -> void:
 	market.feeders = feeders
 	visitors.feeders = feeders
 	guide.feeders = feeders
+	family.forest = forest
+	family.garden = garden
+	family.cabin = cabin
+	family.market = market
+	family.is_blocked = bees.is_blocked  # テントも巣箱と同じ決まり(区画・小屋・池・木などのそばと土地の端には張らない)
+	family.can_draw_water = _family_can_draw
 	nest_boxes.forest = forest
 	nest_boxes.cabin = cabin
 	wildlife.nest_boxes = nest_boxes
@@ -189,6 +197,7 @@ func _init() -> void:
 	tools.dirty.connect(save_game)
 	mill.dirty.connect(save_game)
 	pests.dirty.connect(save_game)
+	family.dirty.connect(save_game)
 
 # 区画(中心 c)を田んぼにできるか: 川か、掘り終えた池から水が引ける範囲(ポンプで水が届く 20m)
 func _paddy_ok(c: Vector2) -> bool:
@@ -196,9 +205,15 @@ func _paddy_ok(c: Vector2) -> bool:
 		return true
 	return pond.is_dug() and land.pond != null and c.distance_to(land.pond) <= Pond.WATER_RADIUS
 
-# 巣箱・餌台・井戸を置く場所に、ほかの物(餌台・井戸)がかかるか(Bees.is_blocked から呼ぶ)
+# 巣箱・餌台・井戸を置く場所に、ほかの物(餌台・井戸・石臼・家族のテント)がかかるか(Bees.is_blocked から呼ぶ)
 func _taken_nearby(pos: Vector2, radius: float) -> bool:
-	return feeders.covers(pos, radius) or well.covers(pos, radius) or mill.covers(pos, radius)
+	return feeders.covers(pos, radius) or well.covers(pos, radius) or mill.covers(pos, radius) or family.covers(pos, radius)
+
+# 家族が手伝いの水を汲めるか: 掘り終えた井戸、水のある凍っていない池、土地の外の川のどれか
+func _family_can_draw() -> bool:
+	if well.is_dug() or river.exists():
+		return true
+	return pond.is_dug() and not pond.is_frozen() and pond.water > 0
 
 # 足元に菜園の区画を置く / 取り消す。小屋にかかる場所には置けない
 # 結果: Garden.toggle_plot の結果か cabin / hive / feeder / well / mill
@@ -213,6 +228,8 @@ func toggle_plot(pos: Vector2) -> String:
 		return "well"
 	if land.plot_at(pos) == null and mill.blocks_plot(land.plot_center(pos), land.PLOT_SIZE * 0.5):
 		return "mill"
+	if land.plot_at(pos) == null and family.blocks_plot(land.plot_center(pos), land.PLOT_SIZE * 0.5):
+		return "tent"
 	return garden.toggle_plot(pos)
 
 # X: 足元の果樹を剪定する。切った枝は薪になる。結果は Forest.prune_nearest
@@ -237,6 +254,8 @@ func pond_action(pos: Vector2) -> String:
 		return "well"
 	if mill.covers(pos, land.POND_RADIUS + bees.CLEARANCE):
 		return "mill"
+	if family.covers(pos, land.POND_RADIUS + bees.CLEARANCE):
+		return "tent"
 	return land.toggle_pond(pos)
 
 # ── 水と道具(2026-11-14) ────────────────────────────────────
@@ -386,6 +405,8 @@ func check_new_day() -> String:
 	bees.catch_up()
 	snow.catch_up()
 	market.deliver_orders()  # 冬が終わっていれば、注文した春の種が届く
+	family.ensure_tent()   # 小屋が完成していればテントを片付ける
+	family.help_today()    # 家族の朝の手伝い(雨の日は水やりが要らない)
 	visitors.check_today()  # 霜のあとの畑を見て、今日の頼みごとを決める
 	return id
 
@@ -420,6 +441,10 @@ func choose_region(id: String) -> String:
 	save_game()
 	return "chosen"
 
+# 家族を決める(一度だけ。あとから変えられない)。結果は Family.choose。決めたら保存する
+func choose_family(spouse: String, children: int) -> String:
+	return family.choose(spouse, children)
+
 # ── セーブ / ロード ──────────────────────────────────────────
 func save_game() -> void:
 	var data := forest.to_save()
@@ -446,6 +471,7 @@ func save_game() -> void:
 	data["tools"] = tools.to_save()
 	data["mill"] = mill.to_save()
 	data["pests"] = pests.to_save()
+	data["family"] = family.to_save()
 	_write_save(JSON.stringify(data))
 
 # 別の名前(.tmp)に書き、書けたことを確かめてから本物の名前に付け替える。
@@ -591,6 +617,8 @@ func load_game() -> void:
 	market.from_save(md)
 	forest.from_save(data)
 	quests.from_save(qd)  # 木を読んだあと(木の節目を数えるため)
+	family.from_save(SaveRead.dict(data.get("family")))  # 家族の記録がないセーブ(2026-11-16 より前)は、開いたときに一度だけ選ぶ
+	family.ensure_tent()
 
 # 今のセーブを「名前.infix日付_時刻.json」として写して残す。残した名前を返す
 func _keep_copy(infix: String) -> String:

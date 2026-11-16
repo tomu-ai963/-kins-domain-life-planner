@@ -160,7 +160,7 @@ func _main_pads(view: Vector2) -> Array:
 	if _main.world.market.is_near(_main.player_pos()):
 		list.append(_pad("market", "市場", KEY_B, c.call(col, 2)))
 		col += 1
-	if _main.visitor_line() != "":
+	if _main.people_line() != "":
 		list.append(_pad("talk", "話す", KEY_C, c.call(col, 2)))
 		col += 1
 	if _main.world.snow.can_clear_now():

@@ -9,6 +9,7 @@ const WildWoodsView = preload("res://view/3d/WildWoodsView3D.gd")
 const RiverView = preload("res://view/3d/RiverView3D.gd")
 const WellView = preload("res://view/3d/WellView3D.gd")
 const MillView = preload("res://view/3d/MillView3D.gd")
+const FamilyView = preload("res://view/3d/FamilyView3D.gd")
 const REACH := 2.0    # 足元 2m 以内
 const PICKUP_RADIUS := 1.2  # 落ちている種は、これだけ近づくと拾う
 const FELL_CONFIRM_SECONDS := 4.0  # 根付いた木は、この時間内にもう一度 Z を押すと伐れる
@@ -131,6 +132,7 @@ func _ready() -> void:
 	$HUD.setup($Player, world.forest, self)
 	$HUD.shop_action.connect(_on_shop_action)
 	$HUD.region_chosen.connect(_on_region_chosen)
+	$HUD.family_chosen.connect(_on_family_chosen)
 	$Player.plant_tree.connect(_on_plant_tree)
 	_setup_3d_only()
 	world.load_game()
@@ -145,6 +147,8 @@ func _ready() -> void:
 	# 県の記録がなければ、選ぶ画面を出す。本物のセーブのときだけ(テストや確認用のセーブでは、要るときに開く)
 	if not world.region.is_chosen() and world.save_path == world.SAVE_PATH:
 		open_region_picker()
+	elif not world.family.chosen and world.save_path == world.SAVE_PATH:
+		open_family_picker()  # 家族の記録がないセーブ(2026-11-16 より前)も、一度だけ選ぶ
 
 # ── 土地のある都道府県(ゲームのはじめに一度だけ選ぶ) ──
 func open_region_picker() -> void:
@@ -161,6 +165,28 @@ func _on_region_chosen(id: String) -> void:
 		weather.refresh(true)  # 雪の積もらない土地なら、雪を雨に
 	var z: Dictionary = world.region.zone()
 	$HUD.show_message("%sに土地を持った(気候: %s)。季節と植えられる木は、この土地に合わせて決まる" % [world.region.pref_name(), z.name], 7.0)
+	# 続けて、一緒に暮らす家族を選ぶ。本物のセーブのときだけ(テストや確認用のセーブでは、要るときに開く)
+	if not world.family.chosen and world.save_path == world.SAVE_PATH:
+		open_family_picker()
+
+# ── 一緒に暮らす家族(都道府県のあとに一度だけ選ぶ。2026-11-16) ──
+func open_family_picker() -> void:
+	$Player.set_physics_process(false)  # 選んでいるあいだは歩かない
+	$HUD.open_family_picker()
+
+func _on_family_chosen(spouse: String, children: int) -> void:
+	$Player.set_physics_process(true)
+	if world.choose_family(spouse, children) != "chosen":
+		return
+	var f := world.family
+	if f.members.is_empty():
+		$HUD.show_message("ひとりで土地を暮らしていく", 6.0)
+		return
+	var names := PackedStringArray()
+	for m in f.members:
+		names.append(m.name)
+	var home := "小屋で暮らす" if world.cabin.is_complete() else "小屋ができるまでは、テントで休む"
+	$HUD.show_message("%sと一緒に土地で暮らす。%s(近くで C を押すと話せる)" % ["・".join(names), home], 8.0)
 
 # 昼夜の光と小屋の中は 3D だけ(2D のシーンには DayLight がない)
 func _setup_3d_only() -> void:
@@ -191,6 +217,16 @@ func _setup_3d_only() -> void:
 	$Cabin.set_kitchen(world.kitchen)
 	$Wildlife.setup(world.wildlife, $Player)
 	$Visitor.setup(world.visitors, $Player)
+	var family_view := FamilyView.new()
+	family_view.name = "Family"
+	add_child(family_view)
+	family_view.setup(world.family, $Player, {"forest": world.forest, "land": world.land, "cabin": world.cabin,
+		"bees": world.bees, "feeders": world.feeders, "well": world.well, "mill": world.mill})
+	day_light.night_changed.connect(family_view.set_night)
+	family_view.set_night(maxf(0.0, day_light.night))
+	family_view.extra_avoid = func(): return [$Visitor.ground_pos()] if $Visitor.state() != "away" else []
+	$Visitor.extra_avoid = family_view.positions
+	$Visitor.extra_obstacles = family_view.obstacle_rects
 	$Hives.setup(world.bees)
 	$Feeders.setup(world.feeders)
 	$NestBoxes.setup(world.nest_boxes, world.forest)
@@ -284,6 +320,7 @@ func _check_new_day() -> void:
 		lines.append("雑草が生えている区画がある(%d区画。E で抜く。わらを敷いた区画には生えない)" % weedy)
 	if g.frost_is_near(f.today()):
 		lines.append("もうすぐ霜が降りる(%s)。霜に弱い野菜は枯れるので、早めに収穫を" % g.frost_date_text())
+	lines.append_array(family_help_lines())
 	if has_node("Visitor") and world.visitors.is_here():
 		lines.append("%sが訪ねてきた(C で話す)" % world.visitors.CAST[world.visitors.who()].name)
 	var pond := world.pond
@@ -707,8 +744,12 @@ func visitor_text() -> String:
 		return "明日は降りそうですよ。\n水やりは休めますね。" if rainy else "明日は降らなそうです。\n畑の水やりを忘れずに。"
 	return line
 
-# C: 近くの訪問者に話しかける
+# C: 近くの訪問者に話しかける。いなければ近くの家族に
 func _talk() -> void:
+	var near_visitor: bool = has_node("Visitor") and world.visitors.is_here() and $Visitor.can_talk(player_pos())
+	if not near_visitor and family_near() != "":
+		_talk_family(family_near())
+		return
 	if not has_node("Visitor") or not world.visitors.is_here():
 		return
 	if not $Visitor.can_talk(player_pos()):
@@ -775,6 +816,137 @@ func _visitor_action(id: String) -> void:
 func _with_level_up(text: String) -> String:
 	var up := _take_level_up()
 	return text if up == "" else "%s\n%s" % [text, up]
+
+# ── 家族(3D だけ。2026-11-16) ────────────────────────────────
+# 話しかけたときの言葉。配偶者はいつもの言葉と季節の言葉、子どもは年齢で変わる
+const FAMILY_SPOUSE_CHATS := [
+	"畑の野菜、よく育ってるね。
+水やりは任せて。",
+	"朝の水汲み、いい運動になるよ。",
+	"この土地、少しずつ私たちの場所になってきたね。",
+	"無理しないでね。
+お昼はちゃんと食べること。",
+]
+const FAMILY_SPOUSE_SEASON := {
+	"spring": "春の土の匂いがする。
+今年は何をまこうか。",
+	"summer": "日が長いね。
+夕方の水やりが気持ちいい。",
+	"autumn": "実りの季節だね。
+冬の支度もしなくちゃ。",
+	"winter": "寒いね。
+薪は足りてる?",
+}
+const FAMILY_SPOUSE_TENT := "テント暮らしも悪くないけど、
+小屋ができるのが楽しみ。"
+const FAMILY_CHILD_SMALL := ["見て見て!
+ダンゴムシ!", "おなかすいた。
+おやつある?", "だっこして!", "あのね、
+鳥さんがいたの!"]
+const FAMILY_CHILD := [
+	"雑草、いっぱい抜いたよ!",
+	"あの木、このあいだより大きくなった!",
+	"鳥の巣を見つけたんだ。
+ないしょだよ。",
+	"大きくなったら、自分の木を植えるんだ。",
+]
+const FAMILY_CHILD_TEEN := ["畑のことなら、もう任せてよ。", "いつか、この土地を守るのは自分だと思ってる。", "町の学校の話、聞く?
+でも、ここがいちばん落ち着く。"]
+const FAMILY_TEEN_AGE := 13
+const FAMILY_GIFT_SPOUSE := "%sを作ったよ。
+持っていって。"
+const FAMILY_GIFT_CHILD := "%sを拾ったよ!
+あげる!"
+
+# 足元から話せる家族の id。いなければ ""
+func family_near() -> String:
+	if not has_node("Family"):
+		return ""
+	return $Family.talkable(player_pos())
+
+# その人の今日の言葉
+func family_chat(id: String) -> String:
+	var f := world.family
+	var m: Dictionary = f.member(id)
+	var lines := []
+	if m.role == "spouse":
+		lines = FAMILY_SPOUSE_CHATS.duplicate()
+		lines.append(FAMILY_SPOUSE_SEASON.get(world.forest.season, ""))
+		if f.has_tent():
+			lines.append(FAMILY_SPOUSE_TENT)
+	else:
+		var age: int = f.age_of(m)
+		if age < f.HELP_AGE:
+			lines = FAMILY_CHILD_SMALL
+		elif age < FAMILY_TEEN_AGE:
+			lines = FAMILY_CHILD
+		else:
+			lines = FAMILY_CHILD_TEEN
+	return lines[f.line_index(id) % lines.size()]
+
+# 贈り物の名前: 「ブリヌイ 3枚」「白樺の種 2つ」
+func family_gift_text(g: Dictionary) -> String:
+	if g.type == "tree_seed":
+		return "%sの種 %dつ" % [world.forest.SPECIES[g.species].name, int(g.count)]
+	return _amount_text(g.item, int(g.count))
+
+func _talk_family(id: String) -> void:
+	var f := world.family
+	var m: Dictionary = f.member(id)
+	var result: String = f.talk(id)
+	$Family.greet(id)
+	var text := "%s「%s」" % [m.name, family_chat(id)]
+	if result == "gift":
+		var gift := family_gift_text(f.last_gift)
+		var said: String = (FAMILY_GIFT_SPOUSE if m.role == "spouse" else FAMILY_GIFT_CHILD) % gift
+		text = "%s「%s」
+(%sをもらった)" % [m.name, said, gift]
+		_sfx("coin")
+	else:
+		_sfx("open")
+	$HUD.show_message(text, 6.0)
+
+# 朝の手伝いの知らせ(日記の 1 日のはじめに出す)
+func family_help_lines() -> PackedStringArray:
+	var out := PackedStringArray()
+	var f := world.family
+	var summary: Dictionary = f.help_summary()
+	for m in f.members:
+		if not summary.has(m.id):
+			continue
+		var h: Dictionary = summary[m.id]
+		if h.water > 0:
+			out.append("朝、%sが畑と木に %dか所 水をやってくれた" % [m.name, h.water])
+		if h.weed > 0:
+			out.append("朝、%sが雑草を %d区画 抜いてくれた" % [m.name, h.weed])
+	return out
+
+# 持ち物に出す、家族の並びと住まい
+func family_line() -> String:
+	var f := world.family
+	if not f.chosen:
+		return "まだ決めていない"
+	if f.members.is_empty():
+		return "ひとりで暮らしている"
+	var parts := PackedStringArray()
+	for m in f.members:
+		if m.role == "spouse":
+			parts.append("%s(%s)" % [m.name, m.relation])
+		else:
+			parts.append("%s(%s %d歳)" % [m.name, m.relation, f.age_of(m)])
+	var home := "テントで休む(小屋が完成すると小屋で)" if f.has_tent() else "小屋で暮らす"
+	return "%s  %s" % ["・".join(parts), home]
+
+# HUD に出す、話せる人の 1 行: 訪問者と話せる距離ならその人、家族のそばなら家族、遠くに訪問者が来ていればその案内
+func people_line() -> String:
+	var visitor := visitor_line()
+	if visitor.ends_with("(C で話す)"):
+		return visitor
+	var fam := family_near()
+	if fam != "":
+		var m: Dictionary = world.family.member(fam)
+		return "%s(%s)(C で話す)" % [m.name, m.relation]
+	return visitor
 
 # HUD に出す、訪問者の 1 行。いなければ ""
 func visitor_line() -> String:
@@ -948,6 +1120,7 @@ const PLOT_MESSAGES := {
 	"feeder": "餌台にかかる場所には作れない",
 	"well": "井戸にかかる場所には作れない",
 	"mill": "石臼にかかる場所には作れない",
+	"tent": "家族のテントにかかる場所には作れない(小屋が完成すると片付ける)",
 	"limit": "新しく耕せるのは1日%d区画まで(続きは明日)",
 }
 const POND_MESSAGES := {
@@ -958,6 +1131,7 @@ const POND_MESSAGES := {
 	"feeder": "餌台にかかる場所には掘れない",
 	"well": "井戸にかかる場所には掘れない",
 	"mill": "石臼にかかる場所には掘れない",
+	"tent": "家族のテントにかかる場所には掘れない(小屋が完成すると片付ける)",
 	"dug": "池を掘った(続きは明日)",
 	"finished": "池を掘り終えた。底から水が湧いて、半分までたまった。あとは雨でたまる",
 	"far": "池はひとつまで(今の池の近くで P を押すと掘る)",
@@ -1078,6 +1252,9 @@ func _on_plant_tree(pos: Vector2) -> void:
 		return
 	if world.mill.covers(pos, world.bees.CLEARANCE):
 		$HUD.show_message("石臼の近くには植えられない")
+		return
+	if world.family.covers(pos, world.bees.CLEARANCE):
+		$HUD.show_message("テントの近くには植えられない")
 		return
 	if world.cabin.in_yard(pos):
 		$HUD.show_message("小屋の東の庭には植えられない(薪割り台と薪を置く場所)")

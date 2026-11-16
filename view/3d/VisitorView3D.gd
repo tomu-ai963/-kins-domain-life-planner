@@ -9,6 +9,7 @@ extends Node3D
 const Visitors = preload("res://logic/Visitors.gd")
 const Look = preload("res://view/3d/Look.gd")
 const PlayerFigure = preload("res://view/3d/PlayerFigure3D.gd")
+const Route = preload("res://view/3d/Route.gd")
 
 const GATE := Vector2(0, 49.5)   # 市場へ続く小道の、土地の入口
 const WALK_SPEED := 3.2          # 歩く速さ(m/s)
@@ -21,7 +22,6 @@ const OBSTACLE_MARGIN := 0.8     # 小屋と池をこれだけ離れて回り込
 const TREE_MARGIN := 0.6         # 木の幹からこれだけ離れて回り込む
 const PLAYER_MARGIN := 1.0       # プレイヤーからこれだけ離れて回り込む(道を決めるとき)
 const AVOID_RADIUS := 0.9        # 歩いている途中、プレイヤーがこの距離に入るとよける
-const ROUTE_TURNS := 12          # 道を曲がる回数の上限(木が多いときのため)
 const MARK_Y := 2.2              # 印の高さ(頭に重ならないところ)
 const MARK_BOB := 0.08
 const BODY_RADIUS := 0.3         # 当たり判定の太さ(プレイヤーと同じ)
@@ -37,6 +37,8 @@ const LOOKS := {
 
 var visitors: Visitors
 var _player: Node3D
+var extra_avoid: Callable      # ほかによける人の足元(家族。Main が設定する)
+var extra_obstacles: Callable  # ほかに回り込むもの(家族のテント。Main が設定する)
 var _state := "away"   # away / arrive / wait / leave
 var _who := ""
 var _figure: Node3D
@@ -125,7 +127,7 @@ func _is_free(p: Vector2) -> bool:
 			return false
 	return true
 
-# 回り込むもの(小屋・池・木・プレイヤー)の範囲
+# 回り込むもの(小屋・池・木・プレイヤー・家族のテントや立っている家族)の範囲
 func _obstacles() -> Array:
 	var list := []
 	var player_pos: Vector2 = _player.ground_pos()
@@ -146,51 +148,13 @@ func _obstacles() -> Array:
 	if pond != null:
 		var r: float = visitors.garden.land.POND_RADIUS + OBSTACLE_MARGIN
 		list.append(Rect2(pond - Vector2(r, r), Vector2(r, r) * 2.0))
+	if extra_obstacles.is_valid():
+		list.append_array(extra_obstacles.call())
 	return list
 
 # from から to まで、小屋・池・木・プレイヤーを避ける道(通る点の並び。最後が to)
 func route(from: Vector2, to: Vector2) -> Array:
-	var points := []
-	var at := from
-	for _i in range(ROUTE_TURNS):
-		var corner = _detour(at, to)
-		if corner == null:
-			break
-		points.append(corner)
-		at = corner
-	points.append(to)
-	return points
-
-# a → b がふさがっていれば、回り込む角を返す。ふさがっていなければ null
-func _detour(a: Vector2, b: Vector2):
-	# 近いものから順に見る(遠くの木を先に避けると、手前を通り抜けてしまう)
-	var list: Array = _obstacles()
-	list.sort_custom(func(p, q): return p.get_center().distance_to(a) < q.get_center().distance_to(a))
-	for r in list:
-		# 始まりや行き先が範囲の中なら、その範囲は避けようがない(そばに立っている木など)
-		if r.has_point(a) or r.has_point(b) or not _crosses(a, b, r.grow(-0.05)):
-			continue
-		var best = null
-		var best_len := INF
-		for c in [r.position, r.position + Vector2(r.size.x, 0), r.end, r.position + Vector2(0, r.size.y)]:
-			if c.distance_to(a) < 0.1 or _crosses(a, c, r.grow(-0.05)):
-				continue
-			var length: float = a.distance_to(c) + c.distance_to(b)
-			if length < best_len:
-				best_len = length
-				best = c
-		if best != null:
-			return best
-	return null
-
-static func _crosses(a: Vector2, b: Vector2, r: Rect2) -> bool:
-	if r.has_point(a) or r.has_point(b):
-		return true
-	var corners := [r.position, r.position + Vector2(r.size.x, 0), r.end, r.position + Vector2(0, r.size.y)]
-	for i in range(4):
-		if Geometry2D.segment_intersects_segment(a, b, corners[i], corners[(i + 1) % 4]) != null:
-			return true
-	return false
+	return Route.plan(from, to, _obstacles())
 
 func _process(delta: float) -> void:
 	if visitors == null:
@@ -246,15 +210,9 @@ func _walk(delta: float) -> void:
 
 # プレイヤーが近くて、進む先にいるなら、横へよける向きを返す
 func _avoid_player(dir: Vector2) -> Vector2:
-	var to_player: Vector2 = _player.ground_pos() - _pos
-	if to_player.length() >= AVOID_RADIUS or to_player.length() < 0.001 or dir.dot(to_player) <= 0.0:
-		return dir
-	# 進む向きのうち、プレイヤーへ向かう分を消す。まっすぐ向かっていたら右へ
-	var toward: Vector2 = to_player.normalized()
-	var side: Vector2 = dir - toward * dir.dot(toward)
-	if side.length() < 0.1:
-		side = Vector2(-toward.y, toward.x)
-	return side.normalized()
+	var avoid := [_player.ground_pos()]
+	avoid.append_array(extra_avoid.call() if extra_avoid.is_valid() else [])
+	return Route.sidestep(_pos, dir, avoid, AVOID_RADIUS)
 
 func _reached() -> void:
 	_figure.moving = false
