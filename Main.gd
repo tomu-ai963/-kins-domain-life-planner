@@ -1355,6 +1355,9 @@ func selected_name() -> String:
 func _cabin_action() -> void:
 	var c := world.cabin
 	var pos := player_pos()
+	if world.family.is_at_bedroll(pos):  # テントの中の自分の寝袋(小屋ができるまで)
+		_sleep()
+		return
 	if c.site == null:
 		if world.bees.hives.any(func(h): return c.rect_at(pos.round()).grow(world.bees.CLEARANCE).has_point(h.pos)):
 			$HUD.show_message("巣箱にかかる場所には建てられない")
@@ -1653,6 +1656,10 @@ func furniture_line() -> String:
 		return "ストーブの前(H で料理)"
 	if c.is_at_bed(pos):
 		return "ベッドのそば(H で休んで日記を見る)"
+	if world.family.is_at_bedroll(pos):
+		return "寝袋のそば(H で休んで日記を見る)"
+	if world.family.is_in_tent(pos):
+		return "テントの中(西のいちばん端が自分の寝袋)"
 	return ""
 
 # ── ベッド ─────────────────────────────────────────────────
@@ -1663,8 +1670,11 @@ func _sleep() -> void:
 	var delay := 0.0
 	if $Player.has_method("lie_down"):  # 3D だけ
 		delay = $Player.LIE_SECONDS
-		$Player.lie_down($Cabin.lying_spot())
-		$Cabin.set_sleeping(true, delay * 0.7)
+		if has_node("Family") and world.family.is_in_tent(player_pos()):  # テントの寝袋で
+			$Player.lie_down($Family.player_lying_spot(), $Family.TENT_LYING_BASIS)
+		else:
+			$Player.lie_down($Cabin.lying_spot())
+			$Cabin.set_sleeping(true, delay * 0.7)
 	$HUD.open_diary(diary_text(), delay + 0.5)
 
 func _wake() -> void:

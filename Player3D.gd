@@ -168,12 +168,12 @@ func is_lying() -> bool:
 	return _lying
 
 # ベッドに横になる。spot は足の裏の位置(世界の座標)。動くのは見た目の体だけで、足元の位置(当たり判定)は変わらない
-func lie_down(spot: Vector3) -> void:
+func lie_down(spot: Vector3, lying := LYING_BASIS) -> void:
 	_lying = true
 	_posing = true
 	_stand_basis = _body.basis
 	_apply_lantern()
-	_move_pose(spot - global_position, LYING_BASIS, LIE_SECONDS)
+	_move_pose(spot - global_position, lying, LIE_SECONDS)
 
 # 起き上がる。動きの途中でも歩きはじめられる(体があとから追いつく)
 func get_up() -> void:

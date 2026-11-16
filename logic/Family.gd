@@ -5,6 +5,7 @@ extends RefCounted
 # 名前は自分で付けられ(はじめは決まった名前が入っている)、あとからも付け直せる(rename。2026-11-16 とむ決定)。
 # 子どもは 1 人ずつ、息子か娘かと年齢(0〜MAX_START_AGE 歳)も選ぶ。
 # 家族は最初から土地で暮らす。小屋が完成するまでは、夜はテントで休む(テントの場所はここで決める)。
+# テントには南の入口から歩いて入れる。中には寝袋が並び、自分の寝袋のそばで H を押すと休める(日記。2026-11-16 とむ)。
 # 毎朝(日付が変わった最初の確認で)小さな手伝いをする:
 #   配偶者: 水のいる区画か木に WATER_HELP か所まで水をやる(井戸・池・川のどれかで汲めるときだけ。雨の日は要らない)
 #   子ども: HELP_AGE 歳から、雑草の生えた区画を 1 つ抜く(WEED_MORE_AGE 歳から 2 つ)
@@ -49,8 +50,12 @@ const SPOUSE_GIFTS := {       # 配偶者の贈り物(季節の料理。品と�
 	"winter": {"item": "sbiten", "count": 2},
 }
 const CHILD_GIFT_SEEDS := 2   # 子どもが拾ってくる木の種の数
-const TENT_RADIUS := 1.2      # テントの大きさ(中心からの半径。区画や池をここに置けない)
-const TENT_CLEARANCE := 1.4   # テントの中心から、まわりの物までこれだけ空ける
+# テント(2026-11-16 とむ: 歩いて入れて、中で休める)。人が立てる大きさ。入口は南の真ん中
+const TENT_SIZE := Vector2(3.2, 3.6)   # 東西 × 南北(m)
+const TENT_DOOR := 1.0                 # 入口の幅(m)
+const BEDROLL_SIZE := Vector2(0.62, 1.9)  # 寝袋 1 枚(東西 × 南北)。北の奥に頭を向けて並べる
+const BEDROLL_REACH := 0.6             # 寝袋からこの距離までなら H で休める
+const TENT_SAMPLE := 1.0               # テントを張れるか確かめる点の間隔(m)
 const TENT_SEARCH := 30.0     # テントの場所を探す範囲(目安の場所からの距離)
 const CENTER_CLEAR := 5.0     # 中心は家族の杉のために空ける(Quests.FAMILY_CEDAR_RADIUS と同じ)
 
@@ -293,7 +298,7 @@ func home_pos():
 	if cabin.is_complete():
 		return cabin.door_pos()
 	ensure_tent()
-	return tent + Vector2(0, TENT_RADIUS + 0.4) if tent != null else null
+	return tent + Vector2(0, TENT_SIZE.y * 0.5 + 0.5) if tent != null else null
 
 func has_tent() -> bool:
 	return chosen and not members.is_empty() and tent != null and not cabin.is_complete()
@@ -312,17 +317,24 @@ func ensure_tent() -> void:
 		tent = spot
 		_commit()
 
+# p を中心にテントを張れるか: 家族の杉の場所を空け、テントの上の点がどれも物を置ける場所(Bees.is_blocked でない)
 func _tent_fits(p: Vector2) -> bool:
-	if p.length() < CENTER_CLEAR + TENT_CLEARANCE:
+	if p.length() < CENTER_CLEAR + TENT_SIZE.length() * 0.5:
 		return false
 	var keep = tent
 	tent = null  # 自分のテントにはかからないように
 	var ok := true
 	if is_blocked.is_valid():
-		for d in [Vector2.ZERO, Vector2(TENT_CLEARANCE, 0), Vector2(-TENT_CLEARANCE, 0), Vector2(0, TENT_CLEARANCE), Vector2(0, -TENT_CLEARANCE)]:
-			if is_blocked.call(p + d):
-				ok = false
-				break
+		var half := TENT_SIZE * 0.5
+		var x := -half.x
+		while ok and x <= half.x + 0.01:
+			var y := -half.y
+			while y <= half.y + 0.01:
+				if is_blocked.call(p + Vector2(x, y)):
+					ok = false
+					break
+				y += minf(TENT_SAMPLE, half.y)
+			x += minf(TENT_SAMPLE, half.x)
 	tent = keep
 	return ok
 
@@ -330,7 +342,7 @@ func _tent_fits(p: Vector2) -> bool:
 func _find_tent_spot():
 	var anchor := Vector2(-8, 8)
 	if cabin.site != null:
-		anchor = cabin.site + Vector2(-(cabin.WIDTH * 0.5 + 1.5), cabin.DEPTH * 0.5 + 3.0)
+		anchor = cabin.site + Vector2(-(cabin.WIDTH * 0.5 + 2.5), cabin.DEPTH * 0.5 + 3.5)
 	var r := 0.0
 	while r <= TENT_SEARCH:
 		var steps: int = maxi(1, int(r * 1.5))
@@ -341,13 +353,54 @@ func _find_tent_spot():
 		r += 1.0
 	return null
 
+# テントの床の長方形
+func tent_rect() -> Rect2:
+	return Rect2(tent - TENT_SIZE * 0.5, TENT_SIZE)
+
 # その場所にテントがかかるか(区画や池・井戸を置くときに見る)
 func covers(pos: Vector2, radius := 0.6) -> bool:
-	return has_tent() and tent.distance_to(pos) < TENT_RADIUS + radius
+	return has_tent() and tent_rect().grow(radius).has_point(pos)
 
 # 区画(中心 c)がテントにかかるか
 func blocks_plot(c: Vector2, half: float) -> bool:
-	return has_tent() and absf(tent.x - c.x) <= half + TENT_RADIUS and absf(tent.y - c.y) <= half + TENT_RADIUS
+	return has_tent() and Rect2(c - Vector2(half, half), Vector2(half, half) * 2.0).grow(0.3).intersects(tent_rect())
+
+# 足元がテントの中か
+func is_in_tent(pos: Vector2) -> bool:
+	return has_tent() and tent_rect().grow(-0.05).has_point(pos)
+
+# 寝袋の中心の並び。西から プレイヤー・配偶者・子ども(上から)の順。テントがなければ空
+func bedroll_spots() -> Array:
+	if not has_tent():
+		return []
+	var count := members.size() + 1
+	var step: float = TENT_SIZE.x / count
+	var out := []
+	for i in range(count):
+		out.append(Vector2(tent.x - TENT_SIZE.x * 0.5 + (i + 0.5) * step, tent.y - TENT_SIZE.y * 0.5 + BEDROLL_SIZE.y * 0.5 + 0.15))
+	return out
+
+# 寝袋 1 枚の幅(人数で狭くなる)
+func bedroll_width() -> float:
+	return minf(BEDROLL_SIZE.x, TENT_SIZE.x / (members.size() + 1) - 0.06)
+
+# その人の寝袋の中心(プレイヤーは "")。なければ null
+func bedroll_of(id: String):
+	var spots := bedroll_spots()
+	if spots.is_empty():
+		return null
+	if id == "":
+		return spots[0]
+	var i := members.map(func(m): return m.id).find(id)
+	return spots[i + 1] if i >= 0 else null
+
+# テントの中で、自分の寝袋のそばにいるか(H で休める)
+func is_at_bedroll(pos: Vector2) -> bool:
+	if not is_in_tent(pos):
+		return false
+	var spot = bedroll_of("")
+	var r := Rect2(spot - Vector2(bedroll_width(), BEDROLL_SIZE.y) * 0.5, Vector2(bedroll_width(), BEDROLL_SIZE.y))
+	return r.grow(BEDROLL_REACH).has_point(pos)
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:

@@ -4,7 +4,9 @@ extends Node3D
 # 誰がいるか・手伝い・贈り物は logic/Family.gd。ここは土地の中を歩いて暮らす動きと、テントの形だけ。
 #   昼: 畑・木・家のまわり・プレイヤーのそばを、ときどき歩いて回る(着いたらしばらく立つ)
 #   朝の手伝い: その日の手伝いの場所へ行き、水をやる / 草を抜く動きをする(ルールの手伝いは朝に済んでいる)
-#   夜: 家(小屋の戸口か、テントの入口)へ帰って中に入る(見えなくなる)。朝になると出てくる
+#   夜: 家(小屋の戸口か、テントの入口)へ帰って中に入る。テントなら自分の寝袋で横になっている(小屋なら見えなくなる)。朝になると出てくる
+# テントは歩いて入れる大きさで、南の入口だけ当たり判定を空ける。プレイヤーが中に入ると、小屋と同じく布を影だけにして中を見せる。
+# 中には寝袋(西から プレイヤー・家族の順)とランタン。プレイヤーは自分の寝袋のそばで H を押すと休める(Main)
 # 体は PlayerFigure3D を色違いで使う。子どもは年齢に合わせて小さい。
 # 小屋・池・木・巣箱などは回り込み、歩いているあいだはプレイヤー・訪問者・ほかの家族をよける。
 # 当たり判定は立っているあいだだけ付ける(歩いているあいだはこちらがよけるので、プレイヤーを押さないように付けない)
@@ -29,7 +31,12 @@ const NEAR_PLAYER := 0.25        # 歩く先にプレイヤーのそばを選ぶ
 const WANDER_TRIES := 8
 const BODY_RADIUS := 0.3
 const BODY_HEIGHT := 1.6
-const TENT_HEIGHT := 1.5          # テントの高さ(m)
+const TENT_HEIGHT := 2.2          # テントの高さ(m)。人が立てる高さ
+const WALL_T := 0.12              # テントの当たり判定の壁の厚み
+const BEDROLL_COLORS := [Color(0.24, 0.42, 0.70), Color(0.70, 0.30, 0.26), Color(0.36, 0.56, 0.34), Color(0.84, 0.62, 0.26), Color(0.56, 0.40, 0.66)]
+# 寝袋で横になる姿勢(頭が北の奥、顔が上)。Player3D.LYING_BASIS(頭が西)の向きを変えたもの
+const TENT_LYING_BASIS := Basis(Vector3(-1, 0, 0), Vector3(0, 0, -1), Vector3(0, -1, 0))
+const LYING_Y := 0.1              # 寝袋の上に横になる高さ
 const HELP_ACTIONS := {"water": "water", "weed": "pull"}  # 手伝いの種類 → 体の動き
 
 # 服の色(PlayerFigure3D の look)と、足す物
@@ -76,6 +83,10 @@ var _people := {}          # id → {figure, pos, route, state: walk/stand/insid
 var _tent: Node3D
 var _tent_body: StaticBody3D
 var _tent_at = null        # 今テントを建てている場所(動いたら建て直す)
+var _tent_count := -1      # 建てたときの寝袋の数(家族の人数が変わったら建て直す)
+var _tent_cut := []        # 中に入ると影だけにする布
+var _tent_light: OmniLight3D
+var _in_tent := false
 var _timer := 0.0
 var _rng := RandomNumberGenerator.new()
 var _help_seen := -1       # 手伝いの動きを始めた日(同じ日に 2 回しない)
@@ -110,6 +121,8 @@ func setup(f: Family, player: Node3D, parts: Dictionary) -> void:
 
 func set_night(amount: float) -> void:
 	night = amount
+	if _tent_light != null:
+		_tent_light.visible = amount > 0.3
 
 func is_night() -> bool:
 	return night >= NIGHT_AT
@@ -168,8 +181,7 @@ func positions() -> Array:
 func obstacle_rects() -> Array:
 	var list := []
 	if _tent_at != null:
-		var r: float = Family.TENT_RADIUS + OBSTACLE_MARGIN * 0.5
-		list.append(Rect2(_tent_at - Vector2(r, r), Vector2(r, r) * 2.0))
+		list.append(family.tent_rect().grow(OBSTACLE_MARGIN * 0.5))
 	for id in _people:
 		var p: Dictionary = _people[id]
 		if p.state == "stand":
@@ -226,6 +238,7 @@ func _remove_person(id: String) -> void:
 func _fit_size(p: Dictionary, m: Dictionary) -> void:
 	var s := body_scale(m.role, family.age_of(m), m.sex)
 	p.figure.scale = Vector3.ONE * s
+	p.scale = s
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = BODY_RADIUS * s
 	capsule.height = BODY_HEIGHT * s
@@ -256,7 +269,31 @@ func _process(delta: float) -> void:
 	if _timer >= SYNC_SECONDS:
 		_timer = 0.0
 		_sync_tent()
+	_update_inside()
 	step(delta)
+
+# プレイヤーがテントの中にいるあいだは、布を影だけにして中を見せる
+func _update_inside() -> void:
+	var inside: bool = _tent != null and family.is_in_tent(_player.ground_pos())
+	if inside == _in_tent:
+		return
+	_in_tent = inside
+	if _player.has_method("set_indoors"):
+		_player.set_indoors(inside, 0.0)
+	_apply_cut()
+
+func _apply_cut() -> void:
+	var cast := GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if _in_tent else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	for n in _tent_cut:
+		n.cast_shadow = cast
+
+func is_in_tent() -> bool:
+	return _in_tent
+
+# プレイヤーが自分の寝袋で横になる場所(足元。世界の座標)と向き
+func player_lying_spot() -> Vector3:
+	var spot: Vector2 = family.bedroll_of("")
+	return Vector3(spot.x, LYING_Y, spot.y + Family.BEDROLL_SIZE.y * 0.5 - 0.1)
 
 # 1 コマ分動かす
 func step(delta: float) -> void:
@@ -290,6 +327,7 @@ func _step_person(p: Dictionary, delta: float) -> void:
 func _come_out(p: Dictionary, home: Vector2) -> void:
 	p.pos = home
 	p.figure.visible = true
+	p.figure.basis = Basis.from_scale(Vector3.ONE * float(p.get("scale", 1.0)))  # 寝袋から起きる
 	p.state = "stand"
 	p.wait = _rng.randf_range(1.0, 3.0)
 	_place(p)
@@ -381,8 +419,8 @@ func _reached(p: Dictionary) -> void:
 		"home":
 			if is_night():
 				p.state = "inside"
-				p.figure.visible = false
 				p.shape.disabled = true
+				_lie_in_tent(p)
 				return
 		"help":
 			_face_now(p, p.help_at - p.pos)
@@ -391,6 +429,18 @@ func _reached(p: Dictionary) -> void:
 			p.action = ""
 	_stand(p)
 	p.wait = _rng.randf_range(STAND_SECONDS[0], STAND_SECONDS[1])
+
+# テントがあれば自分の寝袋で横になる(布の下なので、外からは見えない)。小屋なら見えなくする
+func _lie_in_tent(p: Dictionary) -> void:
+	var spot = family.bedroll_of(p.id) if family.has_tent() else null
+	if spot == null:
+		p.figure.visible = false
+		return
+	p.figure.visible = true
+	p.figure.moving = false
+	p.figure.basis = TENT_LYING_BASIS * Basis.from_scale(Vector3.ONE * float(p.get("scale", 1.0)))
+	var feet_back: float = Family.BEDROLL_SIZE.y * 0.5 - 0.1
+	p.figure.position = Vector3(spot.x, LYING_Y, spot.y + feet_back)
 
 # 体の動きを始め、終わるまでは次へ歩きださない
 func _play(p: Dictionary, kind: String) -> void:
@@ -407,6 +457,8 @@ func _avoid_points(id: String) -> Array:
 	return list
 
 func _place(p: Dictionary) -> void:
+	if p.state == "inside":
+		return  # 寝袋で横になっている(_lie_in_tent が置いた場所のまま)
 	p.figure.position = Vector3(p.pos.x, 0.0, p.pos.y)
 
 func _face(p: Dictionary, dir: Vector2, delta: float) -> void:
@@ -456,8 +508,7 @@ func obstacles(id := "") -> Array:
 		var r: float = land.POND_RADIUS + OBSTACLE_MARGIN
 		list.append(Rect2(land.pond - Vector2(r, r), Vector2(r, r) * 2.0))
 	if _tent_at != null:
-		var tr: float = Family.TENT_RADIUS + 0.3
-		list.append(Rect2(_tent_at - Vector2(tr, tr), Vector2(tr, tr) * 2.0))
+		list.append(family.tent_rect().grow(0.3))
 	for other in _people:
 		if other != id and _people[other].state == "stand":
 			var q: Vector2 = _people[other].pos
@@ -468,7 +519,7 @@ func obstacles(id := "") -> Array:
 func _sync_tent() -> void:
 	family.ensure_tent()
 	var want = family.tent if family.has_tent() else null
-	if want == _tent_at:
+	if want == _tent_at and (want == null or family.members.size() == _tent_count):
 		return
 	if _tent != null:
 		_tent.queue_free()
@@ -476,42 +527,91 @@ func _sync_tent() -> void:
 		_tent = null
 		_tent_body = null
 	_tent_at = want
+	_tent_cut.clear()
+	_tent_light = null
 	if want != null:
+		_tent_count = family.members.size()
 		_build_tent(want)
+		_apply_cut()
+		set_night(night)
+	# 寝ていた家族は、新しいテントの寝袋へ(テントが片付いたら見えなくする)
+	for id in _people:
+		if _people[id].state == "inside":
+			_lie_in_tent(_people[id])
 
-# 三角のテント(入口は南)。三角柱の布・入口の暗がり・棟の棒・前後の支柱・杭
+# 三角のテント(入口は南)。人が立てる大きさで、布・入口の暗がり・棟の棒・支柱・杭。
+# 中は床の敷物・寝袋(西から プレイヤー・家族)・枕・棟から吊ったランタン。当たり判定は入口を空けた壁
 func _build_tent(at: Vector2) -> void:
 	_tent = Node3D.new()
 	_tent.name = "FamilyTent"
 	_tent.position = Vector3(at.x, 0, at.y)
 	add_child(_tent)
-	var half: float = Family.TENT_RADIUS
-	var width := half * 1.6
-	var depth := half * 2.0
+	var width: float = Family.TENT_SIZE.x
+	var depth: float = Family.TENT_SIZE.y
 	var cloth := Look.mesh_node(_prism, _mat(Color(0.66, 0.34, 0.24)), Vector3(0, TENT_HEIGHT * 0.5, 0), Vector3(width, TENT_HEIGHT, depth))
 	cloth.name = "Cloth"
 	_tent.add_child(cloth)
-	var door := Look.mesh_node(_prism, _mat(Color(0.20, 0.16, 0.12)), Vector3(0, TENT_HEIGHT * 0.3, depth * 0.5 + 0.01), Vector3(width * 0.45, TENT_HEIGHT * 0.6, 0.02))
+	var door := Look.mesh_node(_prism, _mat(Color(0.20, 0.16, 0.12)), Vector3(0, 0.85, depth * 0.5 + 0.01), Vector3(Family.TENT_DOOR * 1.4, 1.7, 0.02))
 	door.name = "Door"
 	_tent.add_child(door)
+	_tent_cut = [cloth, door]
 	var wood := _mat(Color(0.48, 0.34, 0.20))
 	var ridge := Look.mesh_node(_cylinder, wood, Vector3(0, TENT_HEIGHT + 0.02, 0), Vector3(0.06, depth + 0.2, 0.06))
 	ridge.rotation.x = PI * 0.5
+	ridge.name = "Ridge"
 	_tent.add_child(ridge)
-	for z in [-1.0, 1.0]:  # 前後の支柱
-		_tent.add_child(Look.mesh_node(_cylinder, wood, Vector3(0, TENT_HEIGHT * 0.5, z * (depth * 0.5 + 0.06)), Vector3(0.05, TENT_HEIGHT, 0.05)))
+	_tent_cut.append(ridge)
+	for z in [-1.0, 1.0]:  # 前後の支柱(中に入ると影だけにする。部屋の真ん中に棒が見えないように)
+		var post := Look.mesh_node(_cylinder, wood, Vector3(0, TENT_HEIGHT * 0.5, z * (depth * 0.5 + 0.06)), Vector3(0.05, TENT_HEIGHT, 0.05))
+		_tent.add_child(post)
+		_tent_cut.append(post)
 	for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:  # 杭
 		_tent.add_child(Look.mesh_node(_cylinder, wood, Vector3(c.x * (width * 0.5 + 0.25), 0.08, c.y * (depth * 0.5 - 0.2)), Vector3(0.05, 0.16, 0.05)))
+	# 中: 敷物・寝袋・枕・ランタン
+	var floor_cloth := Look.mesh_node(_box, _mat(Color(0.56, 0.50, 0.38)), Vector3(0, 0.015, 0), Vector3(width - 0.1, 0.03, depth - 0.1))
+	floor_cloth.name = "Floor"
+	_tent.add_child(floor_cloth)
+	var bw: float = family.bedroll_width()
+	var spots: Array = family.bedroll_spots()
+	for i in range(spots.size()):
+		var local: Vector2 = spots[i] - at
+		var roll := Look.mesh_node(_box, _mat(BEDROLL_COLORS[i % BEDROLL_COLORS.size()]), Vector3(local.x, 0.06, local.y), Vector3(bw, 0.07, Family.BEDROLL_SIZE.y))
+		roll.name = "Bedroll%d" % i
+		_tent.add_child(roll)
+		_tent.add_child(Look.mesh_node(_box, _mat(Color(0.94, 0.92, 0.86)), Vector3(local.x, 0.11, local.y - Family.BEDROLL_SIZE.y * 0.5 + 0.18), Vector3(bw * 0.8, 0.08, 0.26)))
+	var lantern := Look.mesh_node(_cylinder, _mat(Color(0.95, 0.78, 0.40)), Vector3(0, TENT_HEIGHT - 0.55, 0.3), Vector3(0.14, 0.2, 0.14))
+	lantern.name = "Lantern"
+	_tent.add_child(lantern)
+	_tent.add_child(Look.mesh_node(_cylinder, wood, Vector3(0, TENT_HEIGHT - 0.28, 0.3), Vector3(0.01, 0.4, 0.01)))
+	_tent_light = OmniLight3D.new()
+	_tent_light.name = "TentLight"
+	_tent_light.position = Vector3(0, TENT_HEIGHT - 0.6, 0.3)
+	_tent_light.light_color = Color(1.0, 0.76, 0.46)
+	_tent_light.light_energy = 1.2
+	_tent_light.omni_range = 3.0
+	_tent_light.shadow_enabled = false
+	_tent_light.visible = false
+	_tent.add_child(_tent_light)
+	# 当たり判定: 東・西・北の壁と、入口を空けた南の壁
 	_tent_body = StaticBody3D.new()
 	_tent_body.name = "FamilyTentBody"
 	_tent_body.position = _tent.position
-	var shape := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(width, TENT_HEIGHT, depth)
-	shape.shape = box
-	shape.position = Vector3(0, TENT_HEIGHT * 0.5, 0)
-	_tent_body.add_child(shape)
 	add_child(_tent_body)
+	var side: float = (width - Family.TENT_DOOR) * 0.5
+	var walls := [
+		[Vector3(-width * 0.5, 0, 0), Vector3(WALL_T, TENT_HEIGHT, depth)],
+		[Vector3(width * 0.5, 0, 0), Vector3(WALL_T, TENT_HEIGHT, depth)],
+		[Vector3(0, 0, -depth * 0.5), Vector3(width, TENT_HEIGHT, WALL_T)],
+		[Vector3(-(Family.TENT_DOOR * 0.5 + side * 0.5), 0, depth * 0.5), Vector3(side, TENT_HEIGHT, WALL_T)],
+		[Vector3(Family.TENT_DOOR * 0.5 + side * 0.5, 0, depth * 0.5), Vector3(side, TENT_HEIGHT, WALL_T)],
+	]
+	for w in walls:
+		var shape := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = w[1]
+		shape.shape = box
+		shape.position = w[0] + Vector3(0, TENT_HEIGHT * 0.5, 0)
+		_tent_body.add_child(shape)
 
 # ── 形 ────────────────────────────────────────────────────
 func _mat(c: Color) -> Material:

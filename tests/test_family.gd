@@ -238,7 +238,15 @@ func _test_tent() -> void:
 	_check(f.has_tent() and f.tent != null, "小屋がなければテントを張る")
 	_check(f.tent.length() >= Family.CENTER_CLEAR, "テントは家族の杉の場所(中心 %dm)を空ける" % Family.CENTER_CLEAR)
 	var home = f.home_pos()
-	_check(home != null and home.distance_to(f.tent) < Family.TENT_RADIUS + 1.0, "夜はテントの入口へ帰る")
+	_check(home != null and home.y > f.tent.y + Family.TENT_SIZE.y * 0.5 and absf(home.x - f.tent.x) < 0.1, "夜はテントの南の入口へ帰る")
+	# 寝袋: 西から プレイヤー・配偶者・子ども
+	var spots: Array = f.bedroll_spots()
+	_check(spots.size() == 3 and spots[0].x < spots[1].x and spots[1].x < spots[2].x, "寝袋は家族の人数 + 自分の分、西から並ぶ")
+	_check(f.bedroll_of("") == spots[0] and f.bedroll_of("alyona") == spots[1] and f.bedroll_of("vanya") == spots[2], "西の端が自分、次が配偶者、子どもの順")
+	_check(spots.all(func(sp): return f.tent_rect().has_point(sp)), "寝袋はテントの中")
+	_check(f.is_in_tent(f.tent) and not f.is_in_tent(f.tent + Vector2(Family.TENT_SIZE.x, 0)), "テントの中かどうか")
+	_check(f.is_at_bedroll(spots[0]) and f.is_at_bedroll(spots[0] + Vector2(0, 1.2)), "自分の寝袋のそばなら休める")
+	_check(not f.is_at_bedroll(spots[0] + Vector2(0, 4.0)), "テントの外では休めない")
 	_check(w.toggle_plot(f.tent) == "tent", "テントの上に区画は作れない")
 	_check(w.pond_action(f.tent + Vector2(2, 0)) == "tent", "テントにかかる場所に池は掘れない")
 	_check(w.bees.is_blocked(f.tent + Vector2(1, 0)), "テントのそばに巣箱・井戸・餌台・石臼は置けない")
@@ -247,7 +255,7 @@ func _test_tent() -> void:
 	w.forest.seeds.birch = 1
 	w.forest.add_tree(old + Vector2(0.5, 0), "birch", "seed")
 	f.ensure_tent()
-	_check(f.tent != null and f.tent != old and f.tent.distance_to(old + Vector2(0.5, 0)) > Family.TENT_CLEARANCE, "木がかかったらテントを移す")
+	_check(f.tent != null and f.tent != old and not f.tent_rect().grow(0.9).has_point(old + Vector2(0.5, 0)), "木がかかったらテントを移す")
 	# 小屋の場所を決めると、そのそばへ
 	var w2 := _world()
 	w2.cabin.site = Vector2(15, 15)
