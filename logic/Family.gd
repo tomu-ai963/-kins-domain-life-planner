@@ -6,6 +6,7 @@ extends RefCounted
 # 子どもは 1 人ずつ、息子か娘かと年齢(0〜MAX_START_AGE 歳)も選ぶ。
 # 家族は最初から土地で暮らす。小屋が完成するまでは、夜はテントで休む(テントの場所はここで決める)。
 # テントには南の入口から歩いて入れる。中には寝袋が並び、自分の寝袋のそばで H を押すと休める(日記。2026-11-16 とむ)。
+# 小屋が完成したら、家族は小屋で暮らす: 夜は母屋の床に敷いた布団で寝る。昼もときどき小屋に入って過ごす(見た目は view。2026-11-16 とむ)。
 # 毎朝(日付が変わった最初の確認で)小さな手伝いをする:
 #   配偶者: 水のいる区画か木に WATER_HELP か所まで水をやる(井戸・池・川のどれかで汲めるときだけ。雨の日は要らない)
 #   子ども: HELP_AGE 歳から、雑草の生えた区画を 1 つ抜く(WEED_MORE_AGE 歳から 2 つ)
@@ -56,6 +57,11 @@ const TENT_DOOR := 1.0                 # 入口の幅(m)
 const BEDROLL_SIZE := Vector2(0.62, 1.9)  # 寝袋 1 枚(東西 × 南北)。北の奥に頭を向けて並べる
 const BEDROLL_REACH := 0.6             # 寝袋からこの距離までなら H で休める
 const TENT_SAMPLE := 1.0               # テントを張れるか確かめる点の間隔(m)
+# 小屋の布団(2026-11-16): 母屋の東側の空いた床(小屋の中心からの範囲)に、東西に長く北から並べて敷く。枕は東
+const FUTON_ZONE := Rect2(0.15, -0.45, 1.75, 1.9)
+const FUTON_ADULT := Vector2(1.7, 0.6)  # 東西の長さ × 南北の幅
+const FUTON_CHILD_W := 0.41             # 子どもの布団の幅(南北)
+const DOOR_OUT := 1.0                   # 小屋の戸口の外、この距離のところで出入りする
 const TENT_SEARCH := 30.0     # テントの場所を探す範囲(目安の場所からの距離)
 const CENTER_CLEAR := 5.0     # 中心は家族の杉のために空ける(Quests.FAMILY_CEDAR_RADIUS と同じ)
 
@@ -296,7 +302,7 @@ func home_pos():
 	if not chosen or members.is_empty():
 		return null
 	if cabin.is_complete():
-		return cabin.door_pos()
+		return cabin.door_pos() + Vector2(0, DOOR_OUT)  # 戸口の外(ここから戸口を通って中へ入る)
 	ensure_tent()
 	return tent + Vector2(0, TENT_SIZE.y * 0.5 + 0.5) if tent != null else null
 
@@ -401,6 +407,29 @@ func is_at_bedroll(pos: Vector2) -> bool:
 	var spot = bedroll_of("")
 	var r := Rect2(spot - Vector2(bedroll_width(), BEDROLL_SIZE.y) * 0.5, Vector2(bedroll_width(), BEDROLL_SIZE.y))
 	return r.grow(BEDROLL_REACH).has_point(pos)
+
+# ── 小屋の布団 ────────────────────────────────────────────
+# 布団の並び [{id, pos(中心), size(東西 × 南北)}]。小屋が完成していなければ空。
+# 母屋の東側の床に、北から 配偶者・子ども(上から)の順。子どもの布団は幅が狭く、背に合わせて短い
+func futon_spots() -> Array:
+	if not chosen or members.is_empty() or not cabin.is_complete():
+		return []
+	var out := []
+	var z: float = FUTON_ZONE.position.y
+	for m in members:
+		var size := FUTON_ADULT
+		if m.role == "child":
+			size = Vector2(minf(FUTON_ADULT.x, 1.0 + age_of(m) * 0.04), FUTON_CHILD_W)
+		var x: float = FUTON_ZONE.end.x - size.x * 0.5  # 東の壁に寄せる(枕は東)
+		out.append({"id": m.id, "pos": cabin.site + Vector2(x, z + size.y * 0.5), "size": size})
+		z += size.y + 0.02
+	return out
+
+func futon_of(id: String) -> Dictionary:
+	for f in futon_spots():
+		if f.id == id:
+			return f
+	return {}
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:

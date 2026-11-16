@@ -69,6 +69,7 @@ func _process(_delta: float) -> bool:
 			_test_family_collision()
 			_test_profile_view()
 			_test_no_planting_outside()
+			_test_cabin_family()
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
@@ -3625,3 +3626,77 @@ func _test_no_planting_outside() -> void:
 	main._on_plant_tree(Vector2(5, -54))
 	_check(w.forest.trees.size() == before and w.forest.seeds.birch == 2, "外の林で SPACE を押しても種をまかない")
 	_check(hud._message.begins_with("一族の土地の外には植えられない"), "外では植えられないと知らせる")
+
+# 小屋の中の家族(2026-11-16)
+func _test_cabin_family() -> void:
+	print("小屋の中の家族")
+	var w = main.world
+	var f = w.family
+	var view: Node3D = main.get_node("Family")
+	var player: CharacterBody3D = main.get_node("Player")
+	var steps := func(cond: Callable) -> bool:
+		for _i in range(2000):
+			if cond.call():
+				return true
+			view.step(0.1)
+		return cond.call()
+	w.forest.trees.clear()
+	w.cabin.site = Vector2(-20, -20)
+	w.cabin.stage = w.cabin.STAGES.size()
+	view._sync_tent()
+	player.global_position = Vector3(30, 0, 30)
+	_check(view.tent_node() == null and f.home_pos() == w.cabin.door_pos() + Vector2(0, f.DOOR_OUT), "小屋が完成すると、家は小屋(戸口の外から出入りする)")
+	for id in view.people_ids():
+		var p: Dictionary = view._people[id]
+		p.pos = Vector2(-10, -10) + Vector2(view.people_ids().find(id), 0)
+		p.indoor = false
+		view._stand(p)
+		p.wait = 0.0
+	# 夜: 戸口から入って布団で寝る
+	view.set_night(1.0)
+	var all_in: bool = steps.call(func(): return view.people_ids().all(func(id): return view.state_of(id) == "inside"))
+	_check(all_in, "夜はみんな小屋に入る")
+	var on_futon := true
+	for id in view.people_ids():
+		var fig: Node3D = view.figure_of(id)
+		var futon: Dictionary = f.futon_of(id)
+		var r := Rect2(futon.pos - futon.size * 0.5, futon.size).grow(0.05)
+		on_futon = on_futon and fig.visible and r.has_point(Vector2(fig.position.x, fig.position.z)) and fig.position.y > view.CABIN_FLOOR_Y and fig.basis.y.normalized().is_equal_approx(Vector3(1, 0, 0))
+	_check(on_futon, "それぞれの布団で横になっている(床の上・頭は東の枕)")
+	_check(view.futons_node() != null and view.futons_node().get_node_or_null("Futon_polya") != null, "寝ているあいだは布団が敷いてある")
+	_check(not w.cabin.rect().has_point(Vector2.ZERO) and w.cabin.rect().has_point(f.futon_of("alyona").pos), "布団は小屋の中")
+	# 朝: 起きて戸口から出ていく
+	view.set_night(0.0)
+	view.step(0.1)
+	var vanya: Dictionary = view._people["vanya"]
+	_check(vanya.state == "stand" and vanya.indoor and w.cabin.is_inside(vanya.pos), "朝は布団から起きて、小屋の中に立つ")
+	_check(absf(view.figure_of("vanya").position.y - view.CABIN_FLOOR_Y) < 0.01, "小屋の中では床の高さに立つ")
+	view._sync_futons()
+	_check(view.futons_node() == null, "みんな起きたら布団を片付ける")
+	for id in view.people_ids():
+		view._people[id].wait = 0.0
+	var went_out: bool = steps.call(func(): return view.people_ids().all(func(id): return not view._people[id].get("indoor", false)))
+	_check(went_out, "戸口から外へ出ていく")
+	_check(view.people_ids().all(func(id): return not w.cabin.rect().grow(0.3).has_point(view.person_pos(id))), "出たあとは、みんな小屋の外")
+	# 昼: ときどき小屋に入って過ごす(配偶者はストーブの前)
+	var al: Dictionary = view._people["alyona"]
+	al.pos = w.cabin.door_pos() + Vector2(2, 3)
+	view._stand(al)
+	view._go(al, f.home_pos(), "enter")
+	var settled: bool = steps.call(func(): return al.state == "stand" and al.get("indoor", false))
+	var spot: Array = view.indoor_spot("alyona")
+	_check(settled and al.pos.distance_to(spot[0]) < 0.5, "昼は小屋に入って、ストーブの前に立つ")
+	_check(absf(view.figure_of("alyona").position.y - view.CABIN_FLOOR_Y) < 0.01 and not al.shape.disabled, "小屋の中でも当たり判定がある")
+	_check(al.wait >= view.INDOOR_SECONDS[0], "しばらく小屋の中で過ごす")
+	# 夜になったら、小屋の中からそのまま布団へ
+	view.set_night(1.0)
+	al.wait = 0.0
+	var slept: bool = steps.call(func(): return al.state == "inside")
+	_check(slept and view.figure_of("alyona").basis.y.normalized().is_equal_approx(Vector3(1, 0, 0)), "小屋の中にいれば、夜はそのまま布団で寝る")
+	# 片付け(このあとのテストのため)
+	view.set_night(0.0)
+	view.step(0.1)
+	w.cabin.site = null
+	w.cabin.stage = 0
+	view._sync_tent()
+	view._sync_futons()
