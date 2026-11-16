@@ -168,6 +168,10 @@ func is_lying() -> bool:
 	return _lying
 
 # ベッドに横になる。spot は足の裏の位置(世界の座標)。動くのは見た目の体だけで、足元の位置(当たり判定)は変わらない
+# 性別に合わせて髪を変える(f は長めの髪と三つ編み。m と "" は今のまま)
+func set_sex(sex: String) -> void:
+	_figure.set_long_hair(sex == "f")
+
 func lie_down(spot: Vector3, lying := LYING_BASIS) -> void:
 	_lying = true
 	_posing = true

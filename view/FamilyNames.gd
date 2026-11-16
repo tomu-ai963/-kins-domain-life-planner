@@ -1,12 +1,13 @@
 extends ColorRect
 
-# ── 家族の名前を付け直す画面(2D と 3D で共通。HUD が持つ。2026-11-16) ──────────────
-# Y(タッチはメニューの「家族」)で開く。家族 1 人ずつの名前の欄を並べ、「決める」で names_decided({id: 名前})を出す。
+# ── 自分と家族の名前を付け直す画面(2D と 3D で共通。HUD が持つ。2026-11-16) ──────────────
+# Y(タッチはメニューの「名前」)で開く。自分と家族 1 人ずつの名前の欄を並べ、「決める」で names_decided({id: 名前})を出す。
 # 付け直せるのは名前だけ(顔ぶれ・息子か娘か・年齢は変えられない)。名前のルールは logic/Family.gd(rename)、文言は Main
 const Family = preload("res://logic/Family.gd")
 const BUTTON_SIZE := Vector2(160, 40)
 const TOUCH_BUTTON_SIZE := Vector2(180, 52)
 const NAME_WIDTH := 220.0
+const SELF := "self"  # 自分の行の id
 
 signal names_decided(names)  # {id: 名前}(Node の renamed と名前がぶつからないように)
 signal closed
@@ -31,11 +32,11 @@ func _init() -> void:
 	_title = Label.new()
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.add_theme_font_size_override("font_size", 24)
-	_title.text = "家族の名前"
+	_title.text = "名前を付け直す"
 	box.add_child(_title)
 	var note := Label.new()
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	note.text = "名前を付け直せます(%d文字まで)。空にした人は、今の名前のままです。" % Family.NAME_MAX
+	note.text = "自分と家族の名前を付け直せます(%d文字まで)。空にした人は、今の名前のままです。" % Family.NAME_MAX
 	box.add_child(note)
 	_rows = GridContainer.new()
 	_rows.columns = 2
@@ -53,29 +54,39 @@ func _init() -> void:
 		buttons.add_child(b)
 		_buttons.append(b)
 
-# members は Family.members、ages は {id: 今の年齢}
-func open(members: Array, ages: Dictionary) -> void:
+# members は Family.members、ages は {id: 今の年齢}、self_name は自分の名前(決めていなければ "")。
+# 自分の行は id = SELF でいちばん上に出す
+func open(members: Array, ages: Dictionary, self_name := "") -> void:
 	for c in _rows.get_children():
 		c.queue_free()
 	_edits.clear()
+	var first_id := ""
+	if self_name != "":
+		_add_row(SELF, "自分", self_name)
+		first_id = SELF
 	for m in members:
-		var label := Label.new()
-		label.text = m.relation if m.role == "spouse" else "%s %d歳" % [m.relation, int(ages.get(m.id, 0))]
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		_rows.add_child(label)
-		var edit := LineEdit.new()
-		edit.text = m.name
-		edit.max_length = Family.NAME_MAX
-		edit.custom_minimum_size = Vector2(NAME_WIDTH, TOUCH_BUTTON_SIZE.y if touch_mode else BUTTON_SIZE.y)
-		edit.text_submitted.connect(func(_t): _decide())
-		_rows.add_child(edit)
-		_edits[m.id] = edit
+		_add_row(m.id, m.relation if m.role == "spouse" else "%s %d歳" % [m.relation, int(ages.get(m.id, 0))], m.name)
+		if first_id == "":
+			first_id = m.id
 	for b in _buttons:
 		b.custom_minimum_size = TOUCH_BUTTON_SIZE if touch_mode else BUTTON_SIZE
 	visible = true
-	if not members.is_empty():
-		var first: LineEdit = _edits[members[0].id]
+	if first_id != "":
+		var first: LineEdit = _edits[first_id]
 		first.call_deferred("grab_focus")
+
+func _add_row(id: String, label_text: String, current: String) -> void:
+	var label := Label.new()
+	label.text = label_text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_rows.add_child(label)
+	var edit := LineEdit.new()
+	edit.text = current
+	edit.max_length = Family.NAME_MAX
+	edit.custom_minimum_size = Vector2(NAME_WIDTH, TOUCH_BUTTON_SIZE.y if touch_mode else BUTTON_SIZE.y)
+	edit.text_submitted.connect(func(_t): _decide())
+	_rows.add_child(edit)
+	_edits[id] = edit
 
 func close() -> void:
 	visible = false

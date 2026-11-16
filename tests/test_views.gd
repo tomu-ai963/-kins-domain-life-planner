@@ -67,6 +67,7 @@ func _process(_delta: float) -> bool:
 			_wait_until = Time.get_ticks_msec() + 200
 		13:
 			_test_family_collision()
+			_test_profile_view()
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
@@ -3571,3 +3572,42 @@ func _test_family_collision() -> void:
 	_check(not player.test_move(front, Vector3(0, 0, -3.0)), "南の入口からは歩いて入れる")
 	var front_side := Transform3D(Basis.IDENTITY, Vector3(t.x + 1.2, 0, t.y + 3.0))
 	_check(player.test_move(front_side, Vector3(0, 0, -3.0)), "入口の横の布は通り抜けられない")
+
+# ── 自分の名前と性別(2026-11-16) ─────────────────────────────────
+func _test_profile_view() -> void:
+	print("自分の名前と性別")
+	var w = main.world
+	var p = w.profile
+	var hud = main.get_node("HUD")
+	var player: CharacterBody3D = main.get_node("Player")
+	var figure: Node3D = player.get_node("Body/Figure")
+	_check(not p.chosen and main.profile_suffix() == "" and main.with_call("{呼}ありがとう") == "ありがとう", "決める前は呼びかけなし")
+	_check(main.diary_text().begins_with("%d月%d日の日記" % [int(w.forest.today().substr(5, 2)), int(w.forest.today().substr(8, 2))]), "決める前の日記の見出し")
+	_check(not figure.has_long_hair(), "決める前は今の髪")
+	main.open_profile_picker()
+	_check(hud.is_picker_open() and hud.profile_picker.visible and not player.is_physics_processing(), "自分のことを決める画面が開き、そのあいだは歩かない")
+	hud.profile_picker.type_name("とむ")
+	hud.profile_picker.set_sex("f")
+	hud.profile_picker.press("次へ")
+	hud.profile_picker.press("これで始める")
+	_check(p.chosen and p.name == "とむ" and p.sex == "f" and player.is_physics_processing(), "決めると閉じて、歩ける")
+	_check(hud._message.contains("ようこそ、とむさん"), "ようこそと知らせる")
+	_check(figure.has_long_hair() and figure.get_node("Hips/Upper/Head/LongHair").get_child_count() >= 4, "女性は長めの髪と三つ編み")
+	_check(main.profile_suffix() == "  とむ(女性)" and hud._inventory_lines()[0] == "─ 持ち物 ─  とむ(女性)", "持ち物の見出しに名前")
+	_check(main.diary_text().contains("日 とむの日記"), "日記の見出しに名前")
+	_check(main.with_call("{呼}ありがとう、助かったよ。") == "とむさん、ありがとう、助かったよ。", "近所の人は「とむさん、」と呼ぶ")
+	_check(main.with_call("{呼}無理しないでね。", "spouse") == "とむ、無理しないでね。", "配偶者は「とむ、」と呼ぶ")
+	_check(main.with_call("{親}見て見て!", "child") == "お母さん、見て見て!", "子どもは「お母さん、」と呼ぶ")
+	_check(main.VISITOR_CHATS.nina.any(func(l): return l.begins_with("{呼}")) and main.VISITOR_THANKS.values().all(func(l): return l.contains("{呼}")), "近所の人の言葉のいくつかとお礼で名前を呼ぶ")
+	# 名前を付け直す(Y。自分の行がいちばん上)
+	var e := InputEventKey.new()
+	e.keycode = KEY_Y
+	e.pressed = true
+	main._unhandled_input(e)
+	_check(hud.family_names.visible and hud.family_names.name_of("self") == "とむ", "Y の画面に自分の行がある")
+	hud.family_names.type_name("self", "トム")
+	hud.family_names.press("決める")
+	_check(p.name == "トム" and p.sex == "f" and hud._message.contains("とむ → トム"), "自分の名前を付け直せる(性別はそのまま)")
+	# 見た目を戻す(ほかのテストの見た目に響かないように)
+	player.set_sex("")
+	_check(not figure.has_long_hair(), "性別を決めないなら今の髪")

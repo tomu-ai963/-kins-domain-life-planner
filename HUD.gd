@@ -12,6 +12,7 @@ const TouchText = preload("res://view/TouchText.gd")
 const RegionPicker = preload("res://view/RegionPicker.gd")
 const FamilyPicker = preload("res://view/FamilyPicker.gd")
 const FamilyNames = preload("res://view/FamilyNames.gd")
+const ProfilePicker = preload("res://view/ProfilePicker.gd")
 const MESSAGE_SECONDS := 3.0
 const DIARY_FADE_SECONDS := 0.6
 const TOUCH_STATUS_SECONDS := 0.25  # タッチのときに左上の文字を更新する間隔
@@ -25,6 +26,7 @@ signal region_chosen(id)  # 土地のある都道府県を決めた(view/RegionP
 signal family_chosen(choice)  # 一緒に暮らす家族を決めた(view/FamilyPicker.gd。{spouse, spouse_name, kids})
 signal family_renamed(names)  # 家族の名前を付け直した(view/FamilyNames.gd。{id: 名前})
 signal family_names_closed    # 名前を付け直す画面を、何もせずに閉じた
+signal profile_chosen(player_name, sex)  # 自分の名前と性別を決めた(view/ProfilePicker.gd)
 
 @onready var _label: Label = $PositionLabel
 @onready var _bg: ColorRect = $BG
@@ -52,7 +54,8 @@ var _hint_panel: PanelContainer
 var _hint_label: Label
 var picker: RegionPicker  # 都道府県を選ぶ画面(ゲームのはじめに一度だけ)
 var family_picker: FamilyPicker  # 家族を選ぶ画面(都道府県のあと、一度だけ)
-var family_names: FamilyNames    # 家族の名前を付け直す画面(Y)
+var family_names: FamilyNames    # 自分と家族の名前を付け直す画面(Y)
+var profile_picker: ProfilePicker  # 自分の名前と性別を決める画面(いちばんはじめに一度だけ)
 
 func setup(player: Node, trees: Forest, main: Node) -> void:
 	_player = player
@@ -72,6 +75,9 @@ func setup(player: Node, trees: Forest, main: Node) -> void:
 	family_names.names_decided.connect(func(n): family_renamed.emit(n))
 	family_names.closed.connect(func(): family_names_closed.emit())
 	add_child(family_names)
+	profile_picker = ProfilePicker.new()
+	profile_picker.chosen.connect(func(n, s): profile_chosen.emit(n, s))
+	add_child(profile_picker)
 
 # ── 都道府県を選ぶ画面 ──
 func open_region_picker() -> void:
@@ -82,14 +88,18 @@ func open_family_picker() -> void:
 	family_picker.touch_mode = touch_mode
 	family_picker.open()
 
-func open_family_names(members: Array, ages: Dictionary) -> void:
+func open_family_names(members: Array, ages: Dictionary, self_name := "") -> void:
 	family_names.touch_mode = touch_mode
-	family_names.open(members, ages)
+	family_names.open(members, ages, self_name)
+
+func open_profile_picker() -> void:
+	profile_picker.touch_mode = touch_mode
+	profile_picker.open()
 
 # 都道府県・家族を選ぶ画面か、家族の名前の画面が開いているか
 func is_picker_open() -> bool:
 	return (picker != null and picker.visible) or (family_picker != null and family_picker.visible) \
-		or (family_names != null and family_names.visible)
+		or (family_names != null and family_names.visible) or (profile_picker != null and profile_picker.visible)
 
 # 植えられない・収穫した などを数秒だけ出す
 func show_message(text: String, seconds: float = MESSAGE_SECONDS) -> void:
@@ -373,7 +383,7 @@ func _status_lines() -> PackedStringArray:
 func _inventory_lines() -> PackedStringArray:
 	var pos: Vector2 = _main.player_pos()
 	return PackedStringArray([
-		"─ 持ち物 ─",
+		"─ 持ち物 ─" + _main.profile_suffix(),
 		"種: " + _stock_text(_trees.seeds, false),
 		"苗木: " + _stock_text(_trees.saplings, true),
 		"野菜の種: " + _main.crop_seeds_line() + _orders_suffix(),
@@ -424,7 +434,7 @@ func _touch_help_lines() -> PackedStringArray:
 		"植える: 木を植える/区画にまく  水やり  収穫  抜く: 抜く/伐る",
 		"小屋: 場所を決める/作業/苗づくり  使う: 家具のそばで使う",
 		"市場・話す・雪かき: 使えるときだけボタンが出る(市場は南の境界の外)",
-		"メニュー: 菜園 池 井戸 石臼 巣箱 餌台 剪定 家族(名前)",
+		"メニュー: 菜園 池 井戸 石臼 巣箱 餌台 剪定 名前(自分と家族)",
 		"メニュー: 植える木と野菜を選ぶ  種/苗木  持ち物  音量",
 		"メニュー: +1年 +10年 +1時間 今に戻す(未来をプレビュー)",
 	])
@@ -436,7 +446,7 @@ func _help_lines() -> PackedStringArray:
 		"J:丸太の巣箱を作る/くり抜く/はちみつを採る  M:音量(大/中/小/消す)",
 		_main.local_text("L:鳥の餌台を立てる/白樺の種か野菜を置く/育った木にムクドリの巣箱  X:果樹を剪定する(冬)"),
 		"U:押したまま歩いて雪かき(冬)  H:小屋の東の台で薪を割る / 腰掛けで食べる",
-		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者・家族と話す  Y:家族の名前",
+		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者・家族と話す  Y:名前(自分と家族)",
 		"[1]%s [2]果樹(押すたびに %s) [3]%s [V]種/苗木" % [_main.group_keys_text("broadleaf"), _main.group_keys_text("fruit", false), _main.group_keys_text("conifer")],
 		_main.crop_keys_text(),
 		"SPACE:植える/区画にまく  Q:水やり/井戸・池・川で汲む  E:収穫/草取り/わら  Z:抜く/伐る(斧は1日3本)",

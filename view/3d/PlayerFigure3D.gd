@@ -300,6 +300,30 @@ func _build() -> void:
 		_part("Cheek", head, _ball(), Look.mat(CHEEK), Vector3(side * 0.112, -0.038, -0.138), Vector3(0.060, 0.034, 0.020))
 	_part("Mouth", head, _ball(), Look.mat(MOUTH), Vector3(0.0, -0.075, -0.158), Vector3(0.050, 0.016, 0.016))
 
+# 長めの髪(肩までの後ろ髪・顔の両横の髪・背中に垂らした三つ編み)を付ける / 外す。プレイヤーの性別で Player3D が呼ぶ
+func set_long_hair(on: bool) -> void:
+	var head: Node3D = get_node_or_null("Hips/Upper/Head")
+	if head == null:
+		return
+	var old := head.get_node_or_null("LongHair")
+	if old != null:
+		old.free()
+	if not on:
+		return
+	var hair := Look.mat(look.get("HAIR", HAIR))
+	var long := Node3D.new()
+	long.name = "LongHair"
+	head.add_child(long)
+	_part("Back", long, _ball(), hair, Vector3(0.0, -0.06, 0.115), Vector3(0.40, 0.36, 0.26))
+	for side in [-1.0, 1.0]:  # 顔の両横から肩へ垂れる髪(前を向いていても長い髪だと分かるように)
+		_part("Side", long, _ball(), hair, Vector3(side * 0.165, -0.12, 0.03), Vector3(0.11, 0.30, 0.15))
+	for i in range(3):
+		_part("Braid", long, _ball(), hair, Vector3(0.0, -0.20 - i * 0.1, 0.17 + i * 0.01), Vector3(0.09, 0.11, 0.09))
+	_part("Tie", long, _ball(), Look.mat(SASH), Vector3(0.0, -0.47, 0.18), Vector3(0.07, 0.05, 0.07))
+
+func has_long_hair() -> bool:
+	return get_node_or_null("Hips/Upper/Head/LongHair") != null
+
 func _build_leg(node_name: String, x: float, trousers: Material, boots: Material) -> Node3D:
 	var leg := _pivot(node_name, _hips, Vector3(x, HIP_Y, 0.0))
 	_part("Thigh", leg, _capsule(0.078, 0.60), trousers, Vector3(0.0, -0.30, 0.0))

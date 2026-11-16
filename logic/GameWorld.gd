@@ -2,7 +2,7 @@ extends RefCounted
 
 # ── ゲーム全体の状態(描画を持たない) ──────────────────────────
 # 木と種(Forest)・菜園と池の場所(Land)・畑の野菜(Garden)・池の作り込み(Pond)・小屋(Cabin)・段階クエスト(Quests)・お金と市場(Market)などをまとめ、
-# 1 つのセーブファイルに読み書きする。保存が必要な変更(dirty)を出す 18 の部品(_init の dirty.connect の並び)で自動保存する。
+# 1 つのセーブファイルに読み書きする。保存が必要な変更(dirty)を出す 19 の部品(_init の dirty.connect の並び)で自動保存する。
 # 今日の日付と時刻は WorldTime(time)から読む
 # 座標の単位は m(ドメイン中心が原点、境界は ±50m)
 const Forest = preload("res://logic/Forest.gd")
@@ -32,6 +32,7 @@ const Mill = preload("res://logic/Mill.gd")
 const Pests = preload("res://logic/Pests.gd")
 const River = preload("res://logic/River.gd")
 const Family = preload("res://logic/Family.gd")
+const Profile = preload("res://logic/Profile.gd")
 
 const SAVE_PATH := "user://kins_domain_save.json"
 # セーブの版(2026-11-11 から書く。レビュー S4)。セーブの形を変える変更(名前・単位を変える、意味を変える)をしたら 1 上げ、
@@ -73,6 +74,7 @@ var mill := Mill.new()           # 石臼と粉(2026-11-14)
 var pests := Pests.new()         # 畑を荒らす生き物と仲良し度(2026-11-15)
 var river := River.new()         # 土地の外の川(2026-11-15。県を選んでから。保存しない)
 var family := Family.new()       # 家族(2026-11-16。はじめに 1 度だけ選ぶ)
+var profile := Profile.new()     # 自分の名前と性別(2026-11-16。いちばんはじめに 1 度だけ決める)
 var last_pumped := [0, 0]        # 直前にポンプでまとめて水をやった [区画の数, 木の数](文言用・保存しない)
 var is_new_game := false         # 読み込むセーブがなかった(新しく始めた)。県を選んだときに、その土地のはじめの種を配る
 var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん大きい)。見た目の設定で、ルールには使わない
@@ -198,6 +200,7 @@ func _init() -> void:
 	mill.dirty.connect(save_game)
 	pests.dirty.connect(save_game)
 	family.dirty.connect(save_game)
+	profile.dirty.connect(save_game)
 
 # 区画(中心 c)を田んぼにできるか: 川か、掘り終えた池から水が引ける範囲(ポンプで水が届く 20m)
 func _paddy_ok(c: Vector2) -> bool:
@@ -445,6 +448,10 @@ func choose_region(id: String) -> String:
 func choose_family(spouse: String, children: int) -> String:
 	return family.choose(spouse, children)
 
+# 自分の名前と性別を決める(一度だけ)。結果は Profile.choose。決めたら保存する
+func choose_profile(player_name: String, sex: String) -> String:
+	return profile.choose(player_name, sex)
+
 # 名前・息子か娘か・年齢まで決めて家族を決める(選ぶ画面の中身 {spouse, spouse_name, kids})。結果は Family.choose_custom
 func choose_family_custom(c: Dictionary) -> String:
 	return family.choose_custom(str(c.get("spouse", "")), str(c.get("spouse_name", "")), SaveRead.list(c.get("kids")))
@@ -476,6 +483,7 @@ func save_game() -> void:
 	data["mill"] = mill.to_save()
 	data["pests"] = pests.to_save()
 	data["family"] = family.to_save()
+	data["profile"] = profile.to_save()
 	_write_save(JSON.stringify(data))
 
 # 別の名前(.tmp)に書き、書けたことを確かめてから本物の名前に付け替える。
@@ -621,6 +629,7 @@ func load_game() -> void:
 	market.from_save(md)
 	forest.from_save(data)
 	quests.from_save(qd)  # 木を読んだあと(木の節目を数えるため)
+	profile.from_save(SaveRead.dict(data.get("profile")))  # 自分の記録がないセーブ(2026-11-16 より前)は、開いたときに一度だけ決める
 	family.from_save(SaveRead.dict(data.get("family")))  # 家族の記録がないセーブ(2026-11-16 より前)は、開いたときに一度だけ選ぶ
 	family.ensure_tent()
 

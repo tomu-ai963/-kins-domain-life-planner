@@ -133,6 +133,7 @@ func _ready() -> void:
 	$HUD.shop_action.connect(_on_shop_action)
 	$HUD.region_chosen.connect(_on_region_chosen)
 	$HUD.family_chosen.connect(_on_family_chosen)
+	$HUD.profile_chosen.connect(_on_profile_chosen)
 	$HUD.family_renamed.connect(_on_family_renamed)
 	$HUD.family_names_closed.connect(func(): $Player.set_physics_process(true))
 	$Player.plant_tree.connect(_on_plant_tree)
@@ -146,11 +147,55 @@ func _ready() -> void:
 		$Ground.hide_covered()  # セーブにあった区画や小屋の上には草を生やさない
 		$Wildlife.sync_animals()  # セーブにあった木や畑に合わせて、最初からいるように
 		_apply_sound_level()
-	# 県の記録がなければ、選ぶ画面を出す。本物のセーブのときだけ(テストや確認用のセーブでは、要るときに開く)
-	if not world.region.is_chosen() and world.save_path == world.SAVE_PATH:
+	_apply_profile_look()
+	# 自分・県・家族の記録がなければ、その順に決める画面を出す。本物のセーブのときだけ(テストや確認用のセーブでは、要るときに開く)
+	if world.save_path == world.SAVE_PATH:
+		open_next_picker()
+
+# まだ決めていないものの画面を、自分 → 都道府県 → 家族 の順に 1 つ開く。全部決まっていれば何もしない
+func open_next_picker() -> void:
+	if not world.profile.chosen:
+		open_profile_picker()
+	elif not world.region.is_chosen():
 		open_region_picker()
-	elif not world.family.chosen and world.save_path == world.SAVE_PATH:
+	elif not world.family.chosen:
 		open_family_picker()  # 家族の記録がないセーブ(2026-11-16 より前)も、一度だけ選ぶ
+
+# ── 自分の名前と性別(いちばんはじめに一度だけ決める。2026-11-16) ──
+func open_profile_picker() -> void:
+	$Player.set_physics_process(false)
+	$HUD.open_profile_picker()
+
+func _on_profile_chosen(player_name: String, sex: String) -> void:
+	$Player.set_physics_process(true)
+	if world.choose_profile(player_name, sex) != "chosen":
+		return
+	_apply_profile_look()
+	$HUD.show_message("ようこそ、%sさん" % world.profile.name, 5.0)
+	if world.save_path == world.SAVE_PATH:
+		open_next_picker()
+
+# 性別を見た目(髪)に合わせる(3D だけ)
+func _apply_profile_look() -> void:
+	if $Player.has_method("set_sex"):
+		$Player.set_sex(world.profile.sex)
+
+# 持ち物の見出しのあとに出す、自分の名前と性別
+func profile_suffix() -> String:
+	var p := world.profile
+	if not p.chosen:
+		return ""
+	return "  %s" % p.name if p.sex == "" else "  %s(%s)" % [p.name, p.SEX_NAMES[p.sex]]
+
+# 言葉の中の呼びかけを置き換える。{呼} は訪問者なら「○○さん、」、配偶者なら「○○、」。{親} は子どもの「お母さん、」「お父さん、」。
+# 名前・性別を決めていなければ消す
+func with_call(text: String, speaker := "visitor") -> String:
+	var p := world.profile
+	var address := ""
+	if p.chosen:
+		address = ("%s、" % p.name) if speaker == "spouse" else ("%sさん、" % p.name)
+	var parent: String = p.parent_word() + "、" if p.chosen and p.parent_word() != "" else ""
+	return text.replace("{呼}", address).replace("{親}", parent)
 
 # ── 土地のある都道府県(ゲームのはじめに一度だけ選ぶ) ──
 func open_region_picker() -> void:
@@ -168,8 +213,8 @@ func _on_region_chosen(id: String) -> void:
 	var z: Dictionary = world.region.zone()
 	$HUD.show_message("%sに土地を持った(気候: %s)。季節と植えられる木は、この土地に合わせて決まる" % [world.region.pref_name(), z.name], 7.0)
 	# 続けて、一緒に暮らす家族を選ぶ。本物のセーブのときだけ(テストや確認用のセーブでは、要るときに開く)
-	if not world.family.chosen and world.save_path == world.SAVE_PATH:
-		open_family_picker()
+	if world.save_path == world.SAVE_PATH:
+		open_next_picker()
 
 # ── 一緒に暮らす家族(都道府県のあとに一度だけ選ぶ。2026-11-16) ──
 func open_family_picker() -> void:
@@ -600,23 +645,23 @@ func local_text(text: String) -> String:
 const VISITOR_CHATS := {
 	"nina": [
 		"区画はお金がいらないけど、耕すのは1日2区画まで。\n欲張らず少しずつね。",
-		"水をやった日は1日ぶん、やらない日は半日ぶん育つよ。\n毎日見てあげて。",
+		"{呼}水をやった日は1日ぶん、やらない日は半日ぶん育つよ。\n毎日見てあげて。",
 		"冬が来る前に、ニンニク以外は収穫しておくんだよ。\n霜は待ってくれないからね。",
 	],
 	"fyodor": [
-		"自分の木で丸太の巣箱を作るといい。\nくり抜いてあれば、蜂を分けてあげるよ。",
+		"{呼}自分の木で丸太の巣箱を作るといい。\nくり抜いてあれば、蜂を分けてあげるよ。",
 		"ミツバチは野菜の花が好きでね。\n畑が増えると、うちの蜂も喜ぶよ。",
 		"木が増えると小鳥が来る。\n育った木にはリスも来るさ。",
 		"丸太は育った木を伐れば手に入る。\n市場で買うと高いからね。",
 	],
 	"tanya": [
-		"夜に畑へ行くと、ノウサギがいるんだよ!\nそっと近づいてもすぐ逃げちゃうけど。",
+		"{呼}夜に畑へ行くと、ノウサギがいるんだよ!\nそっと近づいてもすぐ逃げちゃうけど。",
 		"ハリネズミは逃げないの。\nじっとしてるんだよ。",
 		"渡り鳥を見た?\n近づくと、みんなで飛んでっちゃうんだ。",
 	],
 	"pavel": [
 		"{tomorrow}",
-		"この先の家まで配達です。\nまた寄りますね。",
+		"{呼}この先の家まで配達です。\nまた寄りますね。",
 		"小屋の窓辺なら、冬でも苗が育つそうですね。\n春が楽しみだ。",
 	],
 }
@@ -679,10 +724,10 @@ const VISITOR_HELP := {
 # フョードルさんが蜂を分けてくれるときの言葉
 const VISITOR_BEES := "いい巣箱ができたじゃないか。\nうちの蜂を一群れ分けよう。入れておくよ。"
 const VISITOR_THANKS := {
-	"nina": "ありがとう、助かったよ。",
-	"fyodor": "ありがたい。また来るよ。",
-	"tanya": "やったあ!ありがとう!",
-	"pavel": "助かりました。では、配達に戻ります。",
+	"nina": "{呼}ありがとう、助かったよ。",
+	"fyodor": "{呼}ありがたい。また来るよ。",
+	"tanya": "やったあ!{呼}ありがとう!",
+	"pavel": "{呼}助かりました。では、配達に戻ります。",
 }
 
 # 「ラディッシュの種 6つ」「トマトの苗 1鉢」「260₽」
@@ -744,7 +789,7 @@ func visitor_text() -> String:
 	if line == "{tomorrow}":
 		var rainy: bool = world.tomorrow_rain()
 		return "明日は降りそうですよ。\n水やりは休めますね。" if rainy else "明日は降らなそうです。\n畑の水やりを忘れずに。"
-	return line
+	return with_call(line)
 
 # C: 近くの訪問者に話しかける。いなければ近くの家族に
 func _talk() -> void:
@@ -804,7 +849,7 @@ func _visitor_action(id: String) -> void:
 	var item: String = v.visit.item
 	if v.give() == "given":
 		_sfx("coin")
-		$HUD.show_message(_with_level_up("%s(%sをもらった)" % [VISITOR_THANKS[who], reward_text(v.last_reward)]), 6.0)
+		$HUD.show_message(_with_level_up("%s(%sをもらった)" % [with_call(VISITOR_THANKS[who]), reward_text(v.last_reward)]), 6.0)
 		_close_shop()
 		_act("pick", $Visitor.ground_pos(), item)
 		return
@@ -826,7 +871,7 @@ const FAMILY_SPOUSE_CHATS := [
 水やりは任せて。",
 	"朝の水汲み、いい運動になるよ。",
 	"この土地、少しずつ私たちの場所になってきたね。",
-	"無理しないでね。
+	"{呼}無理しないでね。
 お昼はちゃんと食べること。",
 ]
 const FAMILY_SPOUSE_SEASON := {
@@ -841,12 +886,12 @@ const FAMILY_SPOUSE_SEASON := {
 }
 const FAMILY_SPOUSE_TENT := "テント暮らしも悪くないけど、
 小屋ができるのが楽しみ。"
-const FAMILY_CHILD_SMALL := ["見て見て!
+const FAMILY_CHILD_SMALL := ["{親}見て見て!
 ダンゴムシ!", "おなかすいた。
 おやつある?", "だっこして!", "あのね、
 鳥さんがいたの!"]
 const FAMILY_CHILD := [
-	"雑草、いっぱい抜いたよ!",
+	"{親}雑草、いっぱい抜いたよ!",
 	"あの木、このあいだより大きくなった!",
 	"鳥の巣を見つけたんだ。
 ないしょだよ。",
@@ -855,31 +900,35 @@ const FAMILY_CHILD := [
 const FAMILY_CHILD_TEEN := ["畑のことなら、もう任せてよ。", "いつか、この土地を守るのは自分だと思ってる。", "町の学校の話、聞く?
 でも、ここがいちばん落ち着く。"]
 const FAMILY_TEEN_AGE := 13
-const FAMILY_GIFT_SPOUSE := "%sを作ったよ。
+const FAMILY_GIFT_SPOUSE := "{呼}%sを作ったよ。
 持っていって。"
-const FAMILY_GIFT_CHILD := "%sを拾ったよ!
+const FAMILY_GIFT_CHILD := "{親}%sを拾ったよ!
 あげる!"
 
 # Y: 家族の名前を付け直す画面を開く
 func _open_family_names() -> void:
 	var f := world.family
-	if not f.chosen:
-		$HUD.show_message("家族はまだ決めていない")
-		return
-	if f.members.is_empty():
-		$HUD.show_message("ひとりで暮らしているので、名前を付ける家族はいない")
+	var me: String = world.profile.name if world.profile.chosen else ""
+	var members: Array = f.members if f.chosen else []
+	if me == "" and members.is_empty():
+		$HUD.show_message("名前を付け直せる人がいない(自分の名前と家族は、はじめに決める)")
 		return
 	var ages := {}
-	for m in f.members:
+	for m in members:
 		ages[m.id] = f.age_of(m)
 	$Player.set_physics_process(false)  # 名前を打つあいだは歩かない
-	$HUD.open_family_names(f.members, ages)
+	$HUD.open_family_names(members, ages, me)
 
 func _on_family_renamed(names: Dictionary) -> void:
 	$Player.set_physics_process(true)
 	var f := world.family
 	var changed := PackedStringArray()
 	for id in names:
+		if id == "self":
+			var old_name: String = world.profile.name
+			if world.profile.rename(str(names[id])) == "renamed":
+				changed.append("%s → %s" % [old_name, world.profile.name])
+			continue
 		var before: String = f.member(id).get("name", "")
 		if f.rename(id, str(names[id])) == "renamed":
 			changed.append("%s → %s" % [before, f.member(id).name])
@@ -912,7 +961,7 @@ func family_chat(id: String) -> String:
 			lines = FAMILY_CHILD
 		else:
 			lines = FAMILY_CHILD_TEEN
-	return lines[f.line_index(id) % lines.size()]
+	return with_call(lines[f.line_index(id) % lines.size()], m.role)
 
 # 贈り物の名前: 「ブリヌイ 3枚」「白樺の種 2つ」
 func family_gift_text(g: Dictionary) -> String:
@@ -928,7 +977,7 @@ func _talk_family(id: String) -> void:
 	var text := "%s「%s」" % [m.name, family_chat(id)]
 	if result == "gift":
 		var gift := family_gift_text(f.last_gift)
-		var said: String = (FAMILY_GIFT_SPOUSE if m.role == "spouse" else FAMILY_GIFT_CHILD) % gift
+		var said: String = with_call((FAMILY_GIFT_SPOUSE if m.role == "spouse" else FAMILY_GIFT_CHILD) % gift, m.role)
 		text = "%s「%s」
 (%sをもらった)" % [m.name, said, gift]
 		_sfx("coin")
@@ -1688,7 +1737,8 @@ func diary_text() -> String:
 	var f := world.forest
 	var g := world.garden
 	var today: String = f.today()
-	var lines := PackedStringArray(["%d月%d日の日記" % [int(today.substr(5, 2)), int(today.substr(8, 2))], ""])
+	var who := (" %s" % world.profile.name) if world.profile.chosen else ""
+	var lines := PackedStringArray(["%d月%d日%sの日記" % [int(today.substr(5, 2)), int(today.substr(8, 2)), who], ""])
 	var todo := PackedStringArray()
 	if f.last_day == today and f.today_event != "":
 		todo.append(daily_message(f.today_event))
