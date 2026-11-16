@@ -38,10 +38,27 @@ const LOOKS := {
 	"vera": {"look": {"TUNIC": Color(0.50, 0.62, 0.86), "SASH": Color(0.92, 0.92, 0.88), "TROUSERS": Color(0.30, 0.30, 0.38), "HAIR": Color(0.20, 0.12, 0.08)}, "extra": "braid"},
 	"ilya": {"look": {"TUNIC": Color(0.92, 0.90, 0.82), "SASH": Color(0.70, 0.18, 0.16), "TROUSERS": Color(0.26, 0.30, 0.40), "HAIR": Color(0.58, 0.40, 0.20)}, "extra": "beard"},
 	"mikhail": {"look": {"TUNIC": Color(0.40, 0.46, 0.28), "SASH": Color(0.50, 0.32, 0.18), "TROUSERS": Color(0.26, 0.24, 0.22), "HAIR": Color(0.12, 0.10, 0.08)}, "extra": "cap"},
-	"vanya": {"look": {"TUNIC": Color(0.30, 0.60, 0.80), "SASH": Color(0.90, 0.70, 0.20), "TROUSERS": Color(0.30, 0.28, 0.26), "HAIR": Color(0.66, 0.48, 0.24)}, "extra": ""},
-	"masha": {"look": {"TUNIC": Color(0.94, 0.56, 0.66), "SASH": Color(0.98, 0.96, 0.90), "TROUSERS": Color(0.44, 0.30, 0.36), "HAIR": Color(0.84, 0.66, 0.36)}, "extra": "kerchief_white"},
-	"polya": {"look": {"TUNIC": Color(0.98, 0.84, 0.36), "SASH": Color(0.40, 0.66, 0.40), "TROUSERS": Color(0.36, 0.40, 0.58), "HAIR": Color(0.56, 0.36, 0.18)}, "extra": ""},
 }
+# 子どもは息子か娘か(m / f)と、上から何人目か(0〜2)で服を決める
+const CHILD_LOOKS := {
+	"m": [
+		{"look": {"TUNIC": Color(0.30, 0.60, 0.80), "SASH": Color(0.90, 0.70, 0.20), "TROUSERS": Color(0.30, 0.28, 0.26), "HAIR": Color(0.66, 0.48, 0.24)}, "extra": ""},
+		{"look": {"TUNIC": Color(0.36, 0.62, 0.36), "SASH": Color(0.86, 0.30, 0.22), "TROUSERS": Color(0.32, 0.30, 0.40), "HAIR": Color(0.40, 0.26, 0.14)}, "extra": "cap_small"},
+		{"look": {"TUNIC": Color(0.92, 0.58, 0.24), "SASH": Color(0.30, 0.42, 0.70), "TROUSERS": Color(0.28, 0.30, 0.26), "HAIR": Color(0.80, 0.62, 0.32)}, "extra": ""},
+	],
+	"f": [
+		{"look": {"TUNIC": Color(0.62, 0.48, 0.84), "SASH": Color(0.98, 0.90, 0.56), "TROUSERS": Color(0.36, 0.30, 0.44), "HAIR": Color(0.48, 0.30, 0.16)}, "extra": "kerchief_white"},
+		{"look": {"TUNIC": Color(0.94, 0.56, 0.66), "SASH": Color(0.98, 0.96, 0.90), "TROUSERS": Color(0.44, 0.30, 0.36), "HAIR": Color(0.84, 0.66, 0.36)}, "extra": "kerchief_white"},
+		{"look": {"TUNIC": Color(0.98, 0.84, 0.36), "SASH": Color(0.40, 0.66, 0.40), "TROUSERS": Color(0.36, 0.40, 0.58), "HAIR": Color(0.56, 0.36, 0.18)}, "extra": "ribbon"},
+	],
+}
+
+# その人の服(配偶者は人ごと、子どもは息子か娘かと何人目か)
+static func look_of(m: Dictionary) -> Dictionary:
+	if m.role != "child":
+		return LOOKS.get(m.id, {})
+	var slot: int = maxi(0, Family.CHILDREN.map(func(c): return c.id).find(m.id))
+	return CHILD_LOOKS["m" if m.sex == "m" else "f"][slot]
 
 var family: Family
 var forest = null        # 回り込むもの(Main が setup で渡す)
@@ -182,10 +199,11 @@ func _add_person(m: Dictionary) -> void:
 	var start: Vector2 = home if home != null else Vector2(0, 8)
 	var fig := PlayerFigure.new()
 	fig.name = "Family_" + m.id
-	fig.look = LOOKS.get(m.id, {}).get("look", {})
+	var info := look_of(m)
+	fig.look = info.get("look", {})
 	add_child(fig)
 	var p := {"id": m.id, "figure": fig, "pos": start, "route": [], "state": "stand", "wait": _rng.randf_range(1.0, 4.0), "tasks": [], "action": ""}
-	_extra(fig, str(LOOKS.get(m.id, {}).get("extra", "")))
+	_extra(fig, str(info.get("extra", "")))
 	var body := StaticBody3D.new()
 	body.name = "FamilyBody_" + m.id
 	var shape := CollisionShape3D.new()
@@ -515,6 +533,12 @@ func _extra(fig: Node3D, kind: String) -> void:
 				head.add_child(Look.mesh_node(_ball, _mat(hair), Vector3(0, -0.12 - i * 0.1, 0.19), Vector3(0.09, 0.11, 0.09)))
 		"beard":  # 短いあごひげ
 			head.add_child(Look.mesh_node(_ball, _mat(LOOKS.ilya.look.HAIR), Vector3(0, -0.13, -0.11), Vector3(0.2, 0.14, 0.12)))
+		"ribbon":  # 頭の後ろの赤いリボン
+			var red := _mat(Color(0.86, 0.22, 0.24))
+			head.add_child(Look.mesh_node(_ball, red, Vector3(-0.07, 0.12, 0.17), Vector3(0.1, 0.08, 0.06)))
+			head.add_child(Look.mesh_node(_ball, red, Vector3(0.07, 0.12, 0.17), Vector3(0.1, 0.08, 0.06)))
+		"cap_small":  # 子どもの丸い帽子
+			head.add_child(Look.mesh_node(_ball, _mat(Color(0.30, 0.28, 0.50)), Vector3(0, 0.1, 0.02), Vector3(0.4, 0.22, 0.4)))
 		"cap":  # つばのある帽子
 			var cap := Color(0.22, 0.22, 0.24)
 			head.add_child(Look.mesh_node(_cylinder, _mat(cap), Vector3(0, 0.14, 0.02), Vector3(0.4, 0.1, 0.4)))

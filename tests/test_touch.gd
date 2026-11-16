@@ -263,7 +263,8 @@ func _test_menu() -> void:
 	_check(tc.menu_open and _pad("plant").is_empty(), "メニューを開くと、いつものボタンは隠れる")
 	for p in tc.pads(_view()):
 		ids.append(p.id)
-	_check(ids.size() == 27, "メニューに 26 の操作と閉じるボタンがある(%d)" % ids.size())
+	_check(ids.size() == 28, "メニューに 27 の操作と閉じるボタンがある(%d)" % ids.size())
+	_check("family" in ids, "メニューに「家族」(名前を付け直す)がある")
 	_check(not tc.touch(0, Vector2(100, 100), true) and tc.stick_value() == Vector2.ZERO, "メニューのあいだは歩かない")
 	tc.touch(0, Vector2.ZERO, false)
 	await _tap("cedar")

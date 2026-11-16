@@ -11,6 +11,7 @@ const Forest = preload("res://logic/Forest.gd")
 const TouchText = preload("res://view/TouchText.gd")
 const RegionPicker = preload("res://view/RegionPicker.gd")
 const FamilyPicker = preload("res://view/FamilyPicker.gd")
+const FamilyNames = preload("res://view/FamilyNames.gd")
 const MESSAGE_SECONDS := 3.0
 const DIARY_FADE_SECONDS := 0.6
 const TOUCH_STATUS_SECONDS := 0.25  # タッチのときに左上の文字を更新する間隔
@@ -21,7 +22,9 @@ const SHOP_ROW_GAP := 4.0         # 行のあいだ(VBoxContainer の既定)
 
 signal shop_action(id)  # 市場の画面のボタン(品の id / "sell_<収穫物>" / "close")
 signal region_chosen(id)  # 土地のある都道府県を決めた(view/RegionPicker.gd)
-signal family_chosen(spouse, children)  # 一緒に暮らす家族を決めた(view/FamilyPicker.gd)
+signal family_chosen(choice)  # 一緒に暮らす家族を決めた(view/FamilyPicker.gd。{spouse, spouse_name, kids})
+signal family_renamed(names)  # 家族の名前を付け直した(view/FamilyNames.gd。{id: 名前})
+signal family_names_closed    # 名前を付け直す画面を、何もせずに閉じた
 
 @onready var _label: Label = $PositionLabel
 @onready var _bg: ColorRect = $BG
@@ -49,6 +52,7 @@ var _hint_panel: PanelContainer
 var _hint_label: Label
 var picker: RegionPicker  # 都道府県を選ぶ画面(ゲームのはじめに一度だけ)
 var family_picker: FamilyPicker  # 家族を選ぶ画面(都道府県のあと、一度だけ)
+var family_names: FamilyNames    # 家族の名前を付け直す画面(Y)
 
 func setup(player: Node, trees: Forest, main: Node) -> void:
 	_player = player
@@ -62,8 +66,12 @@ func setup(player: Node, trees: Forest, main: Node) -> void:
 	picker.chosen.connect(func(id): region_chosen.emit(id))
 	add_child(picker)
 	family_picker = FamilyPicker.new()
-	family_picker.chosen.connect(func(sp, n): family_chosen.emit(sp, n))
+	family_picker.chosen.connect(func(c): family_chosen.emit(c))
 	add_child(family_picker)
+	family_names = FamilyNames.new()
+	family_names.names_decided.connect(func(n): family_renamed.emit(n))
+	family_names.closed.connect(func(): family_names_closed.emit())
+	add_child(family_names)
 
 # ── 都道府県を選ぶ画面 ──
 func open_region_picker() -> void:
@@ -74,9 +82,14 @@ func open_family_picker() -> void:
 	family_picker.touch_mode = touch_mode
 	family_picker.open()
 
-# 都道府県か家族を選ぶ画面が開いているか
+func open_family_names(members: Array, ages: Dictionary) -> void:
+	family_names.touch_mode = touch_mode
+	family_names.open(members, ages)
+
+# 都道府県・家族を選ぶ画面か、家族の名前の画面が開いているか
 func is_picker_open() -> bool:
-	return (picker != null and picker.visible) or (family_picker != null and family_picker.visible)
+	return (picker != null and picker.visible) or (family_picker != null and family_picker.visible) \
+		or (family_names != null and family_names.visible)
 
 # 植えられない・収穫した などを数秒だけ出す
 func show_message(text: String, seconds: float = MESSAGE_SECONDS) -> void:
@@ -411,7 +424,7 @@ func _touch_help_lines() -> PackedStringArray:
 		"植える: 木を植える/区画にまく  水やり  収穫  抜く: 抜く/伐る",
 		"小屋: 場所を決める/作業/苗づくり  使う: 家具のそばで使う",
 		"市場・話す・雪かき: 使えるときだけボタンが出る(市場は南の境界の外)",
-		"メニュー: 菜園 池 井戸 石臼 巣箱 餌台 剪定",
+		"メニュー: 菜園 池 井戸 石臼 巣箱 餌台 剪定 家族(名前)",
 		"メニュー: 植える木と野菜を選ぶ  種/苗木  持ち物  音量",
 		"メニュー: +1年 +10年 +1時間 今に戻す(未来をプレビュー)",
 	])
@@ -423,7 +436,7 @@ func _help_lines() -> PackedStringArray:
 		"J:丸太の巣箱を作る/くり抜く/はちみつを採る  M:音量(大/中/小/消す)",
 		_main.local_text("L:鳥の餌台を立てる/白樺の種か野菜を置く/育った木にムクドリの巣箱  X:果樹を剪定する(冬)"),
 		"U:押したまま歩いて雪かき(冬)  H:小屋の東の台で薪を割る / 腰掛けで食べる",
-		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者と話す",
+		"WASD/矢印:歩く  ホイール:ズーム  B:市場(南の境界の外)  C:訪問者・家族と話す  Y:家族の名前",
 		"[1]%s [2]果樹(押すたびに %s) [3]%s [V]種/苗木" % [_main.group_keys_text("broadleaf"), _main.group_keys_text("fruit", false), _main.group_keys_text("conifer")],
 		_main.crop_keys_text(),
 		"SPACE:植える/区画にまく  Q:水やり/井戸・池・川で汲む  E:収穫/草取り/わら  Z:抜く/伐る(斧は1日3本)",

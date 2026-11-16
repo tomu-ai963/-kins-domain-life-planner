@@ -34,6 +34,7 @@ const MENU := [
 	[
 		["crop_root", "根菜", KEY_4, true], ["crop_imo", "いも", KEY_5, true], ["crop_fruit", "実もの", KEY_6, true],
 		["crop_leaf", "葉もの", KEY_7, true], ["crop_bean", "豆・穀物", KEY_8, true], ["crop_aroma", "香味", KEY_9, true],
+		["family", "家族", KEY_Y, false],  # 家族の名前を付け直す(2026-11-16)
 	],
 	[
 		["items", "持ち物", KEY_TAB, false], ["help", "操作", KEY_F1, false], ["sound", "音量", KEY_M, true],

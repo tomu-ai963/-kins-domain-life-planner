@@ -133,6 +133,8 @@ func _ready() -> void:
 	$HUD.shop_action.connect(_on_shop_action)
 	$HUD.region_chosen.connect(_on_region_chosen)
 	$HUD.family_chosen.connect(_on_family_chosen)
+	$HUD.family_renamed.connect(_on_family_renamed)
+	$HUD.family_names_closed.connect(func(): $Player.set_physics_process(true))
 	$Player.plant_tree.connect(_on_plant_tree)
 	_setup_3d_only()
 	world.load_game()
@@ -174,9 +176,9 @@ func open_family_picker() -> void:
 	$Player.set_physics_process(false)  # 選んでいるあいだは歩かない
 	$HUD.open_family_picker()
 
-func _on_family_chosen(spouse: String, children: int) -> void:
+func _on_family_chosen(choice: Dictionary) -> void:
 	$Player.set_physics_process(true)
-	if world.choose_family(spouse, children) != "chosen":
+	if world.choose_family_custom(choice) != "chosen":
 		return
 	var f := world.family
 	if f.members.is_empty():
@@ -857,6 +859,34 @@ const FAMILY_GIFT_SPOUSE := "%sを作ったよ。
 持っていって。"
 const FAMILY_GIFT_CHILD := "%sを拾ったよ!
 あげる!"
+
+# Y: 家族の名前を付け直す画面を開く
+func _open_family_names() -> void:
+	var f := world.family
+	if not f.chosen:
+		$HUD.show_message("家族はまだ決めていない")
+		return
+	if f.members.is_empty():
+		$HUD.show_message("ひとりで暮らしているので、名前を付ける家族はいない")
+		return
+	var ages := {}
+	for m in f.members:
+		ages[m.id] = f.age_of(m)
+	$Player.set_physics_process(false)  # 名前を打つあいだは歩かない
+	$HUD.open_family_names(f.members, ages)
+
+func _on_family_renamed(names: Dictionary) -> void:
+	$Player.set_physics_process(true)
+	var f := world.family
+	var changed := PackedStringArray()
+	for id in names:
+		var before: String = f.member(id).get("name", "")
+		if f.rename(id, str(names[id])) == "renamed":
+			changed.append("%s → %s" % [before, f.member(id).name])
+	if changed.is_empty():
+		$HUD.show_message("名前はそのまま")
+	else:
+		$HUD.show_message("名前を付け直した(%s)" % "、".join(changed), 5.0)
 
 # 足元から話せる家族の id。いなければ ""
 func family_near() -> String:
@@ -2657,6 +2687,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_well_action()
 		KEY_O:
 			_mill_action()
+		KEY_Y:
+			_open_family_names()
 		KEY_T:
 			world.forest.advance_years(1.0)   # 1年先送り(プレビュー。保存しない)
 		KEY_G:

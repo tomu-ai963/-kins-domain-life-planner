@@ -445,6 +445,10 @@ func choose_region(id: String) -> String:
 func choose_family(spouse: String, children: int) -> String:
 	return family.choose(spouse, children)
 
+# 名前・息子か娘か・年齢まで決めて家族を決める(選ぶ画面の中身 {spouse, spouse_name, kids})。結果は Family.choose_custom
+func choose_family_custom(c: Dictionary) -> String:
+	return family.choose_custom(str(c.get("spouse", "")), str(c.get("spouse_name", "")), SaveRead.list(c.get("kids")))
+
 # ── セーブ / ロード ──────────────────────────────────────────
 func save_game() -> void:
 	var data := forest.to_save()
