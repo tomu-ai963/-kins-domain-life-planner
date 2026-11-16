@@ -1313,6 +1313,9 @@ func _act(kind: String, target = null, item := "") -> void:
 func _on_plant_tree(pos: Vector2) -> void:
 	if $HUD.is_shop_open() or $HUD.is_diary_open() or $HUD.is_picker_open():
 		return
+	if world.forest.is_outside_land(pos):  # 外の林では種を拾うだけ(2026-11-16 とむ)
+		$HUD.show_message("一族の土地の外には植えられない(外の林では種を拾うだけ)")
+		return
 	# 菜園の区画の上では、木ではなく野菜をまく
 	if world.land.plot_at(pos) != null:
 		_sow(pos)

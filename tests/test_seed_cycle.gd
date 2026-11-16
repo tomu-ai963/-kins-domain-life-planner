@@ -20,6 +20,7 @@ func _initialize() -> void:
 	_test_preview_is_not_saved()
 	_test_old_save_format()
 	_test_px_save_is_converted_once()
+	_test_no_planting_outside()
 	_remove_save()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -31,6 +32,21 @@ func _check(cond: bool, label: String) -> void:
 	else:
 		_failed += 1
 		print("  FAIL ", label)
+
+# 一族の土地の外では、種も苗木も植えられない(2026-11-16 とむ)
+func _test_no_planting_outside() -> void:
+	print("土地の外には植えない")
+	var w := _new_world()
+	var f := w.forest
+	f.seeds.birch = 3
+	f.saplings.birch = 1
+	var trees_before: int = f.trees.size()
+	_check(not f.add_tree(Vector2(0, -55), "birch", "seed"), "北の境界の外(外の林)には種をまけない")
+	_check(not f.add_tree(Vector2(52, 0), "birch", "sapling"), "東の境界の外には苗木も植えられない")
+	_check(not f.add_tree(Vector2(-50.5, 50.5), "birch", "seed"), "角の外にも植えられない")
+	_check(f.trees.size() == trees_before and f.seeds.birch == 3 and f.saplings.birch == 1, "外では種も苗木も減らない")
+	_check(f.add_tree(Vector2(0, -49.5), "birch", "seed") and f.seeds.birch == 2, "境界の内側なら植えられる")
+	_check(Forest.is_outside_land(Vector2(0, 50.1)) and not Forest.is_outside_land(Vector2(50, -50)), "境界の線の上は内側")
 
 # ロジック一式(GameWorld)を作る。木と種は w.forest
 func _new_world() -> GameWorld:

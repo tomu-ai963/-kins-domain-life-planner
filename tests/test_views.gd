@@ -68,6 +68,7 @@ func _process(_delta: float) -> bool:
 		13:
 			_test_family_collision()
 			_test_profile_view()
+			_test_no_planting_outside()
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
@@ -3611,3 +3612,16 @@ func _test_profile_view() -> void:
 	# 見た目を戻す(ほかのテストの見た目に響かないように)
 	player.set_sex("")
 	_check(not figure.has_long_hair(), "性別を決めないなら今の髪")
+
+# 一族の土地の外では植えられない(2026-11-16)
+func _test_no_planting_outside() -> void:
+	print("土地の外には植えない")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	w.forest.seeds.birch = 2
+	main.selected_species = "birch"
+	main.selected_form = "seed"
+	var before: int = w.forest.trees.size()
+	main._on_plant_tree(Vector2(5, -54))
+	_check(w.forest.trees.size() == before and w.forest.seeds.birch == 2, "外の林で SPACE を押しても種をまかない")
+	_check(hud._message.begins_with("一族の土地の外には植えられない"), "外では植えられないと知らせる")

@@ -481,7 +481,16 @@ func plant_problem(species: String, form: String) -> String:
 	return "" if form == "seed" and species == "birch" else "frozen"
 
 # 種(form = "seed")か苗木("sapling")を 1 つ使って植える。持っていなければ植えずに false
+# 一族の土地の外か(Land.HALF と同じ ±50m)。外の林では種を拾うだけで、植えられない(2026-11-16 とむ)
+const LAND_HALF := 50.0
+
+static func is_outside_land(pos: Vector2) -> bool:
+	return absf(pos.x) > LAND_HALF or absf(pos.y) > LAND_HALF
+
+# 種か苗木を植える。持っていないとき・土地の外では植えない(false)
 func add_tree(pos: Vector2, species: String, form := "seed") -> bool:
+	if is_outside_land(pos):
+		return false
 	var stock: Dictionary = saplings if form == "sapling" else seeds
 	if int(stock.get(species, 0)) <= 0:
 		return false
