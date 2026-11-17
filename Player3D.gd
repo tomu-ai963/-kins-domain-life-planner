@@ -89,6 +89,8 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity = want
 	move_and_slide()
+	# 地面は y = 0 の平らな面(床の高さは見た目の体 _body で上げる)。物と重なって押し出されても、上下には動かさない
+	position.y = 0.0
 	position.x = clampf(position.x, -WALK_LIMIT, WALK_LIMIT)
 	position.z = clampf(position.z, -WALK_LIMIT, WALK_LIMIT)
 	if dir != Vector3.ZERO and not _posing:

@@ -250,6 +250,7 @@ func _setup_3d_only() -> void:
 	$Player.update_shadow_distance()
 	$Cabin.set_player($Player)
 	$Pond.set_player($Player)
+	$Trees.set_player($Player)  # 足元で育った幹に閉じ込められないように
 	$Pond.tools = world.tools
 	$Cabin.set_tools(world.tools)
 	var well_view := WellView.new()

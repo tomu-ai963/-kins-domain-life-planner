@@ -218,6 +218,7 @@ const FALL_FADE := 0.4      # 倒れたあと小さくなって消えるまで�
 const TRUNK_BODY_MIN := 0.1   # 幹の当たり判定の半径の下限(m)
 const TRUNK_BODY_EXTRA := 0.05  # 見た目の幹より少し太くする(めり込んで見えないように)
 const TRUNK_BODY_HEIGHT := 3.0
+const PLAYER_RADIUS := 0.3  # Player3D.tscn のカプセルの半径。幹がこれと重なるあいだは当たり判定を付けない
 const PRUNED_CROWN := 0.86   # 剪定した冬の枝の広がり(切り詰めて、少し小さくまとまる)
 const PRUNED_FRUITS := 7     # 剪定した木に見える実の数(ふだんは 5)
 const BRUSH_STICKS := 4      # 根元に束ねた、切った枝の本数
@@ -225,6 +226,7 @@ const BRUSH_STICKS := 4      # 根元に束ねた、切った枝の本数
 var forest: Forest
 var last_fall: Tween  # 直前に倒れた木の動き(テスト用)
 var _bodies: StaticBody3D  # 幹の当たり判定をまとめる
+var _player: Node3D        # 足元の位置(ground_pos)を見る。なければ重なりを気にしない
 var _timer := 0.0
 var _items := []  # 木ごとの {tree, trunk, crown, fruits: []} (forest.trees と同じ順)
 
@@ -267,6 +269,17 @@ func setup(f: Forest) -> void:
 	get_parent().add_child(_bodies)  # 木の形と分けて置く(倒れる木と同じく、親の下)
 	forest.changed.connect(_rebuild)
 	_rebuild()
+
+func set_player(p: Node3D) -> void:
+	_player = p
+
+# 幹の当たり判定がプレイヤーの体と重なるか。足元で木が育ったとき(G で先送りしたときなど)に、
+# 重なったまま当たり判定を付けると、プレイヤーが押し込まれて地面に沈み、動けなくなる。
+# 重なっているあいだは付けず、離れたら次の _layout(1 秒ごと)で付ける
+func _overlaps_player(pos: Vector2, radius: float) -> bool:
+	if _player == null or not is_instance_valid(_player):
+		return false
+	return _player.ground_pos().distance_to(pos) < radius + PLAYER_RADIUS
 
 func _process(delta: float) -> void:
 	# 成長は年単位(1 日 = 1 年)なので、大きさの更新は 1 秒に 1 回で十分
@@ -437,8 +450,9 @@ func _layout() -> void:
 		item.crown.material_override = item.leaf_mat
 		var trunk_h: float = k.trunk_h * r
 		var trunk_w: float = k.trunk_w * r + 0.04
-		item.trunk_body.disabled = false
-		item.trunk_body.shape.radius = maxf(trunk_w * 0.5 + TRUNK_BODY_EXTRA, TRUNK_BODY_MIN)
+		var body_r: float = maxf(trunk_w * 0.5 + TRUNK_BODY_EXTRA, TRUNK_BODY_MIN)
+		item.trunk_body.shape.radius = body_r
+		item.trunk_body.disabled = _overlaps_player(tree.pos, body_r)
 		var crown_h: float = k.crown_h * r
 		# 幹は樹冠の中まで伸ばして、継ぎ目が見えないようにする
 		var trunk_len: float = trunk_h + crown_h * 0.5

@@ -824,6 +824,23 @@ func _prepare_tree_collision() -> void:
 	f.trees[0].start_age = 30.0
 	view._layout()
 	_check(old_r < 0.45, "幹の判定は太すぎない(半径 %.2fm。葉の下は歩ける)" % old_r)
+	# 足元にまいた種を G で 10 年先送りすると、幹がプレイヤーの体の中に現れる(2026-11-17 とむが遭遇: 押し込まれて足が地面に沈み、動けなくなった)。
+	# 重なっているあいだは当たり判定を付けず、離れたら付ける
+	var player: CharacterBody3D = main.get_node("Player")
+	var keep: Vector3 = player.global_position
+	player.global_position = Vector3(42, 0, -30)  # 種の真上に立つ
+	f.advance_years(10.0)  # G
+	_check(view._items[2].trunk.visible and view._items[2].trunk_body.disabled, "足元で育った幹は、重なっているあいだ当たり判定を付けない")
+	player.global_position = Vector3(42, 0, -27)
+	view._layout()
+	_check(not view._items[2].trunk_body.disabled, "離れると当たり判定が付く")
+	f.reset_preview()  # R
+	_check(view._items[2].trunk_body.disabled, "今に戻すと種なので当たり判定はない")
+	# 物に押されても、プレイヤーは地面(y = 0)から沈まない
+	player.global_position = Vector3(-30, -0.7, -35)
+	player._physics_process(1.0 / 60.0)
+	_check(player.global_position.y == 0.0, "押し込まれて沈んでも、次の物理の段で地面の高さに戻る")
+	player.global_position = keep
 
 func _test_tree_collision() -> void:
 	print("木の当たり判定")
