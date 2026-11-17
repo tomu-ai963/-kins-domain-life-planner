@@ -106,7 +106,21 @@ func _test_germination() -> void:
 	f.add_tree(Vector2(5, 0), "birch")
 	var bad: Dictionary = f.trees[-1]
 	_check(not bad.sprouts and not f.has_failed(bad), "芽が出ない種も、1 日たつまでは分からない")
+	# 先送りのプレビューで当たり外れが見えると、外れを抜いてまき直せてしまう(2026-11-17 とむ決定で直す)
+	f.germination_rates.birch = 1.0
+	f.add_tree(Vector2(8, 0), "birch")
+	var good: Dictionary = f.trees[-1]
+	f.advance_years(10.0)  # G
+	_check(not f.is_seed(bad) and f.radius_of(bad) > 0.0, "プレビューでは、芽が出ない種もまだ分からないので育った姿で見える")
+	_check(f.radius_of(bad) == f.radius_of(good), "プレビューでは、芽が出る種と見分けがつかない")
+	_check(not f.is_established(bad) and not f.has_failed(bad), "プレビューでもルールは変わらない(根付いていない・外れはまだ決まらない)")
+	f.reset_preview()  # R
+	_check(f.is_seed(bad) and f.radius_of(bad) == 0.0, "今に戻すと土の中")
+	f.trees.erase(good)
 	_age(bad, 1.0)
+	f.advance_years(10.0)
+	_check(f.is_seed(bad) and f.radius_of(bad) == 0.0, "外れと分かった種は、プレビューでも土のまま")
+	f.reset_preview()
 	_check(f.has_failed(bad) and not f.is_established(bad), "1 日たつと芽が出なかったと分かる")
 	f.last_day = "2000-01-01"
 	f.check_new_day()

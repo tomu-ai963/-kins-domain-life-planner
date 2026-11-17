@@ -526,9 +526,12 @@ func is_established(tree: Dictionary) -> bool:
 		return true
 	return tree.sprouts and real_age_years(tree) >= GERMINATION_YEARS
 
-# 種のまま、まだ芽が出ていない(見た目は土の盛り上がり)
+# 種のまま、まだ芽が出ていない(見た目は土の盛り上がり)。
+# 芽が出るかどうかは、まいてから 1 日たつまで分からない。先送りのプレビュー(G / T)では、
+# まだ分からない種はみな芽が出たものとして見せる(プレビューで当たり外れを先に知って、
+# 外れを抜いてまき直す裏技にならないように。2026-11-17 とむ決定)。外れと分かった種は土のまま
 func is_seed(tree: Dictionary) -> bool:
-	return tree.form == "seed" and (not tree.sprouts or age_years(tree) < GERMINATION_YEARS)
+	return tree.form == "seed" and (age_years(tree) < GERMINATION_YEARS or has_failed(tree))
 
 # 芽が出なかったと分かった種(翌日の確認で消える)
 func has_failed(tree: Dictionary) -> bool:
