@@ -60,6 +60,15 @@ func present() -> Array:
 func _add(n: int) -> void:
 	friendship = clampi(friendship + n, 0, FRIEND_MAX)
 
+# 仲良し度を n 上げる(子どもと生き物探しで見つけたとき。2026-11-18)。上がった量を返す
+func gain(n: int) -> int:
+	var before := friendship
+	_add(n)
+	last_gain = friendship - before
+	if last_gain != 0:
+		dirty.emit()
+	return last_gain
+
 # 餌台(pos)に餌を置いた。その餌台で今日はじめてなら上がる。上がった量を返す
 func befriend(pos: Vector2) -> int:
 	var key := "%.1f,%.1f" % [pos.x, pos.y]

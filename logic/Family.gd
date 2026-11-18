@@ -17,9 +17,12 @@ extends RefCounted
 #   収穫(配偶者と HELP_AGE 歳からの子ども): ついてきて、自分が区画を収穫すると近くの区画をもう 1 つ採る
 #   料理(配偶者・小屋ができてから): ストーブの前で待ち、仕込むと横でかき混ぜて、できる数が 2 割増える(Kitchen.COOK_HELP_RATE)
 #   夕食(小屋ができてから・暗くなってから寝るまで): 家族がテーブルに座り、自分が食べると「みんなで食べた」。翌朝の手伝いが増える
+#   生き物探し(子ども): ついてきて、近くの生き物を見つけて教える。見つけるたびに生き物との仲良し度が上がる(Pests。1 日 EXPLORE_SPOTS 種類まで)
+#   種拾い(HELP_AGE 歳からの子ども・外の林に種が落ちている日): ついてきて、自分が外の林で種を拾うと、近くに落ちている種をもう 1 つ拾う
 # 子どもは AGE_DAYS 日で 1 歳育ち、ADULT_AGE で止まる(木は 1 日 1 年だが、人は一月で 1 歳にした。仮の数字)。
 # 文言は Main、姿と歩く道は view/3d/FamilyView3D.gd が決める
 const SaveRead = preload("res://logic/SaveRead.gd")
+const Forest = preload("res://logic/Forest.gd")
 
 signal changed  # 見た目に関わる状態が変わった
 signal dirty    # セーブに入る状態が変わった
@@ -57,10 +60,13 @@ const SPOUSE_GIFTS := {       # 配偶者の贈り物(季節の料理。品と�
 	"winter": {"item": "sbiten", "count": 2},
 }
 const CHILD_GIFT_SEEDS := 2   # 子どもが拾ってくる木の種の数
-const INVITE_KINDS := ["harvest", "cook", "dinner"]  # 誘える作業
+const INVITE_KINDS := ["harvest", "cook", "dinner", "explore", "seeds"]  # 誘える作業
 const HARVEST_REACH := 4.0    # 一緒に収穫するとき、家族が採る区画の範囲(自分の足元から m)
 const DINNER_WATER_HELP := 5  # みんなで夕食を食べた翌朝、配偶者が水をやる数(ふだんは WATER_HELP)
 const DINNER_WEED_MORE := 1   # みんなで夕食を食べた翌朝、子どもが余分に抜く区画
+const EXPLORE_GAIN := 2       # 子どもが生き物を見つけて教えてくれたとき、上がる仲良し度
+const EXPLORE_SPOTS := 3      # 1 日に仲良し度が上がる、見つけた生き物の種類の数
+const SEEDS_REACH := 8.0      # 外の林で一緒に種拾いするとき、子どもが拾う種の範囲(自分の足元から m)
 # テント(2026-11-16 とむ: 歩いて入れて、中で休める)。人が立てる大きさ。入口は南の真ん中
 const TENT_SIZE := Vector2(3.2, 3.6)   # 東西 × 南北(m)
 const TENT_DOOR := 1.0                 # 入口の幅(m)
@@ -84,6 +90,8 @@ var forest = null        # GameWorld が設定する
 var garden = null
 var cabin = null
 var market = null
+var pests = null         # 生き物との仲良し度(子どもと生き物探し。GameWorld が設定する)
+var wilds = null         # 外の林(子どもと種拾い。GameWorld が設定する)
 var is_blocked: Callable  # 物を置けない場所か(Bees.is_blocked。GameWorld が設定する)
 var can_draw_water: Callable  # 手伝いの水を汲めるか(GameWorld が設定する)
 
@@ -93,6 +101,8 @@ var tent = null          # テントの中心 Vector2(小屋が完成するま�
 var talked := {}         # 人ごとに、最後に話しかけた日の通し番号
 var invited := {}        # "人の id:作業" → 誘った日の通し番号(1 日 1 回。夕食はみんなで 1 回なので "all:dinner")
 var dined_day := -1      # みんなで夕食を食べた日の通し番号(翌朝の手伝いが増える)
+var spotted := []        # 今日、子どもが見つけて教えてくれた生き物の id(仲良し度が上がったもの。保存しない)
+var spotted_day := -1
 var helped_day := -1     # 最後に手伝った日
 var last_help := []      # 今朝の手伝い [{who, kind: water/weed, pos}](文言と姿の動き用。保存しない)
 var last_gift := {}      # 直前にもらった贈り物 {who, type, item/species, count}(文言用)
@@ -300,6 +310,14 @@ func invite_problem(id: String, kind: String) -> String:
 		"dinner":
 			if not cabin.is_complete():
 				return "no_cabin"
+		"explore":
+			if m.role != "child":
+				return "child_only"
+		"seeds":
+			if m.role != "child":
+				return "child_only"
+			if age_of(m) < HELP_AGE:
+				return "young"
 	return "done_today" if invited_today(id, kind) else ""
 
 func invited_today(id: String, kind: String) -> bool:
@@ -332,6 +350,43 @@ func ripe_near(pos: Vector2, reach: float, exclude: Array = []):
 
 func any_ripe() -> bool:
 	return garden.crops.any(func(c): return garden.is_ripe(c))
+
+# 子どもが生き物を見つけて教えてくれた。今日はじめての種類なら、1 日 EXPLORE_SPOTS 種類まで仲良し度が上がる。上がった量を返す
+func spot_creature(creature: String) -> int:
+	if spotted_day != day_number():
+		spotted = []
+		spotted_day = day_number()
+	if creature in spotted or spotted.size() >= EXPLORE_SPOTS or pests == null:
+		return 0
+	spotted.append(creature)
+	return pests.gain(EXPLORE_GAIN)
+
+# 外の林に落ちている種(一族の土地の外の Forest.pickups)
+func wild_pickups() -> Array:
+	return forest.pickups.filter(func(p): return Forest.is_outside_land(p.pos))
+
+# pos から reach 以内で、いちばん近い外の林の種(なければ {})
+func wild_pickup_near(pos: Vector2, reach: float) -> Dictionary:
+	var best := {}
+	var best_d := reach
+	for p in wild_pickups():
+		var d: float = pos.distance_to(p.pos)
+		if d <= best_d:
+			best_d = d
+			best = p
+	return best
+
+# 次に外の林で種が落ちる日 {day, species}(今日より後。なければ {})
+func next_wild_drop() -> Dictionary:
+	if wilds == null:
+		return {}
+	var today := day_number()
+	var best := {}
+	for sp in wilds.species_here():
+		var d: int = wilds.next_drop(sp, today + 1)
+		if d >= 0 and (best.is_empty() or d < int(best.day)):
+			best = {"day": d, "species": sp}
+	return best
 
 # みんなで夕食を食べた(翌朝の手伝いが増える)
 func dine_together() -> void:

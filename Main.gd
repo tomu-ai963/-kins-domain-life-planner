@@ -270,7 +270,9 @@ func _setup_3d_only() -> void:
 	family_view.name = "Family"
 	add_child(family_view)
 	family_view.setup(world.family, $Player, {"forest": world.forest, "land": world.land, "cabin": world.cabin,
-		"bees": world.bees, "feeders": world.feeders, "well": world.well, "mill": world.mill, "clock": world.clock})
+		"bees": world.bees, "feeders": world.feeders, "well": world.well, "mill": world.mill, "clock": world.clock, "wilds": world.wilds})
+	family_view.wildlife_view = $Wildlife
+	family_view.spotted.connect(_on_family_spotted)
 	day_light.night_changed.connect(family_view.set_night)
 	family_view.set_night(maxf(0.0, day_light.night))
 	family_view.extra_avoid = func(): return [$Visitor.ground_pos()] if $Visitor.state() != "away" else []
@@ -907,6 +909,8 @@ const FAMILY_INVITES := {
 	"harvest": "一緒に収穫しよう(となりの区画も採ってくれる)",
 	"cook": "一緒に料理しよう(仕込むと 2 割多くできる)",
 	"dinner": "みんなで夕食にしよう(翌朝の手伝いが増える)",
+	"explore": "生き物を探しに行こう(見つけると生き物と仲良くなる)",
+	"seeds": "外の林へ種を拾いに行こう(一緒に拾ってくれる)",
 }
 const FAMILY_GIFT_SPOUSE := "{呼}%sを作ったよ。
 持っていって。"
@@ -1025,6 +1029,18 @@ func _family_action(action: String) -> void:
 		"dinner":
 			if not $Family.is_night():
 				line = "夕ごはんは、暗くなってからにしよう。"
+		"explore":
+			if $Family.is_night():
+				line = "暗いから、生き物探しはまた明日ね。"
+		"seeds":
+			if $Family.is_night():
+				line = "暗いから、外の林はまた明日ね。"
+			elif f.wild_pickups().is_empty():
+				line = "今日は外の林に、種が落ちてないみたい。"
+				var next: Dictionary = f.next_wild_drop()
+				if not next.is_empty():
+					var date: String = world.forest.date_of_day(int(next.day))
+					line += "\n%d月%d日に%sの種が落ちるよ。" % [int(date.substr(5, 2)), int(date.substr(8, 2)), world.forest.SPECIES[next.species].name]
 	if line == "":
 		if f.invite(id, kind) != "invited":
 			return
@@ -1039,8 +1055,27 @@ func _family_action(action: String) -> void:
 			"dinner":
 				$Family.start_dinner()
 				line = "ごはんにしよう。みんな、座って!\n(テーブルの東の腰掛けで H を押して食べる)"
+			"explore":
+				$Family.start_invite(id, "explore")
+				line = "うん! いっぱい見つけるね!"
+				var missing: Array = world.quests.guide_missing()
+				if not missing.is_empty():
+					line += "\nまだ見てない%sに会いたいな。" % _creature_name(missing[0])
+				line += "\n(ついてきて、近くの生き物を教えてくれる)"
+				if not missing.is_empty():
+					line += "\n(図鑑のヒント: %s)" % local_text(GUIDE_HINTS[missing[0]])
+			"seeds":
+				$Family.start_invite(id, "seeds")
+				line = "外の林だね! 一緒に拾おう!\n(ついてきて、近くに落ちている種を拾ってくれる)"
 	_close_shop()
 	$HUD.show_message("%s「%s」" % [m.name, with_call(line, m.role)], 6.0)
+
+# 子どもが生き物を見つけて教えてくれた(生き物探し。2026-11-18)。今日はじめての種類なら仲良し度が上がる
+func _on_family_spotted(id: String, creature: String) -> void:
+	var m: Dictionary = world.family.member(id)
+	var gain: int = world.family.spot_creature(creature)
+	var note: String = "\n(生き物との仲良し度 +%d → %d)" % [gain, world.pests.friendship] if gain > 0 else ""
+	$HUD.show_message("%s「あそこ! %sがいるよ!」%s" % [m.get("name", ""), _creature_name(creature), note], 5.0)
 
 # 一緒に収穫している家族が、足元の近くの収穫できる区画を 1 人 1 つ採る(2026-11-18)。知らせの文言を返す
 func _family_harvest(done: Vector2, pos: Vector2) -> String:
@@ -1152,7 +1187,24 @@ func _collect_pickups() -> void:
 		return
 	var got: Array = world.forest.collect_near(player_pos(), PICKUP_RADIUS)
 	for g in got:
-		$HUD.show_message("%sの種を拾った(+%d)" % [world.forest.SPECIES[g.species].name, g.amount])
+		$HUD.show_message("%sの種を拾った(+%d)" % [world.forest.SPECIES[g.species].name, g.amount] + _family_seeds())
+
+# 外の林で一緒に種拾いしている子どもが、近くに落ちている種を 1 人 1 つ拾う(2026-11-18)。知らせの文言を返す
+func _family_seeds() -> String:
+	if not has_node("Family") or not world.forest.is_outside_land(player_pos()):
+		return ""
+	var parts := PackedStringArray()
+	for id in $Family.seeds_helpers():
+		var pk: Dictionary = world.family.wild_pickup_near(player_pos(), world.family.SEEDS_REACH)
+		if pk.is_empty():
+			break
+		var got: Array = world.forest.collect_near(pk.pos, 0.01)
+		if got.is_empty():
+			continue
+		$Family.help_pick(id, pk.pos)
+		for g in got:
+			parts.append("%sも%sの種を拾った(+%d)" % [world.family.member(id).name, world.forest.SPECIES[g.species].name, g.amount])
+	return "" if parts.is_empty() else "\n" + "\n".join(parts)
 
 # 収穫の結果コード(Forest.harvest_nearest)ごとの文言
 const HARVEST_MESSAGES := {

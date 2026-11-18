@@ -94,6 +94,19 @@ func _mat(c: Color) -> Material:
 		_mats[c] = Look.mat(c)
 	return _mats[c]
 
+# pos から radius 以内で、いちばん近い生き物 {id, pos}(skip の種類は除く)。いなければ {}(子どもと生き物探し。2026-11-18)
+func nearest(pos: Vector2, radius: float, skip: Array = []) -> Dictionary:
+	var best := {}
+	var best_d := radius
+	for a in _animals:
+		if a.id in skip:
+			continue
+		var d: float = pos.distance_to(a.pos)
+		if d <= best_d:
+			best_d = d
+			best = {"id": a.id, "pos": a.pos}
+	return best
+
 func count(id: String) -> int:
 	var n := 0
 	for a in _animals:

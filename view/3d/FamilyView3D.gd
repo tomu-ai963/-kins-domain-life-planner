@@ -10,6 +10,8 @@ extends Node3D
 #   小屋が完成していれば、昼もときどき戸口から小屋に入り、配偶者はストーブの前、子どもはテーブルのあたりでしばらく過ごす(2026-11-16 とむ)
 # 誘われたとき(2026-11-18。Main の話す画面から): 収穫はうしろをついてきて、自分が収穫すると近くの区画を採りに行く。
 #   料理は配偶者がストーブの前で待ち、仕込むと鍋をかき混ぜる。夕食は家族がテーブルの席(西の腰掛け・北の長椅子)に座り、自分が食べると一緒に食べる
+#   生き物探しは子どもがついてきて、近くの生き物を見つけると、そちらを向いて手を振って教える(spotted)。種拾いはついてきて、外の林の種を拾いに行く
+#   ついてくるあいだは、一族の土地の外(外の林)にも出る
 # テントは歩いて入れる大きさで、南の入口だけ当たり判定を空ける。プレイヤーが中に入ると、小屋と同じく布を影だけにして中を見せる。
 # 中には寝袋(西から プレイヤー・家族の順)とランタン。プレイヤーは自分の寝袋のそばで H を押すと休める(Main)
 # 体は PlayerFigure3D を色違いで使う。子どもは年齢に合わせて小さい。
@@ -63,6 +65,10 @@ const FOLLOW_GAP := 1.3           # ついていって立つ、プレイヤー�
 const COOK_AFTER := 6.0           # 鍋をかき混ぜたあと、ストーブの前にいる長さ(秒)
 const DINNER_AFTER := 15.0        # みんなで食べたあと、席を立つまで(秒)
 const BENCH_SEATS := [-0.35, 0.0, 0.35]  # 長椅子の席(長椅子の中心から東西に)
+const FOLLOW_KINDS := ["harvest", "explore", "seeds"]  # うしろをついてくる誘い
+const SPOT_RANGE := 8.0           # 生き物探しで、子どもがこの距離の生き物を見つける
+const SPOT_SECONDS := 1.0         # 見つけるのを確かめる間隔(秒)
+const WIDE_LIMIT := 77.0          # ついてくるときに出られる範囲(外の林。Player3D.WALK_LIMIT の 1m 内)
 const HELP_ACTIONS := {"water": "water", "weed": "pull"}  # 手伝いの種類 → 体の動き
 
 # 服の色(PlayerFigure3D の look)と、足す物
@@ -102,6 +108,10 @@ var feeders = null
 var well = null
 var mill = null
 var extra_avoid: Callable  # ほかによける人の足元(訪問者。Main が設定する)
+var wilds = null           # 外の林(ついていくとき、林の木を回り込む)
+var wildlife_view = null   # 土地の生き物の view(子どもと生き物探し。Main が設定する)
+
+signal spotted(id, creature)  # 子どもが生き物を見つけて教えた(Main が文言と仲良し度)
 var night := 0.0           # 暗さ(DayLightView3D.night_changed)
 var clock = null           # logic/DayClock.gd(寝る時刻を見る。Main が setup で渡す)
 var hours_override := -1.0 # テスト用: 0 以上なら時計の代わりにこの時刻
@@ -137,6 +147,7 @@ func setup(f: Family, player: Node3D, parts: Dictionary) -> void:
 	well = parts.get("well")
 	mill = parts.get("mill")
 	clock = parts.get("clock")
+	wilds = parts.get("wilds")
 	_rng.randomize()
 	_ball.radius = 0.5
 	_ball.height = 1.0
@@ -385,8 +396,9 @@ func _step_person(p: Dictionary, delta: float) -> void:
 				else:
 					_go(p, home, "home")
 			elif home != null and is_night():
-				if invite == "harvest":  # 暗くなったら収穫はおしまい
+				if invite in FOLLOW_KINDS:  # 暗くなったら、ついてくる誘いはおしまい(家へ帰る)
 					_end_invite(p)
+					invite = ""
 				if invite == "dinner":
 					_go_seat(p)
 				elif not p.get("indoor", false):
@@ -395,8 +407,11 @@ func _step_person(p: Dictionary, delta: float) -> void:
 					var spot := indoor_spot(p.id)
 					p.look_at = spot[1]
 					_go_inner(p, spot[0], "indoor")
-			elif invite == "harvest":
-				_follow(p)
+			elif invite in FOLLOW_KINDS:
+				if invite == "explore":
+					_look_for_creatures(p, delta)
+				if p.get("busy", 0.0) <= 0.0:
+					_follow(p)
 			elif invite == "cook":
 				if p.get("indoor", false) and p.get("settled", false):
 					p.wait = maxf(p.wait, 1.0)  # ストーブの前で待つ
@@ -420,8 +435,9 @@ func start_invite(id: String, kind: String) -> void:
 	p.invite_t = INVITE_SECONDS
 	p.tasks = []  # 朝の手伝いの続きより、誘われたことを先に
 	match kind:
-		"harvest":
+		"harvest", "explore", "seeds":
 			p.wait = 0.0
+			p.spotted = []
 			if p.state == "walk":
 				_stand(p)
 		"cook":  # ストーブの前へ
@@ -446,9 +462,10 @@ func _end_invite(p: Dictionary) -> void:
 	if was == "dinner" and p.state == "sit":
 		_get_up(p)
 
-# 一緒に収穫: プレイヤーのうしろをついていく。プレイヤーが小屋の中なら戸口の外で待つ。収穫できる区画がなくなったらおしまい
+# ついてくる(収穫・生き物探し・種拾い): プレイヤーのうしろをついていく(外の林にも出る)。プレイヤーが小屋の中なら戸口の外で待つ。
+# 収穫は実った区画が、種拾いは外の林の種がなくなったらおしまい
 func _follow(p: Dictionary) -> void:
-	if not family.any_ripe():
+	if (p.invite == "harvest" and not family.any_ripe()) or (p.invite == "seeds" and family.wild_pickups().is_empty()):
 		_end_invite(p)
 		return
 	if p.get("indoor", false):  # 家の中にいたら、まず出る
@@ -458,7 +475,7 @@ func _follow(p: Dictionary) -> void:
 	var target: Vector2 = family.home_pos() if family.cabin.is_inside(pp) and family.home_pos() != null else pp
 	if p.pos.distance_to(target) > FOLLOW_DIST:
 		if p.wait <= 0.0:
-			var spot = _free_near(target, FOLLOW_GAP)
+			var spot = _free_near(target, FOLLOW_GAP, true)
 			if spot != null:
 				_go(p, spot, "follow")
 			p.wait = 0.5
@@ -466,9 +483,9 @@ func _follow(p: Dictionary) -> void:
 		_face(p, pp - p.pos, 0.1)
 
 # 一緒に収穫している人(近い順)。プレイヤーが収穫したとき、この順に近くの区画を採る
-func harvest_helpers() -> Array:
+func harvest_helpers(kind := "harvest") -> Array:
 	var pp: Vector2 = _player.ground_pos()
-	var ids: Array = _people.keys().filter(func(id): return _people[id].get("invite", "") == "harvest" and _people[id].state != "inside")
+	var ids: Array = _people.keys().filter(func(id): return _people[id].get("invite", "") == kind and _people[id].state != "inside")
 	ids.sort_custom(func(a, b): return _people[a].pos.distance_to(pp) < _people[b].pos.distance_to(pp))
 	return ids
 
@@ -477,10 +494,28 @@ func help_pick(id: String, plot: Vector2) -> void:
 	if not _people.has(id):
 		return
 	var p: Dictionary = _people[id]
-	var spot = _free_near(plot, 0.9)
+	var spot = _free_near(plot, 0.9, true)
 	p.action = "pick"
 	p.help_at = plot
 	_go(p, spot if spot != null else plot, "help")
+
+# 外の林で一緒に種拾いしている子ども(近い順)
+func seeds_helpers() -> Array:
+	return harvest_helpers("seeds")
+
+# 生き物探し: 近く(SPOT_RANGE)に、まだ教えていない種類の生き物がいたら、そちらを向いて手を振って教える
+func _look_for_creatures(p: Dictionary, delta: float) -> void:
+	p.spot_t = float(p.get("spot_t", 0.0)) - delta
+	if p.spot_t > 0.0 or wildlife_view == null:
+		return
+	p.spot_t = SPOT_SECONDS
+	var found: Dictionary = wildlife_view.nearest(p.pos, SPOT_RANGE, p.get("spotted", []))
+	if found.is_empty():
+		return
+	p.spotted.append(found.id)
+	_face_now(p, found.pos - p.pos)
+	_play(p, "wave")
+	spotted.emit(p.id, found.id)
 
 # 一緒に料理: 配偶者がストーブの前(小屋の中)で待っているか。その id。いなければ ""
 func cook_helper() -> String:
@@ -663,12 +698,12 @@ func _wander_target(p: Dictionary, home, near_player: float):
 		return t.pos
 	return home if home != null else p.pos
 
-# target のまわり(dist m)で、立てる場所
-func _free_near(target: Vector2, dist: float):
+# target のまわり(dist m)で、立てる場所。wide なら一族の土地の外(外の林)も
+func _free_near(target: Vector2, dist: float, wide := false):
 	var start := _rng.randf() * TAU
 	for i in range(8):
 		var q: Vector2 = target + Vector2(dist, 0).rotated(start + TAU * i / 8.0)
-		if is_free(q):
+		if is_free(q, wide):
 			return q
 	return null
 
@@ -964,8 +999,8 @@ func _face_now(p: Dictionary, dir: Vector2) -> void:
 func route(from: Vector2, to: Vector2, id := "") -> Array:
 	return Route.plan(from, to, obstacles(id))
 
-func is_free(p: Vector2) -> bool:
-	var limit: float = land.HALF - 0.5
+func is_free(p: Vector2, wide := false) -> bool:
+	var limit: float = WIDE_LIMIT if wide else land.HALF - 0.5
 	if absf(p.x) > limit or absf(p.y) > limit:
 		return false
 	for r in obstacles():
@@ -994,6 +1029,9 @@ func obstacles(id := "") -> Array:
 		small.append(mill.site)
 	for pos in small:
 		list.append(Rect2(pos - Vector2.ONE * (TREE_MARGIN + 0.4), Vector2.ONE * (TREE_MARGIN + 0.4) * 2.0))
+	if wilds != null:  # 外の林の木(ついていくとき)
+		for t in wilds.trees:
+			list.append(Rect2(t.pos - Vector2.ONE * (TREE_MARGIN + 0.2), Vector2.ONE * (TREE_MARGIN + 0.2) * 2.0))
 	if land.pond != null:
 		var r: float = land.POND_RADIUS + OBSTACLE_MARGIN
 		list.append(Rect2(land.pond - Vector2(r, r), Vector2(r, r) * 2.0))

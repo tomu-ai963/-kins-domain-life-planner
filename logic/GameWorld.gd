@@ -164,6 +164,8 @@ func _init() -> void:
 	family.garden = garden
 	family.cabin = cabin
 	family.market = market
+	family.pests = pests  # 子どもと生き物探しで、生き物と仲良くなる
+	family.wilds = wilds  # 子どもと外の林で種拾い
 	family.is_blocked = bees.is_blocked  # テントも巣箱と同じ決まり(区画・小屋・池・木などのそばと土地の端には張らない)
 	family.can_draw_water = _family_can_draw
 	nest_boxes.forest = forest

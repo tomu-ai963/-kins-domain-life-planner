@@ -342,6 +342,28 @@ func _test_together() -> void:
 	w.time.shift_days(1)
 	_check(f.invite_problem("alyona", "harvest") == "", "次の日はまた誘える")
 	_check(f.invite("nobody", "harvest") == "unknown" and f.invite("alyona", "nap") == "unknown", "知らない人・作業は誘えない")
+	# 生き物探しと種拾いは子どもと(種拾いは 6 歳から)
+	_check(f.invite_problem("polya", "explore") == "" and f.invite_problem("alyona", "explore") == "child_only", "生き物探しは子ども(小さい子も)")
+	_check(f.invite_problem("masha", "seeds") == "" and f.invite_problem("polya", "seeds") == "young" and f.invite_problem("alyona", "seeds") == "child_only", "種拾いは 6 歳からの子ども")
+	w.pests.friendship = 20  # _world は荒らされないよう最大にしているので、上がる余地を作る
+	var friend_before: int = w.pests.friendship
+	_check(f.spot_creature("sparrow") == Family.EXPLORE_GAIN and w.pests.friendship == friend_before + Family.EXPLORE_GAIN, "子どもが生き物を見つけると仲良し度が上がる")
+	_check(f.spot_creature("sparrow") == 0, "同じ種類は 1 日 1 回")
+	f.spot_creature("squirrel")
+	f.spot_creature("crow")
+	_check(f.spot_creature("hare") == 0 and w.pests.friendship == friend_before + Family.EXPLORE_GAIN * Family.EXPLORE_SPOTS, "1 日 %d 種類まで" % Family.EXPLORE_SPOTS)
+	w.time.shift_days(1)
+	_check(f.spot_creature("hare") == Family.EXPLORE_GAIN, "次の日はまた上がる")
+	# 外の林の種
+	w.forest.pickups.append({"pos": Vector2(3, 10), "species": "birch", "amount": 3})  # 土地の中
+	_check(f.wild_pickups().is_empty(), "土地の中の種は外の林の種に数えない")
+	w.forest.pickups.append({"pos": Vector2(5, -56), "species": "birch", "amount": 3})
+	w.forest.pickups.append({"pos": Vector2(12, -58), "species": "birch", "amount": 3})
+	_check(f.wild_pickups().size() == 2, "外の林に落ちている種")
+	_check(f.wild_pickup_near(Vector2(6, -55), Family.SEEDS_REACH).pos == Vector2(5, -56) and f.wild_pickup_near(Vector2(30, -55), Family.SEEDS_REACH).is_empty(), "近くの種(8m まで)")
+	var next: Dictionary = f.next_wild_drop()
+	_check(not next.is_empty() and int(next.day) > f.day_number() and next.species in w.wilds.species_here(), "次に外の林で種が落ちる日と樹種(%s)" % str(next))
+	w.forest.pickups.clear()
 	# 近くの収穫できる区画
 	_check(not f.any_ripe() and f.ripe_near(Vector2(-10, -10), Family.HARVEST_REACH) == null, "実った区画がなければ何もない")
 	_crop(w, Vector2(-16.5, -10.5))
