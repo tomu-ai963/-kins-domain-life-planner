@@ -7,6 +7,7 @@ extends SceneTree
 const GameWorld = preload("res://logic/GameWorld.gd")
 const Family = preload("res://logic/Family.gd")
 const Pests = preload("res://logic/Pests.gd")
+const Mill = preload("res://logic/Mill.gd")
 const Garden = preload("res://logic/Garden.gd")
 const FamilyPicker = preload("res://view/FamilyPicker.gd")
 
@@ -28,6 +29,7 @@ func _initialize() -> void:
 	_test_picker()
 	_test_custom_rules()
 	_test_together()
+	_test_together_seasons()
 	_remove_save()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -425,6 +427,50 @@ func _test_together() -> void:
 	w3.load_game()
 	_check(w3.family.invited_today("alyona", "harvest") and w3.family.dined_today(), "誘った記録と夕食の記録は読み直しても残る(同じ日に 2 回は誘えない)")
 	_check(wk.kitchen.pots[0].get("helped", false) == false and wk.kitchen.pots[0].get("recipe", "") == "sauce", "鍋の記録も読み直せる")
+
+# 田植え・雪かき・石臼を一緒に(2026-11-18 とむ「E」)
+func _test_together_seasons() -> void:
+	print("田植え・雪かき・石臼を一緒に")
+	var w := _world("niigata")  # 雪の積もる土地。5 月 10 日(春)
+	var f := w.family
+	f.choose("alyona", 3)  # ワーニャ 9・マーシャ 6・ポーリャ 3 歳
+	_check(f.invite_problem("alyona", "rice") == "" and f.invite_problem("masha", "rice") == "" and f.invite_problem("polya", "rice") == "young", "田植えは配偶者と 6 歳からの子ども(春)")
+	_check(f.invite_problem("alyona", "snow") == "season", "春は雪かきに誘えない")
+	_check(f.invite_problem("alyona", "mill") == "no_mill", "石臼を置く前は誘えない")
+	w.mill.site = Vector2(-10, 10)
+	_check(f.invite_problem("alyona", "mill") == "" and f.invite_problem("vanya", "mill") == "young", "石臼は配偶者と 10 歳からの子ども")
+	# 石臼: 2 人で回す日は、手で挽ける量が 2 倍
+	_check(w.mill.hand_limit() == Mill.HAND_KG_PER_DAY and w.mill.hand_left() == Mill.HAND_KG_PER_DAY, "ふだんは 1 日 %dkg" % Mill.HAND_KG_PER_DAY)
+	w.mill.add_helper()
+	_check(w.mill.hand_limit() == Mill.HAND_KG_PER_DAY * Mill.HELPED_RATE and w.mill.hand_left() == Mill.HAND_KG_PER_DAY * Mill.HELPED_RATE, "2 人で回す日は %dkg" % (Mill.HAND_KG_PER_DAY * Mill.HELPED_RATE))
+	w.garden.produce.wheat = 20
+	for i in range(7):
+		w.mill.grind(Vector2(-10, 11))
+	_check(w.mill.hand_left() == 3 and w.mill.grind(Vector2(-10, 11)) == "ground", "5kg を超えても挽ける")
+	w.save_game()
+	var w2 := GameWorld.new()
+	w2.save_path = TEST_SAVE
+	w2.time.offset_seconds = w.time.offset_seconds
+	w2.load_game()
+	_check(w2.mill.hand_left() == 2, "読み直しても、今日は 2 人で回した日のまま")
+	w.time.shift_days(1)
+	_check(w.mill.hand_limit() == Mill.HAND_KG_PER_DAY, "次の日はふだんの量")
+	# 田植え: 近くの空いた田んぼ(川から水が引ける区画)
+	var near_river := [Vector2(-1.5, -46.5), Vector2(1.5, -46.5), Vector2(-1.5, -43.5)]
+	for q in near_river:
+		w.land.toggle_plot(q)
+	w.land.toggle_plot(Vector2(-1.5, 40.5))  # 川から遠い区画
+	_check(w.garden.is_paddy_spot(near_river[0]) and not w.garden.is_paddy_spot(Vector2(-1.5, 40.5)), "川のそばの区画は田んぼにできる")
+	_check(f.empty_paddy_near(near_river[0], Family.HARVEST_REACH, [near_river[0]]) in [near_river[1], near_river[2]], "近くの空いた田んぼ")
+	w.garden.seeds.rice = 2
+	w.garden.sow(near_river[1], "rice")
+	w.garden.sow(near_river[2], "rice")
+	_check(f.empty_paddy_near(near_river[0], Family.HARVEST_REACH, [near_river[0]]) == null, "苗を植えた区画と、川から遠い区画は空いた田んぼに数えない")
+	# 雪かき: 雪の積もる冬だけ
+	w.time.set_today("2027-01-15")
+	w.refresh_season()
+	_check(w.snow.can_clear_now() and f.invite_problem("alyona", "snow") == "", "冬は雪かきに誘える")  # 子どもは 8 か月で 8 歳育つので、年齢の決まりは田植えで見た
+	_check(f.invite_problem("alyona", "rice") == "season", "冬は田植えに誘えない")
 
 func _test_save() -> void:
 	print("セーブ")

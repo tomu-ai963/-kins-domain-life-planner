@@ -19,6 +19,9 @@ extends RefCounted
 #   夕食(小屋ができてから・暗くなってから寝るまで): 家族がテーブルに座り、自分が食べると「みんなで食べた」。翌朝の手伝いが増える
 #   生き物探し(子ども): ついてきて、近くの生き物を見つけて教える。見つけるたびに生き物との仲良し度が上がる(Pests。1 日 EXPLORE_SPOTS 種類まで)
 #   種拾い(HELP_AGE 歳からの子ども・外の林に種が落ちている日): ついてきて、自分が外の林で種を拾うと、近くに落ちている種をもう 1 つ拾う
+#   田植え(配偶者と HELP_AGE 歳からの子ども・米をまける季節): ついてきて、自分が田植えすると近くの空いた田んぼにも苗を植える(苗は自分の持ち物から)
+#   雪かき(配偶者と HELP_AGE 歳からの子ども・雪の積もる冬): 横に並んで、自分が雪をどかすと隣のマスの雪もどかす(道が 2 倍の幅)
+#   石臼(配偶者と WEED_MORE_AGE 歳からの子ども・石臼を置いてから): 石臼のそばで一緒に回し、今日手で挽ける量が Mill.HELPED_RATE 倍
 # 子どもは AGE_DAYS 日で 1 歳育ち、ADULT_AGE で止まる(木は 1 日 1 年だが、人は一月で 1 歳にした。仮の数字)。
 # 文言は Main、姿と歩く道は view/3d/FamilyView3D.gd が決める
 const SaveRead = preload("res://logic/SaveRead.gd")
@@ -60,7 +63,7 @@ const SPOUSE_GIFTS := {       # 配偶者の贈り物(季節の料理。品と�
 	"winter": {"item": "sbiten", "count": 2},
 }
 const CHILD_GIFT_SEEDS := 2   # 子どもが拾ってくる木の種の数
-const INVITE_KINDS := ["harvest", "cook", "dinner", "explore", "seeds"]  # 誘える作業
+const INVITE_KINDS := ["harvest", "cook", "dinner", "explore", "seeds", "rice", "snow", "mill"]  # 誘える作業
 const HARVEST_REACH := 4.0    # 一緒に収穫するとき、家族が採る区画の範囲(自分の足元から m)
 const DINNER_WATER_HELP := 5  # みんなで夕食を食べた翌朝、配偶者が水をやる数(ふだんは WATER_HELP)
 const DINNER_WEED_MORE := 1   # みんなで夕食を食べた翌朝、子どもが余分に抜く区画
@@ -92,6 +95,8 @@ var cabin = null
 var market = null
 var pests = null         # 生き物との仲良し度(子どもと生き物探し。GameWorld が設定する)
 var wilds = null         # 外の林(子どもと種拾い。GameWorld が設定する)
+var snow = null          # 雪かき(GameWorld が設定する)
+var mill = null          # 石臼(GameWorld が設定する)
 var is_blocked: Callable  # 物を置けない場所か(Bees.is_blocked。GameWorld が設定する)
 var can_draw_water: Callable  # 手伝いの水を汲めるか(GameWorld が設定する)
 
@@ -318,6 +323,18 @@ func invite_problem(id: String, kind: String) -> String:
 				return "child_only"
 			if age_of(m) < HELP_AGE:
 				return "young"
+		"rice", "snow":
+			if m.role == "child" and age_of(m) < HELP_AGE:
+				return "young"
+			if kind == "rice" and not garden.can_sow_now("rice"):
+				return "season"  # 田植えは米をまける季節だけ
+			if kind == "snow" and (snow == null or not snow.can_clear_now()):
+				return "season"  # 雪の積もる土地の冬だけ
+		"mill":
+			if m.role == "child" and age_of(m) < WEED_MORE_AGE:
+				return "young"
+			if mill == null or not mill.is_placed():
+				return "no_mill"
 	return "done_today" if invited_today(id, kind) else ""
 
 func invited_today(id: String, kind: String) -> bool:
@@ -386,6 +403,19 @@ func next_wild_drop() -> Dictionary:
 		var d: int = wilds.next_drop(sp, today + 1)
 		if d >= 0 and (best.is_empty() or d < int(best.day)):
 			best = {"day": d, "species": sp}
+	return best
+
+# pos から reach 以内で、いちばん近い空いた田んぼ(米を植えられる区画。exclude は除く)。なければ null
+func empty_paddy_near(pos: Vector2, reach: float, exclude: Array = []):
+	var best = null
+	var best_d := reach
+	for c in garden.land.plots:
+		if c in exclude or not garden.crop_at(c).is_empty() or not garden.is_paddy_spot(c):
+			continue
+		var d: float = pos.distance_to(c)
+		if d <= best_d:
+			best_d = d
+			best = c
 	return best
 
 # みんなで夕食を食べた(翌朝の手伝いが増える)

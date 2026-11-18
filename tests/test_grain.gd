@@ -187,4 +187,4 @@ func _test_save() -> void:
 	_check(not old.is_placed() and old.flour.wheat == 0, "石臼の記録がないセーブは、石臼なし・粉なし")
 	var bad := Mill.new()
 	bad.from_save({"flour": {"wheat": -3, "rice": 5}, "hand_kg": 99})
-	_check(bad.flour.wheat == 0 and not bad.flour.has("rice") and bad.hand_kg == Mill.HAND_KG_PER_DAY, "読めない値は範囲に収め、知らない粉は捨てる")
+	_check(bad.flour.wheat == 0 and not bad.flour.has("rice") and bad.hand_kg == Mill.HAND_KG_PER_DAY * Mill.HELPED_RATE, "読めない値は範囲に収め(2 人で回した日の量まで)、知らない粉は捨てる")

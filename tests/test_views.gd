@@ -3822,6 +3822,93 @@ func _test_family_together() -> void:
 	view.hours_override = 12.0
 	view.step(0.1)
 
+# 田植え・雪かき・石臼を一緒に(2026-11-18 とむ「E」)。県を選んで、季節を動かして確かめる(3D のテストの最後なので、ほかに響かない)
+func _test_family_seasons() -> void:
+	print("田植え・雪かき・石臼を一緒に")
+	var w = main.world
+	var f = w.family
+	var g = w.garden
+	var view: Node3D = main.get_node("Family")
+	var player: CharacterBody3D = main.get_node("Player")
+	var hud = main.get_node("HUD")
+	var steps := func(cond: Callable) -> bool:
+		for _i in range(2000):
+			if cond.call():
+				return true
+			view.step(0.1)
+		return cond.call()
+	var gather := func(at: Vector2) -> void:  # みんなを近くに集める(昼・外)
+		for id in view.people_ids():
+			var p: Dictionary = view._people[id]
+			if p.state == "sit":
+				view._get_up(p)
+			view._end_invite(p)
+			p.pos = at + Vector2(view.people_ids().find(id) * 1.2, 0)
+			p.indoor = false
+			p.tasks = []
+			view._stand(p)
+			p.wait = 1000.0
+	if not w.region.is_chosen():
+		w.choose_region("niigata")
+	view.set_night(0.0)
+	view.hours_override = 12.0
+	# 石臼(季節を問わない): 配偶者がそばで待ち、2 人で回すと今日挽ける量が 2 倍
+	w.mill.site = Vector2(-12, 12)
+	g.produce.wheat = 20
+	gather.call(Vector2(-12, 6))
+	player.global_position = Vector3(-12, 0, 13.2)
+	main._talk_family("alyona")
+	_check(main.shop_rows().any(func(r): return r.id == "invite_mill"), "石臼を置くと「一緒に石臼を回そう」が出る")
+	main._on_shop_action("invite_mill")
+	_check(hud._message.contains("5kg → 10kg") and w.mill.hand_limit() == 10, "誘うと今日手で挽ける量が 5kg → 10kg: " + hud._message.replace("\n", " "))
+	var at_mill: bool = steps.call(func(): return view.mill_helper() == "alyona")
+	_check(at_mill, "配偶者が石臼のそばへ行って待つ")
+	var left_before: int = w.mill.hand_left()
+	main._mill_action()
+	_check(hud._message.contains("2 人で回している") and w.mill.hand_left() == left_before - 1 and view.figure_of("alyona").current_action() == "grind", "一緒に回す: " + hud._message)
+	view._end_invite(view._people["alyona"])
+	# 田植え(春): ついてきて、となりの空いた田んぼにも植える
+	w.time.set_today("2027-05-10")
+	w.refresh_season()
+	var paddies := [Vector2(-1.5, -46.5), Vector2(1.5, -46.5), Vector2(-1.5, -43.5)]
+	for q in paddies:
+		if w.land.plot_at(q) == null:
+			w.land.toggle_plot(q)
+		g.crops = g.crops.filter(func(c): return c.pos != q)
+	_check(paddies.all(func(q): return w.land.plot_at(q) != null and g.is_paddy_spot(q)), "川のそばに田んぼにできる区画が 3 つ")
+	g.seeds.rice = 5
+	gather.call(Vector2(-4, -42))
+	player.global_position = Vector3(-1.5, 0, -46.5)
+	main._talk_family("alyona")
+	main._on_shop_action("invite_rice")
+	main._talk_family("vanya")
+	main._on_shop_action("invite_rice")
+	_check(view.invite_of("alyona") == "rice" and view.invite_of("vanya") == "rice", "配偶者と子どもを田植えに誘う")
+	steps.call(func(): return ["alyona", "vanya"].all(func(id): return view.state_of(id) == "stand" and view.person_pos(id).distance_to(main.player_pos()) <= view.FOLLOW_DIST + 0.3))
+	main.selected_crop = "rice"
+	main._sow(main.player_pos())
+	_check(paddies.all(func(q): return g.crop_at(q).get("kind", "") == "rice") and int(g.seeds.rice) == 2, "1 回の田植えで 3 つの田んぼに植わる(苗 5 → 2)")
+	_check(hud._message.contains("となりの田んぼに植えてくれた"), "知らせ: " + hud._message.replace("\n", " "))
+	var planted: bool = steps.call(func(): return ["alyona", "vanya"].any(func(id): return view.figure_of(id).current_action() == "plant"))
+	_check(planted, "家族が田んぼへ行って植える動きをする")
+	# 雪かき(冬): 横に並んで、隣のマスの雪もどかす
+	w.time.set_today("2028-01-15")
+	w.refresh_season()
+	gather.call(Vector2(10, -10))
+	player.global_position = Vector3(10, 0, -5)
+	main._talk_family("vanya")
+	_check(main.shop_rows().any(func(r): return r.id == "invite_snow") and not main.shop_rows().any(func(r): return r.id == "invite_rice"), "冬は雪かきが出て、田植えは出ない")
+	main._on_shop_action("invite_snow")
+	_check(view.invite_of("vanya") == "snow", "子どもを雪かきに誘う")
+	var beside: bool = steps.call(func(): return view.person_pos("vanya").distance_to(view.snow_spot("vanya")) < 0.7)
+	_check(beside and absf(view.person_pos("vanya").distance_to(main.player_pos()) - view.SNOW_SIDE) < 0.7, "プレイヤーの横に並ぶ")
+	var cells_before: int = w.snow.cells.size()
+	main._shovel_wait = 0.0
+	main.update_shovel(0.1, true)
+	_check(w.snow.cells.size() == cells_before + 2 and w.snow.is_cleared(view.person_pos("vanya")), "自分のマスと、横の子どものマスの雪がどける")
+	_check(view.figure_of("vanya").current_action() == "shovel", "子どもも雪をすくう動きをする")
+	view._end_invite(view._people["vanya"])
+
 # ── 自分の名前と性別(2026-11-16) ─────────────────────────────────
 func _test_profile_view() -> void:
 	print("自分の名前と性別")
@@ -3959,6 +4046,7 @@ func _test_cabin_family() -> void:
 	var slept: bool = steps.call(func(): return al.state == "inside")
 	_check(slept and view.figure_of("alyona").basis.y.normalized().is_equal_approx(Vector3(-1, 0, 0)), "小屋の中にいれば、寝る時刻にそのままベッドで寝る")
 	_test_family_together()
+	_test_family_seasons()
 	# 片付け(このあとのテストのため)
 	view.set_night(0.0)
 	view.hours_override = 12.0

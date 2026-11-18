@@ -15,6 +15,7 @@ signal dirty    # セーブに入る状態が変わった
 
 const GRIND_KG := 1          # 手で 1 回に挽く量(kg)
 const HAND_KG_PER_DAY := 5   # 手で 1 日に挽ける量(kg)。手回しの石臼は 1 時間に 1〜2kg ほど
+const HELPED_RATE := 2       # 家族と 2 人で回した日は、手で挽ける量がこの倍(2026-11-18 とむ決定「少し得」)
 const ENGINE_MAX_KG := 50    # 製粉機で 1 回に挽ける量(kg)
 const RADIUS := 0.5          # 石臼の台の半径(m)
 const REACH := 2.0           # 台からこの距離までなら作業できる
@@ -35,6 +36,7 @@ var site = null       # 石臼の場所 Vector2。置く前は null
 var flour := {}       # 粉の持ち物 {穀物の id: kg}
 var hand_day := ""    # 手で挽いた日(YYYY-MM-DD)
 var hand_kg := 0      # その日に手で挽いた量(kg)
+var helped_day := ""  # 家族が一緒に回してくれる日(YYYY-MM-DD)
 var last_ground := {} # 直前に挽いた {穀物の id: kg}(文言用・保存しない)
 
 func _init() -> void:
@@ -59,11 +61,20 @@ func is_placed() -> bool:
 func is_near(pos: Vector2) -> bool:
 	return is_placed() and pos.distance_to(site) <= RADIUS + REACH
 
+# 今日手で挽ける量(kg)。家族と 2 人で回す日は HELPED_RATE 倍
+func hand_limit() -> int:
+	return HAND_KG_PER_DAY * (HELPED_RATE if helped_day == forest.today() else 1)
+
+# 家族が一緒に回してくれる(今日だけ)
+func add_helper() -> void:
+	helped_day = forest.today()
+	_commit()
+
 # 今日あと何 kg 手で挽けるか
 func hand_left() -> int:
 	if hand_day != forest.today():
-		return HAND_KG_PER_DAY
-	return maxi(0, HAND_KG_PER_DAY - hand_kg)
+		return hand_limit()
+	return maxi(0, hand_limit() - hand_kg)
 
 # 持っている穀物(kg)
 func grain_count(grain: String) -> int:
@@ -142,7 +153,7 @@ func blocks_plot(c: Vector2, half: float) -> bool:
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
-	var d := {"flour": flour, "hand_day": hand_day, "hand_kg": hand_kg}
+	var d := {"flour": flour, "hand_day": hand_day, "hand_kg": hand_kg, "helped_day": helped_day}
 	if site != null:
 		d["site"] = [site.x, site.y]
 	return d
@@ -155,5 +166,6 @@ func from_save(d: Dictionary) -> void:
 	for g in FLOURS:
 		flour[g] = SaveRead.count(fd, g)
 	hand_day = SaveRead.text(d, "hand_day")
-	hand_kg = clampi(SaveRead.whole(d, "hand_kg"), 0, HAND_KG_PER_DAY)
+	hand_kg = clampi(SaveRead.whole(d, "hand_kg"), 0, HAND_KG_PER_DAY * HELPED_RATE)
+	helped_day = SaveRead.text(d, "helped_day")
 	changed.emit()

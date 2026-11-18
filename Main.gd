@@ -326,6 +326,7 @@ func update_shovel(delta: float, holding: bool) -> void:
 	if shoveling and _shovel_wait <= 0.0 and s.clear_at(pos) == "cleared":
 		_shovel_wait = SHOVEL_GAP
 		_act("shovel")
+		_family_snow()
 	var k := world.kitchen
 	var speed := 1.0
 	if shoveling:
@@ -911,6 +912,9 @@ const FAMILY_INVITES := {
 	"dinner": "みんなで夕食にしよう(翌朝の手伝いが増える)",
 	"explore": "生き物を探しに行こう(見つけると生き物と仲良くなる)",
 	"seeds": "外の林へ種を拾いに行こう(一緒に拾ってくれる)",
+	"rice": "一緒に田植えしよう(となりの田んぼにも植えてくれる)",
+	"snow": "一緒に雪かきしよう(横の雪もどかしてくれる)",
+	"mill": "一緒に石臼を回そう(今日挽ける量が 2 倍)",
 }
 const FAMILY_GIFT_SPOUSE := "{呼}%sを作ったよ。
 持っていって。"
@@ -1032,6 +1036,11 @@ func _family_action(action: String) -> void:
 		"explore":
 			if $Family.is_night():
 				line = "暗いから、生き物探しはまた明日ね。"
+		"rice", "snow", "mill":
+			if $Family.is_night():
+				line = "暗いから、%sは明日にしよう。" % {"rice": "田植え", "snow": "雪かき", "mill": "石臼"}[kind]
+			elif kind == "rice" and int(world.garden.seeds.get("rice", 0)) <= 0:
+				line = "稲の苗がないみたい。\n(市場で買える)"
 		"seeds":
 			if $Family.is_night():
 				line = "暗いから、外の林はまた明日ね。"
@@ -1067,6 +1076,18 @@ func _family_action(action: String) -> void:
 			"seeds":
 				$Family.start_invite(id, "seeds")
 				line = "外の林だね! 一緒に拾おう!\n(ついてきて、近くに落ちている種を拾ってくれる)"
+			"rice":
+				$Family.start_invite(id, "rice")
+				line = "うん、田植えしよう! 泥んこになるぞ!" if m.role == "child" else "いいよ。田植えは二人のほうが早いね。"
+				line += "\n(ついてきて、となりの空いた田んぼにも苗を植えてくれる)"
+			"snow":
+				$Family.start_invite(id, "snow")
+				line = "まかせて! 道を広くしよう。\n(横に並んで、となりの雪もどかしてくれる。U を押したまま歩く)"
+			"mill":
+				var before: int = world.mill.hand_limit()
+				world.mill.add_helper()
+				$Family.start_invite(id, "mill")
+				line = "いいよ、二人で回そう。\n(石臼のそばで待っている。今日手で挽ける量 %dkg → %dkg)" % [before, world.mill.hand_limit()]
 	_close_shop()
 	$HUD.show_message("%s「%s」" % [m.name, with_call(line, m.role)], 6.0)
 
@@ -1076,6 +1097,37 @@ func _on_family_spotted(id: String, creature: String) -> void:
 	var gain: int = world.family.spot_creature(creature)
 	var note: String = "\n(生き物との仲良し度 +%d → %d)" % [gain, world.pests.friendship] if gain > 0 else ""
 	$HUD.show_message("%s「あそこ! %sがいるよ!」%s" % [m.get("name", ""), _creature_name(creature), note], 5.0)
+
+# 一緒に田植えしている家族が、近くの空いた田んぼに 1 人 1 つ苗を植える(苗は自分の持ち物から。2026-11-18)。知らせの文言を返す
+func _family_rice(done: Vector2) -> String:
+	if not has_node("Family"):
+		return ""
+	var g := world.garden
+	var taken := [done]
+	var names := PackedStringArray()
+	for id in $Family.harvest_helpers("rice"):
+		if int(g.seeds.get("rice", 0)) <= 0:
+			break
+		var plot = world.family.empty_paddy_near(done, world.family.HARVEST_REACH, taken)
+		if plot == null:
+			break
+		if g.sow(plot, "rice") != "sown":
+			continue
+		taken.append(plot)
+		$Family.help_pick(id, plot, "plant")
+		names.append(world.family.member(id).name)
+	if names.is_empty():
+		return ""
+	return "\n%sも、となりの田んぼに植えてくれた(稲の苗 残り %d)" % ["・".join(names), int(g.seeds.get("rice", 0))]
+
+# 一緒に雪かきしている家族が、自分の足元(横に並んだところ)の雪もどかす(2026-11-18)
+func _family_snow() -> void:
+	if not has_node("Family"):
+		return
+	for id in $Family.harvest_helpers("snow"):
+		var at: Vector2 = $Family.person_pos(id)
+		if world.snow.clear_at(at) == "cleared":
+			$Family.play_action(id, "shovel")
 
 # 一緒に収穫している家族が、足元の近くの収穫できる区画を 1 人 1 つ採る(2026-11-18)。知らせの文言を返す
 func _family_harvest(done: Vector2, pos: Vector2) -> String:
@@ -2060,7 +2112,8 @@ func _sow(pos: Vector2) -> void:
 				# まくのは止めない。間に合わないことだけ知らせる
 				$HUD.show_message("%s%s。ただ、霜(%s)まであと%d日で、育ちきる(%d日)前に枯れてしまう" % [crop.name, verb, g.frost_date_text(), g.days_to_frost(), g.days_left(planted)], 7.0)
 			elif g.CROPS[selected_crop].get("paddy", false):
-				$HUD.show_message("%sを田植えした(田んぼに水を張った)。毎日水をやれば%d日で収穫できる。水を切らすとほとんど育たない" % [crop.seed_name, g.days_left(planted)], 6.0)
+				var text := "%sを田植えした(田んぼに水を張った)。毎日水をやれば%d日で収穫できる。水を切らすとほとんど育たない" % [crop.seed_name, g.days_left(planted)]
+				$HUD.show_message(text + _family_rice(world.land.plot_center(pos)), 6.0)
 			else:
 				$HUD.show_message("%s%s(毎日水をやれば%d日で収穫できる)" % [crop.name, verb, g.days_left(planted)], 5.0)
 		"needs_seedling":
@@ -2727,7 +2780,12 @@ func _mill_action() -> void:
 		"ground":
 			var g: String = m.last_ground.keys()[0]
 			_act("grind", m.site)
-			$HUD.show_message("%sを%dkg挽いた(%s %dkg。手で今日あと%dkg)" % [world.garden.CROPS[g].name, int(m.last_ground[g]), m.FLOURS[g].name, int(m.flour[g]), m.hand_left()])
+			var helper: String = $Family.mill_helper() if has_node("Family") else ""
+			var together := ""
+			if helper != "":
+				$Family.play_action(helper, "grind", m.site)
+				together = "。%sと 2 人で回している" % world.family.member(helper).name
+			$HUD.show_message("%sを%dkg挽いた(%s %dkg。手で今日あと%dkg%s)" % [world.garden.CROPS[g].name, int(m.last_ground[g]), m.FLOURS[g].name, int(m.flour[g]), m.hand_left(), together])
 		"engine":
 			var parts := PackedStringArray()
 			for g in m.last_ground:
@@ -2738,7 +2796,7 @@ func _mill_action() -> void:
 			_act("build", m.site)
 			$HUD.show_message(MILL_MESSAGES.placed, 5.0)
 		"tired":
-			$HUD.show_message(MILL_MESSAGES.tired % m.HAND_KG_PER_DAY, 5.0)
+			$HUD.show_message(MILL_MESSAGES.tired % m.hand_limit(), 5.0)
 		_:
 			$HUD.show_message(MILL_MESSAGES[result], 5.0)
 
