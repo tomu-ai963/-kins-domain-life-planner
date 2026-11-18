@@ -2959,7 +2959,15 @@ func _test_furniture() -> void:
 	key.call(KEY_H)
 	player._pose.custom_step(10.0)
 	view._cover_tween.custom_step(10.0)
-	_check(player.get_node("Body/Figure").holding_lantern, "起きるとランタンを持つ")
+	var lantern: Node3D = player._lantern
+	_check(not player.get_node("Body/Figure").holding_lantern and not lantern.visible and not player.get_node("LanternLight").visible, "小屋の中では、起きてもランタンを持たない(部屋の明かりがある)")
+	var inside_at: Vector3 = player.global_position
+	player.global_position = Vector3(site.x, 0, site.y + c.DEPTH * 0.5 + 1.5)  # 戸口の外へ
+	view._process(0.1)
+	_check(not player.is_indoors() and player.get_node("Body/Figure").holding_lantern and lantern.visible and player.get_node("LanternLight").visible, "外に出るとランタンを持ってともす")
+	player.global_position = inside_at
+	view._process(0.1)
+	_check(player.is_indoors() and not lantern.visible, "また入るとランタンをしまう")
 	player.set_night(0.0)
 
 	# 日記の中身は今の状態に合わせて変わる

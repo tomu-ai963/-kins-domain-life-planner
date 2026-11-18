@@ -131,6 +131,7 @@ func set_indoors(indoors: bool, floor_y := 0.0) -> void:
 	_indoors = indoors
 	_floor_y = floor_y
 	update_shadow_distance()
+	_apply_lantern()
 
 # 作業の動きをする。kind は PlayerFigure3D.ACTIONS のどれか。target は相手の位置(m の Vector2。なければ今の向きのまま)、
 # item は収穫物(飛ぶ玉の色)。歩いているあいだもできる(足はそのまま動く)
@@ -250,15 +251,16 @@ func update_shadow_distance() -> void:
 # 暗くなるとランタンをともす(0 = 昼、1 = 夜)
 func set_night(amount: float) -> void:
 	_night = amount
-	_apply_lantern()
-	_lantern_light.visible = amount > 0.0
 	_lantern_light.light_energy = LANTERN_ENERGY * amount
+	_apply_lantern()
 
-# 横になっているあいだと、道具を持つ作業のあいだはランタンを手に持たない
+# 横になっているあいだと、道具を持つ作業のあいだはランタンを手に持たない。
+# 小屋やテントの中(部屋の明かり・吊ったランタンがある)では、手に持たず光も消す(2026-11-18 とむ)
 func _apply_lantern() -> void:
-	var holding: bool = _night > 0.0 and not _posing and not _figure.is_acting()
+	var holding: bool = _night > 0.0 and not _indoors and not _posing and not _figure.is_acting()
 	_lantern.visible = holding
 	_figure.holding_lantern = holding
+	_lantern_light.visible = _night > 0.0 and not _indoors
 
 # 向いている方向(長さ 1。ロジックの座標)
 func facing() -> Vector2:
