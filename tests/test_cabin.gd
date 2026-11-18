@@ -71,7 +71,7 @@ func _test_place() -> void:
 	w.forest.remove_nearest(Vector2(20, 21), 2.0)
 	_check(c.place(SITE + Vector2(0.3, -0.3)) == "placed" and c.site == SITE, "足元を中心に、1m 単位にそろえて決まる")
 	_check(c.place(Vector2(-20, 5)) == "exists" and c.site == SITE, "小屋はひとつまで")
-	_check(c.rect() == Rect2(18, 18.5, 4, 3), "東西 4m × 南北 3m = 12m²")
+	_check(c.rect() == Rect2(17, 18, 6, 4), "東西 6m × 南北 4m = 24m²(2026-11-18 に広げた)")
 
 func _test_work() -> void:
 	print("基礎 → 壁 → 屋根")
@@ -105,7 +105,7 @@ func _test_work() -> void:
 	_next_day(c)
 	_check(c.work(OUTSIDE) == "complete" and c.current_stage().is_empty(), "完成したらもう作業はない")
 	_check(c.is_inside(SITE) and not c.is_inside(OUTSIDE), "完成した小屋の中にいるかが分かる")
-	_check(c.door_pos() == SITE + Vector2(0, 1.5), "ドアは南の壁の真ん中")
+	_check(c.door_pos() == SITE + Vector2(0, 2), "ドアは南の壁の真ん中")
 	c.stage = 2
 	_check(not c.is_inside(SITE), "完成するまでは中に入れない")
 	c.stage = 3
@@ -196,6 +196,19 @@ func _test_save() -> void:
 	var c2 := w2.cabin
 	_check(c2.site == SITE and c2.stage == 0 and c2.days_done == 1, "小屋の場所と進み具合が自動で保存・復元される")
 	_check(c2.materials.log == 7 and c2.worked_today(), "丸太の数と今日の作業の記録が復元される")
+	# 4m × 3m のころ(間取りの記録なし)の小屋: 西の壁はそのままで、東と南北へ広げる(2026-11-18)
+	var old := FileAccess.open(TEST_SAVE, FileAccess.WRITE)
+	old.store_string(JSON.stringify({"unit": "m", "trees": [], "cabin": {"site": [10, 20], "stage": 3, "logs": 2}}))
+	old.close()
+	var w4 := _world(false)
+	w4.load_game()
+	_check(w4.cabin.site == Vector2(11, 20) and w4.cabin.is_complete(), "前の小屋は中心を東へ 1m ずらして読む")
+	_check(is_equal_approx(w4.cabin.rect().position.x, 8.0) and w4.cabin.rect().size == Vector2(6, 4), "西の壁は前と同じ x = 8 のまま、6m × 4m になる")
+	_check(is_equal_approx(w4.cabin.ext_rect().position.x, 5.0), "西の増築の場所も前と同じ(x 5〜8)")
+	w4.save_game()
+	var w5 := _world(false)
+	w5.load_game()
+	_check(w5.cabin.site == Vector2(11, 20), "保存し直したあとは、もうずらさない")
 
 	# 手順 3-2 までのセーブ: 小屋の記録がない
 	_remove_save()

@@ -9,8 +9,8 @@ const Cabin = preload("res://logic/Cabin.gd")
 
 const TEST_SAVE := "user://test_extension.json"
 const SITE := Vector2(20, 20)
-const WEST := Vector2(14.0, 20.0)   # 西の部屋(x 15〜18)の西、1m の外
-const IN_EXT := Vector2(16.5, 20.0) # 西の部屋の中
+const WEST := Vector2(13.0, 20.0)   # 西の部屋(x 14〜17)の西、1m の外
+const IN_EXT := Vector2(15.5, 20.0) # 西の部屋の中
 const IN_MAIN := Vector2(20.0, 20.5)
 
 var _failed := 0
@@ -71,7 +71,7 @@ func _test_buy_extension() -> void:
 	_check(m.buy("cabin_extension") == "bought" and m.money == 42000, "完成した小屋なら 8,000₽ で頼める")
 	_check(w.cabin.ext_started() and w.cabin.ext_building() and not w.cabin.has_extension(), "頼むと建てはじめる(まだできていない)")
 	_check(m.is_owned(m.good("cabin_extension")) and m.buy("cabin_extension") == "exists", "二度は頼めない")
-	_check(w.cabin.ext_rect() == Rect2(15, 18.5, 3, 3), "西の部屋は小屋の西に 3m × 3m")
+	_check(w.cabin.ext_rect() == Rect2(14, 18, 3, 4), "西の部屋は小屋の西に 3m × 4m")
 	_check(w.cabin.covers(Vector2(16, 20)) and w.cabin.blocks_plot(Vector2(16.5, 20)), "頼んだら西の部屋の場所には区画を置けない")
 	_check(w.toggle_plot(Vector2(16.5, 19.5)) != "placed", "区画の操作でも置けない")
 	_check(not w.cabin.is_inside(Vector2(16, 20)), "建てている間は中に入れない")

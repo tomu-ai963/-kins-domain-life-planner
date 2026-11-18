@@ -178,12 +178,14 @@ func lie_down(spot: Vector3, lying := LYING_BASIS) -> void:
 	_lying = true
 	_posing = true
 	_stand_basis = _body.basis
+	_figure.set_eyes_closed(true)
 	_apply_lantern()
 	_move_pose(spot - global_position, lying, LIE_SECONDS)
 
 # 起き上がる。動きの途中でも歩きはじめられる(体があとから追いつく)
 func get_up() -> void:
 	_lying = false
+	_figure.set_eyes_closed(false)
 	_move_pose(Vector3(0.0, _floor_y if _indoors else 0.0, 0.0), _stand_basis, GET_UP_SECONDS)
 	_pose.finished.connect(_on_got_up)
 

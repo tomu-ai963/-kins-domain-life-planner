@@ -300,6 +300,25 @@ func _build() -> void:
 		_part("Cheek", head, _ball(), Look.mat(CHEEK), Vector3(side * 0.112, -0.038, -0.138), Vector3(0.060, 0.034, 0.020))
 	_part("Mouth", head, _ball(), Look.mat(MOUTH), Vector3(0.0, -0.075, -0.158), Vector3(0.050, 0.016, 0.016))
 
+# 目を閉じる / 開ける(寝ているあいだ。2026-11-18 とむ「目を開けて寝てる」)。閉じた目は細い横線
+func set_eyes_closed(on: bool) -> void:
+	var head: Node3D = get_node_or_null("Hips/Upper/Head")
+	if head == null:
+		return
+	for n in head.get_children():
+		if not String(n.name).begins_with("Eye"):
+			continue
+		if not n.has_meta("open"):
+			n.set_meta("open", [n.position, n.scale])
+		var open: Array = n.get_meta("open")
+		n.position = open[0] + (Vector3(0, -0.012, 0) if on else Vector3.ZERO)
+		n.scale = Vector3(open[1].x * 1.25, 0.012, open[1].z) if on else open[1]
+
+func eyes_closed() -> bool:
+	var head: Node3D = get_node_or_null("Hips/Upper/Head")
+	var eye: Node3D = head.get_node_or_null("Eye") if head != null else null
+	return eye != null and eye.scale.y < 0.02
+
 # 長めの髪(肩までの後ろ髪・顔の両横の髪・背中に垂らした三つ編み)を付ける / 外す。プレイヤーの性別で Player3D が呼ぶ
 func set_long_hair(on: bool) -> void:
 	var head: Node3D = get_node_or_null("Hips/Upper/Head")

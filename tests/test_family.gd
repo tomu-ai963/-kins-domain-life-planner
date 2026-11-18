@@ -267,31 +267,53 @@ func _test_tent() -> void:
 	w2.family.ensure_tent()
 	_check(not w2.family.has_tent() and w2.family.tent == null, "小屋が完成したらテントを片付ける")
 	_check(w2.family.home_pos() == w2.cabin.door_pos() + Vector2(0, Family.DOOR_OUT), "小屋が完成したら小屋の戸口の外へ帰る(そこから中へ)")
-	# 小屋の布団
+	# 小屋のベッド(2026-11-18 とむ: 小屋を 6m × 4m に広げて、家族もベッドで寝る)
 	var w5 := _world()
 	w5.cabin.site = Vector2(15, 15)
 	w5.family.choose("vera", 3)
-	_check(w5.family.futon_spots().is_empty(), "小屋が完成する前は布団がない")
+	_check(w5.family.bed_spots().is_empty(), "小屋が完成する前はベッドがない(テントで寝る)")
 	w5.cabin.stage = w5.cabin.STAGES.size()
-	var futons: Array = w5.family.futon_spots()
-	_check(futons.size() == 4 and futons.map(func(x): return x.id) == ["vera", "vanya", "masha", "polya"], "家族の人数ぶん、配偶者から順に布団を敷く")
-	var room: Rect2 = w5.cabin.rect()
-	var zone := Rect2(w5.cabin.site + Family.FUTON_ZONE.position, Family.FUTON_ZONE.size)
-	var inside := true
+	var beds: Array = w5.family.bed_spots()
+	_check(beds.map(func(x): return x.id) == ["vera", "vanya", "masha", "polya"], "家族の人数ぶん、寝る場所がある")
+	_check(beds.map(func(x): return x.kind) == ["double", "bunk_high", "bunk_low", "cot"], "配偶者は大きいベッド、子どもは上の子から 2 段ベッドの上・下、3 人目は小さいベッド")
+	var site: Vector2 = w5.cabin.site
+	var c = w5.cabin
+	var inner: Rect2 = c.rect().grow(-0.1)  # 壁の内側
+	var bed := Rect2(site + c.BED_OFFSET - c.BED_SIZE * 0.5, c.BED_SIZE)
+	var bunk := Rect2(site + Family.BUNK_OFFSET - Family.BUNK_SIZE * 0.5, Family.BUNK_SIZE)
+	var cot := Rect2(site + Family.COT_OFFSET - Family.COT_SIZE * 0.5, Family.COT_SIZE)
+	var stove := Rect2(site + c.STOVE_OFFSET - c.STOVE_SIZE * 0.5, c.STOVE_SIZE)
+	var table := Rect2(site + Vector2(1.3, 1.2) - Vector2(0.95, 0.7) * 0.5, Vector2(0.95, 0.7))  # CabinView3D.TABLE_POS・TABLE_SIZE
+	var furniture := [bed, bunk, cot, stove, table]
+	_check(furniture.all(func(r): return inner.encloses(r)), "家具はみんな壁の内側に収まる")
 	var apart := true
-	for i in range(futons.size()):
-		var r := Rect2(futons[i].pos - futons[i].size * 0.5, futons[i].size)
-		inside = inside and zone.grow(0.01).encloses(r) and room.encloses(r)
-		for j in range(i + 1, futons.size()):
-			var r2 := Rect2(futons[j].pos - futons[j].size * 0.5, futons[j].size)
-			apart = apart and not r.intersects(r2)
-	_check(inside, "布団はみんな母屋の東側の床に収まる")
-	_check(apart, "布団は重ならない")
-	var bed := Rect2(w5.cabin.site + w5.cabin.BED_OFFSET - w5.cabin.BED_SIZE * 0.5, w5.cabin.BED_SIZE)
-	var stove := Rect2(w5.cabin.site + w5.cabin.STOVE_OFFSET - w5.cabin.STOVE_SIZE * 0.5, w5.cabin.STOVE_SIZE)
-	_check(futons.all(func(x): return not Rect2(x.pos - x.size * 0.5, x.size).intersects(bed) and not Rect2(x.pos - x.size * 0.5, x.size).intersects(stove)), "ベッドとストーブにはかからない")
-	_check(futons[3].size.x < futons[0].size.x and futons[3].size.y < futons[0].size.y, "小さい子の布団は短くて狭い")
-	_check(w5.family.futon_of("masha").id == "masha" and w5.family.futon_of("nobody").is_empty(), "その人の布団")
+	for i in range(furniture.size()):
+		for j in range(i + 1, furniture.size()):
+			apart = apart and not furniture[i].grow(0.05).intersects(furniture[j])
+	_check(apart, "家具どうしは重ならない")
+	_check(beds.all(func(x): return inner.has_point(x.feet) and inner.has_point(x.approach)), "寝る場所とそばの床は小屋の中")
+	_check(beds.all(func(x): return not furniture.any(func(r): return r.has_point(x.approach))), "ベッドのそばの床は家具にかからない(歩いて行ける)")
+	_check(bed.has_point(beds[0].feet) and beds[0].feet.y < bed.get_center().y, "配偶者は大きいベッドの北の半分")
+	_check(bunk.has_point(beds[1].feet) and bunk.has_point(beds[2].feet) and cot.has_point(beds[3].feet), "子どもは 2 段ベッドと小さいベッド")
+	# ストーブ・戸口・西の部屋への出入り口のまわりは空いている(当たり判定のある家具でふさがない)
+	var stove_front: Vector2 = site + c.STOVE_OFFSET + Vector2(-0.75, 0.6)
+	_check(c.is_at_stove(stove_front) and not furniture.any(func(r): return r.grow(0.3).has_point(stove_front)), "ストーブの前に立って料理できる")
+	var door_in: Vector2 = c.door_pos() + Vector2(0, -0.4)
+	_check(not furniture.any(func(r): return r.grow(0.3).has_point(door_in)), "戸口を入ったところは空いている")
+	var pass_in: Vector2 = site + Vector2(-c.WIDTH * 0.5 + 0.35, c.PASS_Z)
+	_check(not furniture.any(func(r): return r.grow(0.2).has_point(pass_in)), "西の部屋への出入り口の前は空いている")
+	_check(c.is_at_bed(site + c.BED_OFFSET + Vector2(c.BED_SIZE.x * 0.5 + 0.3, 0)), "大きいベッドのそばで休める")
+	_check(w5.family.bed_of("masha").kind == "bunk_low" and w5.family.bed_of("nobody").is_empty(), "その人の寝る場所")
+	var w6 := _world()
+	w6.cabin.site = Vector2(15, 15)
+	w6.cabin.stage = w6.cabin.STAGES.size()
+	w6.family.choose("", 1)
+	_check(w6.family.bed_spots().map(func(x): return x.kind) == ["single"], "子どもが 1 人なら 1 段のベッド(配偶者がいなければ大きいベッドは自分だけ)")
+	# 寝る時刻(時計で決める。子どもが先)
+	_check(not Family.is_bedtime("child", 20.0) and Family.is_bedtime("child", 20.5) and Family.is_bedtime("child", 23.0), "子どもは 20 時半に寝る")
+	_check(not Family.is_bedtime("spouse", 21.0) and Family.is_bedtime("spouse", 22.0), "配偶者は 22 時に寝る")
+	_check(Family.is_bedtime("spouse", 3.0) and Family.is_bedtime("child", 5.9) and not Family.is_bedtime("child", 6.0), "朝 6 時に起きる")
+	_check(not Family.is_bedtime("child", 18.0), "暗くなってもすぐには寝ない(冬の 18 時)")
 	_check(w2.toggle_plot(Vector2(-19.5, -19.5)) == "placed", "テントがなければ区画を作れる")
 
 func _test_save() -> void:

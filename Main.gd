@@ -269,7 +269,7 @@ func _setup_3d_only() -> void:
 	family_view.name = "Family"
 	add_child(family_view)
 	family_view.setup(world.family, $Player, {"forest": world.forest, "land": world.land, "cabin": world.cabin,
-		"bees": world.bees, "feeders": world.feeders, "well": world.well, "mill": world.mill})
+		"bees": world.bees, "feeders": world.feeders, "well": world.well, "mill": world.mill, "clock": world.clock})
 	day_light.night_changed.connect(family_view.set_night)
 	family_view.set_night(maxf(0.0, day_light.night))
 	family_view.extra_avoid = func(): return [$Visitor.ground_pos()] if $Visitor.state() != "away" else []

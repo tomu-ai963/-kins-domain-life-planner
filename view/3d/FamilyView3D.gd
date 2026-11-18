@@ -4,7 +4,9 @@ extends Node3D
 # 誰がいるか・手伝い・贈り物は logic/Family.gd。ここは土地の中を歩いて暮らす動きと、テントの形だけ。
 #   昼: 畑・木・家のまわり・プレイヤーのそばを、ときどき歩いて回る(着いたらしばらく立つ)
 #   朝の手伝い: その日の手伝いの場所へ行き、水をやる / 草を抜く動きをする(ルールの手伝いは朝に済んでいる)
-#   夜: 家(小屋の戸口か、テントの入口)へ帰って中に入る。テントなら自分の寝袋、小屋なら母屋の床に敷いた布団で横になる。朝になると出てくる
+#   暗くなると: 家(小屋の戸口か、テントの入口)へ帰って中で過ごす(小屋なら配偶者はストーブの前、子どもはテーブルのあたり。テントなら寝袋の前)
+#   寝る時刻(Family.BEDTIME。子どもが先): テントなら自分の寝袋、小屋ならベッド(配偶者は大きいベッドの北の半分、子どもは 2 段ベッドなど)で横になる。
+#     目を閉じ、掛け布団がかかる。寝ている人は踏めない(小屋はベッドの当たり判定、テントは寝袋の上に当たり判定)。WAKE_HOUR に起きて、明るくなったら出てくる
 #   小屋が完成していれば、昼もときどき戸口から小屋に入り、配偶者はストーブの前、子どもはテーブルのあたりでしばらく過ごす(2026-11-16 とむ)
 # テントは歩いて入れる大きさで、南の入口だけ当たり判定を空ける。プレイヤーが中に入ると、小屋と同じく布を影だけにして中を見せる。
 # 中には寝袋(西から プレイヤー・家族の順)とランタン。プレイヤーは自分の寝袋のそばで H を押すと休める(Main)
@@ -23,7 +25,7 @@ const TALK_REACH := 3.0          # この距離まで近づくと話せる
 const SYNC_SECONDS := 1.0
 const STAND_SECONDS := [6.0, 16.0]  # 着いてから次へ歩きだすまで(秒)
 const TALK_PAUSE := 8.0          # 話しかけられたら、これだけ立ち止まる
-const NIGHT_AT := 0.6            # この暗さより暗いと家へ帰る
+const NIGHT_AT := 0.6            # この暗さより暗いと家へ帰って、中で過ごす(寝るのは時計で決める。Family.BEDTIME)
 const OBSTACLE_MARGIN := 0.8     # 小屋と池をこれだけ離れて回り込む
 const TREE_MARGIN := 0.6         # 木の幹からこれだけ離れて回り込む
 const PERSON_MARGIN := 0.7       # 立っている人をこれだけ離れて回り込む
@@ -38,16 +40,20 @@ const BEDROLL_COLORS := [Color(0.24, 0.42, 0.70), Color(0.70, 0.30, 0.26), Color
 # 寝袋で横になる姿勢(頭が北の奥、顔が上)。Player3D.LYING_BASIS(頭が西)の向きを変えたもの
 const TENT_LYING_BASIS := Basis(Vector3(-1, 0, 0), Vector3(0, 0, -1), Vector3(0, -1, 0))
 const LYING_Y := 0.1              # 寝袋の上に横になる高さ
-# 小屋の布団で横になる姿勢(頭が東の枕、顔が上)
-const CABIN_LYING_BASIS := Basis(Vector3(0, 0, -1), Vector3(1, 0, 0), Vector3(0, -1, 0))
+# 枕が西のベッドで横になる姿勢(頭が西、顔が上。Player3D.LYING_BASIS と同じ)
+const WEST_LYING_BASIS := Basis(Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, -1, 0))
 const CABIN_FLOOR_Y := 0.25       # 小屋の床の高さ(CabinView3D.FLOOR_Y と同じ)
-const FUTON_H := 0.06             # 布団の厚み
+# 小屋のベッドの、床から敷布団の上までの高さ(Family.bed_spots の kind ごと。大きいベッドは CabinView3D が置く)
+const BED_TOP := {"double": 0.39, "single": 0.36, "bunk_low": 0.36, "bunk_high": 1.28, "cot": 0.33}
+const BUNK_POST_H := 1.75         # 2 段ベッドの柱の高さ
+const BED_BODY_H := 1.9           # 2 段ベッドの当たり判定の高さ
+const ROOM_HUB := Vector2(0.0, 0.5)  # 小屋の中を歩くときに通る部屋の真ん中(小屋の中心から。家具を突っ切らずにすむ)
+const COVER_COLORS := {"double": Color(0.72, 0.30, 0.24), "single": Color(0.36, 0.52, 0.74), "bunk_low": Color(0.36, 0.52, 0.74), "bunk_high": Color(0.42, 0.62, 0.40), "cot": Color(0.86, 0.62, 0.30)}
 const VISIT_CHANCE := 0.2         # 昼に次の行き先を決めるとき、小屋に入る割合(小屋が完成していれば)
 const INDOOR_SECONDS := [20.0, 40.0]  # 小屋の中で過ごす時間(秒)
-# 昼に小屋の中で立つ場所(小屋の中心から)と、向く先。配偶者はストーブの前、子どもはテーブルのあたり
-const INDOOR_SPOUSE := [Vector2(1.45, -0.2), Vector2(1.45, -1.0)]
-const INDOOR_CHILDREN := [[Vector2(-0.3, 0.2), Vector2(-1.2, 0.75)], [Vector2(0.55, 0.95), Vector2(-1.2, 0.75)], [Vector2(1.15, 0.5), Vector2(1.9, 0.2)]]
-const FUTON_COLORS := [Color(0.92, 0.88, 0.78), Color(0.62, 0.74, 0.88), Color(0.90, 0.72, 0.70), Color(0.78, 0.86, 0.66)]
+# 小屋の中で立つ場所(小屋の中心から)と、向く先。配偶者はストーブの前、子どもはテーブルのまわり(昼に入ったときと、暗くなってから寝るまで)
+const INDOOR_SPOUSE := [Vector2(2.1, -0.6), Vector2(2.4, -1.45)]
+const INDOOR_CHILDREN := [[Vector2(0.5, 1.2), Vector2(1.3, 1.2)], [Vector2(1.3, 0.55), Vector2(1.3, 1.2)], [Vector2(0.55, 0.5), Vector2(1.3, 1.2)]]
 const HELP_ACTIONS := {"water": "water", "weed": "pull"}  # 手伝いの種類 → 体の動き
 
 # 服の色(PlayerFigure3D の look)と、足す物
@@ -88,6 +94,8 @@ var well = null
 var mill = null
 var extra_avoid: Callable  # ほかによける人の足元(訪問者。Main が設定する)
 var night := 0.0           # 暗さ(DayLightView3D.night_changed)
+var clock = null           # logic/DayClock.gd(寝る時刻を見る。Main が setup で渡す)
+var hours_override := -1.0 # テスト用: 0 以上なら時計の代わりにこの時刻
 
 var _player: Node3D
 var _people := {}          # id → {figure, pos, route, state: walk/stand/inside, wait, solid, shape, tasks, action}
@@ -98,8 +106,8 @@ var _tent_count := -1      # 建てたときの寝袋の数(家族の人数が�
 var _tent_cut := []        # 中に入ると影だけにする布
 var _tent_light: OmniLight3D
 var _in_tent := false
-var _futons: Node3D        # 小屋の布団(誰かが寝ているあいだだけ敷く)
-var _futon_key := ""       # 敷いた布団の並び(変わったら敷き直す)
+var _beds: Node3D          # 小屋の子どものベッド(2 段ベッド・小さいベッド)
+var _beds_key := ""        # 置いたベッドの並び(変わったら置き直す)
 var _timer := 0.0
 var _rng := RandomNumberGenerator.new()
 var _help_seen := -1       # 手伝いの動きを始めた日(同じ日に 2 回しない)
@@ -119,6 +127,7 @@ func setup(f: Family, player: Node3D, parts: Dictionary) -> void:
 	feeders = parts.get("feeders")
 	well = parts.get("well")
 	mill = parts.get("mill")
+	clock = parts.get("clock")
 	_rng.randomize()
 	_ball.radius = 0.5
 	_ball.height = 1.0
@@ -139,6 +148,18 @@ func set_night(amount: float) -> void:
 
 func is_night() -> bool:
 	return night >= NIGHT_AT
+
+# 今の時刻(0〜24)。N で先へ送ったプレビューも含む
+func hours() -> float:
+	if hours_override >= 0.0:
+		return hours_override
+	if clock != null:
+		return fposmod(clock.real_hours() + clock.preview_hours, 24.0)
+	return 23.0 if is_night() else 12.0
+
+func is_bedtime(id: String) -> bool:
+	var m: Dictionary = family.member(id)
+	return not m.is_empty() and Family.is_bedtime(m.role, hours())
 
 # ── 外から見る ─────────────────────────────────────────────
 func people_ids() -> Array:
@@ -217,6 +238,7 @@ func sync() -> void:
 		if not id in ids:
 			_remove_person(id)
 	_sync_tent()
+	_sync_beds()
 	_start_help()
 
 func _add_person(m: Dictionary) -> void:
@@ -245,6 +267,8 @@ func _remove_person(id: String) -> void:
 	var p: Dictionary = _people[id]
 	p.figure.queue_free()
 	p.solid.queue_free()
+	_remove_cover(p)
+	_remove_sleep_body(p)
 	_people.erase(id)
 
 # 体の大きさ(子どもは年齢で)。当たり判定も合わせる
@@ -282,7 +306,7 @@ func _process(delta: float) -> void:
 	if _timer >= SYNC_SECONDS:
 		_timer = 0.0
 		_sync_tent()
-		_sync_futons()
+		_sync_beds()
 	_update_inside()
 	step(delta)
 
@@ -318,8 +342,8 @@ func _step_person(p: Dictionary, delta: float) -> void:
 	var home = family.home_pos()
 	match p.state:
 		"inside":
-			if not is_night() and home != null:
-				_come_out(p, home)
+			if home == null or not is_bedtime(p.id):
+				_wake(p, home)
 			return
 		"walk":
 			_walk(p, delta)
@@ -332,36 +356,80 @@ func _step_person(p: Dictionary, delta: float) -> void:
 				p.busy -= delta
 				return
 			p.wait -= delta
-			if is_night() and home != null:
-				if p.get("indoor", false) and not family.futon_of(p.id).is_empty():
-					_go_direct(p, [family.futon_of(p.id).pos], "bed")  # 小屋の中から、そのまま布団へ
+			if home != null and is_bedtime(p.id):
+				if p.get("indoor", false):
+					_go_inner(p, bed_approach(p.id), "bed")  # 家の中から、そのまま寝床へ
 				else:
 					_go(p, home, "home")
+			elif home != null and is_night():
+				if not p.get("indoor", false):
+					_go(p, home, "home")
+				elif not p.get("settled", false) and p.wait <= 0.0:  # 起きたばかり: いつもの場所へ
+					var spot := indoor_spot(p.id)
+					p.look_at = spot[1]
+					_go_inner(p, spot[0], "indoor")
 			elif p.wait <= 0.0:
 				_next_goal(p, home)
 	_place(p)
 
-func _come_out(p: Dictionary, home: Vector2) -> void:
-	p.pos = home
-	p.indoor = false
-	var futon := family.futon_of(p.id)
-	if not futon.is_empty():
-		p.pos = futon.pos  # 小屋の布団から起きて、戸口から出ていく
-		p.indoor = true
+# 起きる: 寝床のそば(家の中)に立つ。明るければ、そのあと戸口から出ていく
+func _wake(p: Dictionary, home) -> void:
 	p.figure.visible = true
-	p.figure.basis = Basis.from_scale(Vector3.ONE * float(p.get("scale", 1.0)))  # 寝袋から起きる
+	p.figure.basis = Basis.from_scale(Vector3.ONE * float(p.get("scale", 1.0)))  # 起き上がる
+	p.figure.set_eyes_closed(false)
+	_remove_cover(p)
+	_remove_sleep_body(p)
+	var spot = bed_approach(p.id)
+	p.indoor = spot != null
+	p.pos = spot if spot != null else (home if home != null else p.pos)
+	p.settled = false
 	p.state = "stand"
 	p.wait = _rng.randf_range(1.0, 3.0)
 	_place(p)
 	_stand(p)
-	_sync_futons()
+
+# 寝床のそばの床(小屋ならベッドの横、テントなら寝袋の前)。どちらもなければ null
+func bed_approach(id: String):
+	var bed := family.bed_of(id)
+	if not bed.is_empty():
+		return bed.approach
+	return tent_spot(id)
+
+# テントの中で、その人の寝袋の前(南)の床。テントがなければ null
+func tent_spot(id: String):
+	var roll = family.bedroll_of(id) if family.has_tent() else null
+	if roll == null:
+		return null
+	return roll + Vector2(0, Family.BEDROLL_SIZE.y * 0.5 + 0.35)
+
+# 家の入口(小屋の戸口か、テントの入口)
+func _door() -> Vector2:
+	if family.cabin.is_complete():
+		return family.cabin.door_pos()
+	return family.tent + Vector2(0, Family.TENT_SIZE.y * 0.5)
+
+# 家の中の target へ歩く(外にいれば入口から入る)。小屋の中は部屋の真ん中を通って、家具を突っ切らない
+func _go_inner(p: Dictionary, target, purpose: String) -> void:
+	if target == null:
+		_stand(p)
+		p.wait = _rng.randf_range(STAND_SECONDS[0], STAND_SECONDS[1])
+		return
+	var points := []
+	if not p.get("indoor", false):
+		points.append(_door())
+	if family.cabin.is_complete():
+		points.append(family.cabin.site + ROOM_HUB)
+	points.append(target)
+	_go_direct(p, points, purpose)
 
 # 次に行く場所: 手伝いがあればそこ。なければ畑・木・家・プレイヤーのそばから選ぶ
 func _next_goal(p: Dictionary, home) -> void:
-	if p.get("indoor", false) and family.cabin.is_complete():  # 小屋の中にいれば、まず戸口から出る
+	if p.get("indoor", false) and home != null:  # 家の中にいれば、まず戸口から出る
 		# 出たあとは戸口の外のまわりに散らばる(みんなが同じ一点を目指すと、よけ合って戸口で止まるので)
 		var out = _free_near(home, _rng.randf_range(1.2, 2.5))
-		_go_direct(p, [family.cabin.door_pos(), home, out if out != null else home], "exit")
+		var points := [family.cabin.site + ROOM_HUB] if family.cabin.is_complete() else []
+		points.append_array([_door(), home, out if out != null else home])
+		_go_direct(p, points, "exit")
 		return
 	while not p.tasks.is_empty():
 		var h: Dictionary = p.tasks.pop_front()
@@ -431,8 +499,13 @@ func _stand(p: Dictionary) -> void:
 func _floor_at(pos: Vector2) -> float:
 	return CABIN_FLOOR_Y if family.cabin.is_inside(pos) else 0.0
 
-# 昼に小屋の中で立つ場所と、向く先(世界の座標)
+# 家の中で立つ場所と、向く先(世界の座標)。小屋ならストーブの前・テーブルのまわり、テントなら寝袋の前でランタンのほうを向く
 func indoor_spot(id: String) -> Array:
+	if not family.cabin.is_complete():
+		var spot = tent_spot(id)
+		if spot == null:
+			return [family.home_pos(), family.home_pos()]
+		return [spot, family.tent + Vector2(0, 0.3)]
 	var site: Vector2 = family.cabin.site
 	var m: Dictionary = family.member(id)
 	if m.role == "spouse":
@@ -470,31 +543,30 @@ func _reached(p: Dictionary) -> void:
 	p.figure.moving = false
 	match p.get("purpose", ""):
 		"home":
+			if is_bedtime(p.id):
+				_go_inner(p, bed_approach(p.id), "bed")
+				return
 			if is_night():
-				var futon := family.futon_of(p.id)
-				if not futon.is_empty():  # 小屋: 戸口を通って布団へ
-					_go_direct(p, [family.cabin.door_pos(), futon.pos], "bed")
-					return
-				p.state = "inside"
-				p.shape.disabled = true
-				_lie_down(p)
+				var spot := indoor_spot(p.id)
+				p.look_at = spot[1]
+				_go_inner(p, spot[0], "indoor")
 				return
 		"bed":
-			if is_night():
+			p.indoor = true
+			if is_bedtime(p.id):
 				p.state = "inside"
-				p.indoor = true
 				p.shape.disabled = true
 				_lie_down(p)
 				return
-			p.indoor = true
 		"enter":
 			if family.cabin.is_complete() and not is_night():
 				var spot := indoor_spot(p.id)
 				p.look_at = spot[1]
-				_go_direct(p, [family.cabin.door_pos(), spot[0]], "indoor")
+				_go_inner(p, spot[0], "indoor")
 				return
 		"indoor":
 			p.indoor = true
+			p.settled = true
 			_face_now(p, p.look_at - p.pos)
 			_stand(p)
 			p.wait = _rng.randf_range(INDOOR_SECONDS[0], INDOOR_SECONDS[1])
@@ -509,27 +581,77 @@ func _reached(p: Dictionary) -> void:
 	_stand(p)
 	p.wait = _rng.randf_range(STAND_SECONDS[0], STAND_SECONDS[1])
 
-# 夜に横になる: 小屋が完成していれば母屋の布団、テントなら自分の寝袋(どちらも屋根・布の下なので、外からは見えない)。
-# どちらもなければ見えなくする
+# 寝る: 小屋が完成していればベッド、テントなら自分の寝袋(どちらも屋根・布の下なので、外からは見えない)。
+# 目を閉じて、掛け布団がかかる。どちらもなければ見えなくする
 func _lie_down(p: Dictionary) -> void:
-	var futon := family.futon_of(p.id)
-	if not futon.is_empty():
-		p.figure.visible = true
-		p.figure.moving = false
-		p.figure.basis = CABIN_LYING_BASIS * Basis.from_scale(Vector3.ONE * float(p.get("scale", 1.0)))
-		var feet: Vector2 = futon.pos - Vector2(futon.size.x * 0.5 - 0.1, 0)  # 足は西、頭は東の枕
-		p.figure.position = Vector3(feet.x, CABIN_FLOOR_Y + FUTON_H + 0.06, feet.y)
-		_sync_futons()
+	var bed := family.bed_of(p.id)
+	if not bed.is_empty():
+		var basis: Basis = WEST_LYING_BASIS if bed.head == "west" else TENT_LYING_BASIS
+		var y: float = CABIN_FLOOR_Y + float(BED_TOP[bed.kind]) + 0.1
+		_lie_at(p, basis, Vector3(bed.feet.x, y, bed.feet.y))
+		p.shape.disabled = true  # ベッドに当たり判定があるので、寝ている人も踏めない
+		_remove_sleep_body(p)
+		var width := 0.55 if bed.kind in ["double", "cot"] else 0.7
+		_add_cover(p, COVER_COLORS[bed.kind], width)
 		return
 	var spot = family.bedroll_of(p.id) if family.has_tent() else null
 	if spot == null:
 		p.figure.visible = false
 		return
+	var feet_back: float = Family.BEDROLL_SIZE.y * 0.5 - 0.1
+	_lie_at(p, TENT_LYING_BASIS, Vector3(spot.x, LYING_Y, spot.y + feet_back))
+	# 寝袋の上に当たり判定(寝ている人を踏まないように)。寝ているあいだだけの体を置く
+	p.shape.disabled = true
+	_remove_sleep_body(p)
+	var body := StaticBody3D.new()
+	body.name = "SleepBody_" + str(p.id)
+	body.position = Vector3(spot.x, 0, spot.y)
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(family.bedroll_width(), 0.5, Family.BEDROLL_SIZE.y)
+	shape.shape = box
+	shape.position = Vector3(0, 0.25, 0)
+	body.add_child(shape)
+	add_child(body)
+	p.sleep_body = body
+	var i: int = family.members.map(func(m): return m.id).find(p.id) + 1
+	_add_cover(p, BEDROLL_COLORS[i % BEDROLL_COLORS.size()], family.bedroll_width() - 0.04)
+
+func _lie_at(p: Dictionary, basis: Basis, feet: Vector3) -> void:
 	p.figure.visible = true
 	p.figure.moving = false
-	p.figure.basis = TENT_LYING_BASIS * Basis.from_scale(Vector3.ONE * float(p.get("scale", 1.0)))
-	var feet_back: float = Family.BEDROLL_SIZE.y * 0.5 - 0.1
-	p.figure.position = Vector3(spot.x, LYING_Y, spot.y + feet_back)
+	p.figure.basis = basis * Basis.from_scale(Vector3.ONE * float(p.get("scale", 1.0)))
+	p.figure.position = feet
+	p.figure.set_eyes_closed(true)
+
+# 掛け布団のふくらみ(足元から頭のほうへ、胸のあたりまで)。起きると片付ける
+func _add_cover(p: Dictionary, color: Color, width: float) -> void:
+	_remove_cover(p)
+	var s: float = float(p.get("scale", 1.0))
+	var fig: Node3D = p.figure
+	var head_dir: Vector3 = fig.basis.y.normalized()
+	var length: float = 1.25 * s
+	var cover := Look.mesh_node(_ball, _mat(color), fig.position + head_dir * (length * 0.42) + Vector3(0, 0.03, 0), Vector3.ONE)
+	cover.name = "SleepCover_" + str(p.id)
+	var along_x: bool = absf(head_dir.x) > 0.5
+	cover.scale = Vector3(length, 0.4 * s, width) if along_x else Vector3(width, 0.4 * s, length)
+	add_child(cover)
+	p.cover = cover
+
+func _remove_cover(p: Dictionary) -> void:
+	if p.get("cover") != null:
+		p.cover.queue_free()
+		p.cover = null
+
+# 寝袋の上の当たり判定を片付ける(木から外して、すぐに当たらなくする)
+func _remove_sleep_body(p: Dictionary) -> void:
+	if p.get("sleep_body") != null:
+		remove_child(p.sleep_body)
+		p.sleep_body.queue_free()
+		p.sleep_body = null
+
+func cover_of(id: String) -> Node3D:
+	return _people[id].get("cover") if _people.has(id) else null
 
 # 体の動きを始め、終わるまでは次へ歩きださない
 func _play(p: Dictionary, kind: String) -> void:
@@ -550,33 +672,78 @@ func _place(p: Dictionary) -> void:
 		return  # 寝袋か布団で横になっている(_lie_down が置いた場所のまま)
 	p.figure.position = Vector3(p.pos.x, _floor_at(p.pos), p.pos.y)
 
-# ── 小屋の布団 ──────────────────────────────────────────────
-# 誰かが小屋で寝ているあいだだけ、母屋の床に布団を敷く(枕は東)。起きると片付ける
-func _sync_futons() -> void:
-	var sleeping: bool = _people.values().any(func(q): return q.state == "inside") and not family.futon_spots().is_empty()
-	var key := str(family.futon_spots()) if sleeping else ""
-	if key == _futon_key:
+# ── 小屋の子どものベッド ──────────────────────────────────────
+# 北の壁際に東西に置く(枕は西)。北西の隅に 2 段ベッド(子どもが 1 人なら 1 段)、3 人目はその東に小さいベッド。床に置く家具で、当たり判定がある
+func _sync_beds() -> void:
+	var spots: Array = family.bed_spots()
+	var kinds: Array = spots.map(func(b): return b.kind).filter(func(k): return k != "double")
+	var key := "" if kinds.is_empty() else str(family.cabin.site) + str(kinds)
+	if key == _beds_key:
 		return
-	_futon_key = key
-	if _futons != null:
-		_futons.queue_free()
-		_futons = null
-	if not sleeping:
+	_beds_key = key
+	if _beds != null:
+		_beds.queue_free()
+		_beds = null
+	if key == "":
 		return
-	_futons = Node3D.new()
-	_futons.name = "CabinFutons"
-	add_child(_futons)
-	var spots: Array = family.futon_spots()
-	for i in range(spots.size()):
-		var f: Dictionary = spots[i]
-		var futon := Look.mesh_node(_box, _mat(FUTON_COLORS[i % FUTON_COLORS.size()]), Vector3(f.pos.x, CABIN_FLOOR_Y + FUTON_H * 0.5, f.pos.y), Vector3(f.size.x, FUTON_H, f.size.y - 0.04))
-		futon.name = "Futon_" + f.id
-		_futons.add_child(futon)
-		var pillow_x: float = f.pos.x + f.size.x * 0.5 - 0.15
-		_futons.add_child(Look.mesh_node(_box, _mat(Color(0.96, 0.95, 0.90)), Vector3(pillow_x, CABIN_FLOOR_Y + FUTON_H + 0.04, f.pos.y), Vector3(0.22, 0.08, f.size.y * 0.7)))
+	_beds = Node3D.new()
+	_beds.name = "KidBeds"
+	_beds.position = Vector3(family.cabin.site.x, CABIN_FLOOR_Y, family.cabin.site.y)
+	add_child(_beds)
+	var body := StaticBody3D.new()
+	body.name = "KidBedsBody"
+	_beds.add_child(body)
+	var wood := _mat(Color(0.48, 0.32, 0.18))
+	var sheet := _mat(Color(0.94, 0.92, 0.86))
+	var b: Vector2 = Family.BUNK_OFFSET
+	var bs: Vector2 = Family.BUNK_SIZE
+	var bunk: bool = "bunk_high" in kinds
+	# 2 段ベッド(1 人なら 1 段): 四隅の柱・下の段・上の段・南の柵・東の端のはしご
+	var post_h: float = BUNK_POST_H if bunk else 0.7
+	var frame := Node3D.new()
+	frame.name = "Bunk" if bunk else "KidBed"
+	_beds.add_child(frame)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			frame.add_child(Look.mesh_node(_box, wood, Vector3(b.x + sx * (bs.x * 0.5 - 0.03), post_h * 0.5, b.y + sz * (bs.y * 0.5 - 0.03)), Vector3(0.06, post_h, 0.06)))
+	_bed_deck(frame, b, bs, BED_TOP.bunk_low, wood, sheet, COVER_COLORS.bunk_low)
+	if bunk:
+		_bed_deck(frame, b, bs, BED_TOP.bunk_high, wood, sheet, COVER_COLORS.bunk_high)
+		var south: float = b.y + bs.y * 0.5
+		frame.add_child(Look.mesh_node(_box, wood, Vector3(b.x - 0.25, BED_TOP.bunk_high + 0.18, south - 0.03), Vector3(bs.x - 0.6, 0.1, 0.04)))  # 上の段の柵
+		for x in [b.x + bs.x * 0.5 - 0.45, b.x + bs.x * 0.5 - 0.1]:  # はしご(東の端)
+			frame.add_child(Look.mesh_node(_box, wood, Vector3(x, BED_TOP.bunk_high * 0.5 + 0.1, south + 0.02), Vector3(0.04, BED_TOP.bunk_high + 0.2, 0.04)))
+		for i in range(4):
+			frame.add_child(Look.mesh_node(_box, wood, Vector3(b.x + bs.x * 0.5 - 0.275, 0.3 + i * 0.26, south + 0.02), Vector3(0.35, 0.03, 0.04)))
+	_bed_body(body, b, bs, BED_BODY_H if bunk else 0.7)
+	# 3 人目の小さいベッド
+	if "cot" in kinds:
+		var c: Vector2 = Family.COT_OFFSET
+		var cs: Vector2 = Family.COT_SIZE
+		var cot := Node3D.new()
+		cot.name = "Cot"
+		_beds.add_child(cot)
+		cot.add_child(Look.mesh_node(_box, wood, Vector3(c.x, (BED_TOP.cot - 0.1) * 0.5, c.y), Vector3(cs.x, BED_TOP.cot - 0.1, cs.y)))
+		_bed_deck(cot, c, cs, BED_TOP.cot, wood, sheet, COVER_COLORS.cot)
+		_bed_body(body, c, cs, 0.7)
 
-func futons_node() -> Node3D:
-	return _futons
+# 1 段ぶん: 床板・敷布団・足元(東)に畳んだ掛け布団・枕(西の端)。top は敷布団の上の高さ
+func _bed_deck(parent: Node3D, c: Vector2, size: Vector2, top: float, wood: Material, sheet: Material, blanket: Color) -> void:
+	parent.add_child(Look.mesh_node(_box, wood, Vector3(c.x, top - 0.13, c.y), Vector3(size.x, 0.08, size.y)))
+	parent.add_child(Look.mesh_node(_box, sheet, Vector3(c.x, top - 0.04, c.y), Vector3(size.x - 0.08, 0.08, size.y - 0.08)))
+	parent.add_child(Look.mesh_node(_box, _mat(blanket), Vector3(c.x + size.x * 0.2, top + 0.01, c.y), Vector3(size.x * 0.55, 0.04, size.y - 0.06)))
+	parent.add_child(Look.mesh_node(_box, sheet, Vector3(c.x - size.x * 0.5 + 0.18, top + 0.04, c.y), Vector3(0.24, 0.08, size.y * 0.7)))
+
+func _bed_body(body: StaticBody3D, c: Vector2, size: Vector2, h: float) -> void:
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(size.x, h, size.y)
+	shape.shape = box
+	shape.position = Vector3(c.x, h * 0.5, c.y)
+	body.add_child(shape)
+
+func beds_node() -> Node3D:
+	return _beds
 
 func _face(p: Dictionary, dir: Vector2, delta: float) -> void:
 	if dir.length() < 0.1:
@@ -651,10 +818,15 @@ func _sync_tent() -> void:
 		_build_tent(want)
 		_apply_cut()
 		set_night(night)
-	# 寝ていた家族は、新しいテントの寝袋へ(テントが片付いたら見えなくする)
+	# 寝ていた家族は、新しいテントの寝袋へ(テントが片付いたら、できた小屋のベッドへ)。
+	# 起きてテントの中にいた家族は、外にいることにする(テントが動いた・なくなった)
 	for id in _people:
-		if _people[id].state == "inside":
-			_lie_down(_people[id])
+		var p: Dictionary = _people[id]
+		if p.state == "inside":
+			_lie_down(p)
+		elif p.get("indoor", false):
+			p.indoor = false
+			p.settled = false
 
 # 三角のテント(入口は南)。人が立てる大きさで、布・入口の暗がり・棟の棒・支柱・杭。
 # 中は床の敷物・寝袋(西から プレイヤー・家族)・枕・棟から吊ったランタン。当たり判定は入口を空けた壁

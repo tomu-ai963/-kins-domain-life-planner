@@ -8,6 +8,7 @@ const TEST_SAVE := "user://test_views.json"
 const DAY := 86400
 const WorldMaterial = preload("res://view/3d/WorldMaterial.gd")
 const Look = preload("res://view/3d/Look.gd")
+const Family = preload("res://logic/Family.gd")
 
 var _failed := 0
 var _passed := 0
@@ -615,10 +616,10 @@ func _test_3d_cabin_collision() -> void:
 	_check(not player.test_move(indoors, Vector3(0, 0, 3)), "中からドアを通って外へ出られる")
 	_check(player.test_move(indoors, Vector3(3, 0, 0)) and player.test_move(indoors, Vector3(-3, 0, 0)), "中からは東西の壁にぶつかる")
 	_check(player.test_move(indoors, Vector3(0, 0, -3)), "中からは北の壁にぶつかる")
-	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(19.1, 0, 20)), Vector3(0, 0, -1)), "ベッドにぶつかる(上に乗れない)")
-	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(21.45, 0, 20)), Vector3(0, 0, -1)), "ストーブにぶつかる")
-	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(18.8, 0, 19.9)), Vector3(0, 0, 1)), "テーブルにぶつかる")
-	_check(not player.test_move(Transform3D(Basis.IDENTITY, Vector3(21.45, 0, 19.75)), Vector3(0, 0, 0.5)), "ストーブの南は空いている")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(19.1, 0, 20)), Vector3(0, 0, 1)), "ベッドにぶつかる(上に乗れない)")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(22.4, 0, 19.6)), Vector3(0, 0, -1)), "ストーブにぶつかる")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(21.3, 0, 20.2)), Vector3(0, 0, 1)), "テーブルにぶつかる")
+	_check(not player.test_move(Transform3D(Basis.IDENTITY, Vector3(22.4, 0, 19.4)), Vector3(0, 0, 0.5)), "ストーブの南は空いている")
 	_test_cabin_inside()
 	_test_furniture()
 	_test_chop_view()
@@ -658,7 +659,7 @@ func _test_extension_view() -> void:
 	var ext: Node3D = view.find_child("Extension", true, false)
 	_check(ext != null and ext.get_child_count() == 7, "西に杭 4 本と縄 3 本が立つ")
 	c.materials.log = 20
-	player.global_position = Vector3(14.0, 0, 20.0)
+	player.global_position = Vector3(13.0, 0, 20.0)
 	_check(main.cabin_line().contains("小屋の増築: 基礎"), "HUD に増築の段階が出る")
 	var counts := []
 	for i in range(4):
@@ -708,12 +709,12 @@ func _test_extension_view() -> void:
 
 func _test_extension_collision() -> void:
 	var player: CharacterBody3D = main.get_node("Player")
-	var main_room := Transform3D(Basis.IDENTITY, Vector3(19.0, 0, 19.95))
+	var main_room := Transform3D(Basis.IDENTITY, Vector3(19.5, 0, 19.7))  # 出入り口(z 19.3〜20.1)の正面。大きいベッドと子どものベッドのあいだ
 	_check(not player.test_move(main_room, Vector3(-3.0, 0, 0)), "母屋から出入り口を通って西の部屋へ歩ける")
 	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(19.0, 0, 21.0)), Vector3(-3.0, 0, 0)), "出入り口のほかは、母屋の西の壁にぶつかる")
-	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(16.5, 0, 20.0)), Vector3(-3.0, 0, 0)), "西の部屋の西の壁にぶつかる")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(15.5, 0, 20.0)), Vector3(-3.0, 0, 0)), "西の部屋の西の壁にぶつかる")
 	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(13.0, 0, 20.0)), Vector3(3.0, 0, 0)), "外から西の部屋には入れない")
-	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(15.55, 0, 19.7)), Vector3(0, 0, -1)), "かまどにぶつかる")
+	_check(player.test_move(Transform3D(Basis.IDENTITY, Vector3(14.55, 0, 19.3)), Vector3(0, 0, -1)), "かまどにぶつかる")
 
 func _test_cabin_inside() -> void:
 	print("小屋の中")
@@ -2903,7 +2904,7 @@ func _test_furniture() -> void:
 	k.changed.emit()
 
 	# ベッド: 暗くなって日記が出る。時間は進まない
-	player.global_position = Vector3(site.x + c.BED_OFFSET.x, 0, site.y + c.BED_OFFSET.y + 0.73)
+	player.global_position = Vector3(site.x + c.BED_OFFSET.x + c.BED_SIZE.x * 0.5 + 0.35, 0, site.y + c.BED_OFFSET.y)  # 足元(東)のそば
 	view._process(0.1)  # 小屋の中にいることを view が知る
 	_check(main.furniture_line().contains("ベッド"), "ベッドのそばで案内が出る")
 	var day_before: String = w.forest.today()
@@ -2919,7 +2920,8 @@ func _test_furniture() -> void:
 	var head: Node3D = player.get_node("Body/Figure/Hips/Upper/Head")
 	var pillow_x: float = site.x + c.BED_OFFSET.x - 0.65
 	var head_p: Vector3 = head.global_position
-	_check(absf(head_p.x - pillow_x) < 0.15 and absf(head_p.z - (site.y + c.BED_OFFSET.y)) < 0.1, "頭が枕の上にある(%.2f, %.2f)" % [head_p.x, head_p.z])
+	_check(absf(head_p.x - pillow_x) < 0.15 and absf(head_p.z - (site.y + view.LYING_OFFSET.z)) < 0.1 and head_p.z > site.y + c.BED_OFFSET.y, "頭が枕の上にある(大きいベッドの南の半分。%.2f, %.2f)" % [head_p.x, head_p.z])
+	_check(player.get_node("Body/Figure").eyes_closed(), "寝ているあいだは目を閉じる")
 	_check(head_p.y > view.FLOOR_Y + 0.39, "頭は敷布団より上(高さ %.2f)" % head_p.y)
 	var face_dir: Vector3 = -body.global_basis.z
 	_check(face_dir.dot(Vector3.UP) > 0.99, "顔が上を向いている")
@@ -2939,7 +2941,7 @@ func _test_furniture() -> void:
 	_check(hud.is_diary_open(), "日記を開いているあいだ、ほかのキーは効かない")
 	key.call(KEY_H)
 	_check(not hud.is_diary_open() and player.is_physics_processing(), "H で起きる")
-	_check(not player.is_lying(), "起き上がる動きが始まる")
+	_check(not player.is_lying() and not player.get_node("Body/Figure").eyes_closed(), "起き上がる動きが始まる(目を開ける)")
 	player._pose.custom_step(10.0)
 	view._cover_tween.custom_step(10.0)
 	_check(body.position.is_equal_approx(Vector3(0, view.FLOOR_Y, 0)) and absf((-body.global_basis.z).dot(Vector3.UP)) < 0.01, "立った姿勢に戻る")
@@ -3409,6 +3411,7 @@ func _test_family_view() -> void:
 	w.forest.changed.emit()
 	player.global_position = Vector3(30, 0, 30)
 	view.set_night(0.0)
+	view.hours_override = 12.0  # 寝る時刻は時計で決まるので、テストでは時刻を決める
 	# 選ぶ画面
 	main.open_family_picker()
 	_check(hud.is_picker_open() and not player.is_physics_processing(), "家族を選ぶ画面が開き、そのあいだは歩かない")
@@ -3512,26 +3515,45 @@ func _test_family_view() -> void:
 			moved = true
 			break
 	_check(moved, "昼は歩き回る")
-	# 夜は家へ帰って中に入る
+	# 暗くなると家へ帰って、テントの中で起きている(冬の 18 時。2026-11-18 とむ「寝るのが少し早い」)
 	view.set_night(1.0)
+	view.hours_override = 18.0
 	for id in view.people_ids():
 		view._people[id].wait = 0.0
-	for _i in range(1500):
-		view.step(0.1)
-		if view.people_ids().all(func(id): return view.state_of(id) == "inside"):
-			break
-	_check(view.people_ids().all(func(id): return view.state_of(id) == "inside"), "夜はみんなテントに入る")
+	var settle := func(cond: Callable) -> bool:
+		for _i in range(1500):
+			if cond.call():
+				return true
+			view.step(0.1)
+		return cond.call()
+	var all_home: bool = settle.call(func(): return view.people_ids().all(func(id): return view._people[id].get("settled", false) and view.state_of(id) == "stand"))
+	_check(all_home, "暗くなると、みんなテントに入る")
+	_check(view.people_ids().all(func(id): return f.is_in_tent(view.person_pos(id)) and view.person_pos(id).distance_to(view.tent_spot(id)) < 0.3), "寝る時刻までは、それぞれの寝袋の前で起きている")
+	_check(view.people_ids().all(func(id): return view.figure_of(id).basis.y.normalized().is_equal_approx(Vector3.UP) and not view.figure_of(id).eyes_closed()), "まだ立っていて、目を開けている")
+	# 子どもは 20 時半、配偶者は 22 時に寝る
+	view.hours_override = 21.0
+	var kids_asleep: bool = settle.call(func(): return ["vanya", "masha", "polya"].all(func(id): return view.state_of(id) == "inside"))
+	_check(kids_asleep and view.state_of("alyona") == "stand", "21 時: 子どもは寝て、配偶者はまだ起きている")
+	view.hours_override = 23.0
+	var all_asleep: bool = settle.call(func(): return view.people_ids().all(func(id): return view.state_of(id) == "inside"))
+	_check(all_asleep, "23 時: みんな寝ている")
 	var lying_ok := true
 	for id in view.people_ids():
 		var fig: Node3D = view.figure_of(id)
 		var bed: Vector2 = f.bedroll_of(id)
 		lying_ok = lying_ok and fig.visible and Vector2(fig.position.x, fig.position.z).distance_to(bed) < 1.0 and fig.basis.y.normalized().is_equal_approx(Vector3(0, 0, -1))
 	_check(lying_ok, "テントでは、それぞれの寝袋で横になっている(頭が北)")
+	_check(view.people_ids().all(func(id): return view.figure_of(id).eyes_closed()), "寝ているあいだは目を閉じている")
+	_check(view.people_ids().all(func(id): return view.cover_of(id) != null and view.cover_of(id).visible), "寝ている人には掛け布団がかかる")
+	# 寝ている家族は踏めない
+	var roll: Vector2 = f.bedroll_of("masha")
+	var beside := Transform3D(Basis.IDENTITY, Vector3(roll.x, 0, roll.y + Family.BEDROLL_SIZE.y * 0.5 + 0.5))
+	_check(player.test_move(beside, Vector3(0, 0, -1.2)), "寝袋で寝ている家族の上は歩けない")
 	var tent_cloth: MeshInstance3D = view.tent_node().get_node("Cloth")
 	_check(tent_cloth.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON, "外からはテントの布で中は見えない")
 	_check(view.tent_node().get_node("TentLight").visible, "夜はテントのランタンがともる")
 	player.global_position = Vector3(f.home_pos().x, 0, f.home_pos().y + 0.5)
-	_check(main.family_near() == "", "中にいる家族とは話せない")
+	_check(main.family_near() == "", "中で寝ている家族とは話せない")
 	# テントに入る
 	player.global_position = Vector3(f.tent.x, 0, f.tent.y + 1.0)
 	view._process(0.0)
@@ -3547,12 +3569,21 @@ func _test_family_view() -> void:
 	player.global_position = Vector3(30, 0, 30)
 	view._process(0.0)
 	_check(not view.is_in_tent() and tent_cloth.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON, "出ると布が戻る")
-	view.set_night(0.0)
+	# 朝 6 時に起きる。暗いうちはテントの中、明るくなったら出てくる
+	view.hours_override = 6.5
 	view.step(0.1)
-	_check(view.people_ids().all(func(id): return view.state_of(id) != "inside" and view.figure_of(id).visible), "朝になると出てくる")
+	_check(view.people_ids().all(func(id): return view.state_of(id) == "stand" and view.figure_of(id).visible and not view.figure_of(id).eyes_closed()), "6 時に起きて目を開ける")
+	_check(view.people_ids().all(func(id): return view.cover_of(id) == null), "起きたら掛け布団を片付ける")
 	_check(view.figure_of("vanya").basis.y.normalized().is_equal_approx(Vector3.UP), "起きて立っている")
+	_check(f.is_in_tent(view.person_pos("vanya")) and view._people["vanya"].indoor, "暗いうちはテントの中にいる")
+	_check(view.people_ids().all(func(id): return view._people[id].get("sleep_body") == null) and view.find_children("SleepBody_*", "", false, false).is_empty(), "起きたら寝袋の上の当たり判定はなくなる")
+	view.set_night(0.0)
+	view.hours_override = 12.0
+	for id in view.people_ids():
+		view._people[id].wait = 0.0
+	var went_out: bool = settle.call(func(): return view.people_ids().all(func(id): return not view._people[id].indoor and not f.is_in_tent(view.person_pos(id))))
+	_check(went_out, "明るくなると入口から出ていく")
 	_check(not view.tent_node().get_node("TentLight").visible, "昼はランタンを消す")
-	_check(view.person_pos("vanya").distance_to(f.home_pos()) < 0.5, "家の入口から出てくる")
 	# 訪問者はテントを回り込む
 	var visitor: Node3D = main.get_node("Visitor")
 	_check(visitor._obstacles().any(func(r): return r.has_point(f.tent)), "訪問者はテントを回り込む")
@@ -3669,27 +3700,44 @@ func _test_cabin_family() -> void:
 		p.indoor = false
 		view._stand(p)
 		p.wait = 0.0
-	# 夜: 戸口から入って布団で寝る
+	# 子どものベッド(2 段ベッドと小さいベッド)が南西に置かれる
+	view._sync_beds()
+	var beds: Node3D = view.beds_node()
+	_check(beds != null and beds.get_node_or_null("Bunk") != null and beds.get_node_or_null("Cot") != null, "子ども 3 人: 2 段ベッドと小さいベッドがある")
+	var bunk_rect := Rect2(w.cabin.site + Family.BUNK_OFFSET - Family.BUNK_SIZE * 0.5, Family.BUNK_SIZE)
+	var by_bunk := Transform3D(Basis.IDENTITY, Vector3(bunk_rect.get_center().x, 0, bunk_rect.end.y + 0.8))
+	_check(player.test_move(by_bunk, Vector3(0, 0, -1.2)), "2 段ベッドにはぶつかる(上に乗れない)")
+	# 暗くなると戸口から入って、寝る時刻までは小屋の中で起きている(配偶者はストーブの前、子どもはテーブルのまわり)
 	view.set_night(1.0)
-	var all_in: bool = steps.call(func(): return view.people_ids().all(func(id): return view.state_of(id) == "inside"))
-	_check(all_in, "夜はみんな小屋に入る")
-	var on_futon := true
+	view.hours_override = 18.0
+	var all_in: bool = steps.call(func(): return view.people_ids().all(func(id): return view._people[id].get("settled", false) and view.state_of(id) == "stand"))
+	_check(all_in, "暗くなると、みんな小屋に入る")
+	_check(view.people_ids().all(func(id): return view.person_pos(id).distance_to(view.indoor_spot(id)[0]) < 0.3), "寝る時刻までは、いつもの場所で起きている")
+	_check(view.people_ids().all(func(id): return absf(view.figure_of(id).position.y - view.CABIN_FLOOR_Y) < 0.01), "床の高さに立っている")
+	var stove_front: Vector2 = w.cabin.site + w.cabin.STOVE_OFFSET + Vector2(-0.75, 0.6)
+	_check(w.cabin.is_at_stove(stove_front) and view.people_ids().all(func(id): return view.person_pos(id).distance_to(stove_front) > 0.5), "家族がいても、ストーブの前で料理できる")
+	# 寝る時刻: それぞれのベッドで横になる
+	view.hours_override = 23.0
+	var all_asleep: bool = steps.call(func(): return view.people_ids().all(func(id): return view.state_of(id) == "inside"))
+	_check(all_asleep, "23 時: みんな寝ている")
+	var in_bed := true
 	for id in view.people_ids():
 		var fig: Node3D = view.figure_of(id)
-		var futon: Dictionary = f.futon_of(id)
-		var r := Rect2(futon.pos - futon.size * 0.5, futon.size).grow(0.05)
-		on_futon = on_futon and fig.visible and r.has_point(Vector2(fig.position.x, fig.position.z)) and fig.position.y > view.CABIN_FLOOR_Y and fig.basis.y.normalized().is_equal_approx(Vector3(1, 0, 0))
-	_check(on_futon, "それぞれの布団で横になっている(床の上・頭は東の枕)")
-	_check(view.futons_node() != null and view.futons_node().get_node_or_null("Futon_polya") != null, "寝ているあいだは布団が敷いてある")
-	_check(not w.cabin.rect().has_point(Vector2.ZERO) and w.cabin.rect().has_point(f.futon_of("alyona").pos), "布団は小屋の中")
-	# 朝: 起きて戸口から出ていく
-	view.set_night(0.0)
+		var bed: Dictionary = f.bed_of(id)
+		in_bed = in_bed and fig.visible and Vector2(fig.position.x, fig.position.z).distance_to(bed.feet) < 0.05 and fig.position.y > view.CABIN_FLOOR_Y + 0.3
+	_check(in_bed, "それぞれのベッドで横になっている(床より上)")
+	_check(f.bed_of("alyona").kind == "double" and view.figure_of("alyona").basis.y.normalized().is_equal_approx(Vector3(-1, 0, 0)) and view.figure_of("vanya").basis.y.normalized().is_equal_approx(Vector3(-1, 0, 0)), "大きいベッドも 2 段ベッドも、頭は西の枕")
+	_check(view.figure_of("vanya").position.y > view.CABIN_FLOOR_Y + 1.2 and view.figure_of("masha").position.y < view.CABIN_FLOOR_Y + 0.6, "上の子は 2 段ベッドの上、下の子は下の段")
+	_check(view.people_ids().all(func(id): return view.figure_of(id).eyes_closed() and view.cover_of(id) != null), "目を閉じて、掛け布団がかかっている")
+	_check(not w.cabin.rect().has_point(Vector2.ZERO) and w.cabin.rect().has_point(f.bed_of("alyona").feet), "ベッドは小屋の中")
+	# 朝: 起きてベッドのそばに立ち、明るくなったら戸口から出ていく
+	view.hours_override = 7.0
 	view.step(0.1)
 	var vanya: Dictionary = view._people["vanya"]
-	_check(vanya.state == "stand" and vanya.indoor and w.cabin.is_inside(vanya.pos), "朝は布団から起きて、小屋の中に立つ")
-	_check(absf(view.figure_of("vanya").position.y - view.CABIN_FLOOR_Y) < 0.01, "小屋の中では床の高さに立つ")
-	view._sync_futons()
-	_check(view.futons_node() == null, "みんな起きたら布団を片付ける")
+	_check(vanya.state == "stand" and vanya.indoor and w.cabin.is_inside(vanya.pos), "朝はベッドから起きて、小屋の中に立つ")
+	_check(absf(view.figure_of("vanya").position.y - view.CABIN_FLOOR_Y) < 0.01 and not view.figure_of("vanya").eyes_closed(), "小屋の中では床の高さに立つ(目を開けて)")
+	view.set_night(0.0)
+	view.hours_override = 12.0
 	for id in view.people_ids():
 		view._people[id].wait = 0.0
 	var went_out: bool = steps.call(func(): return view.people_ids().all(func(id): return not view._people[id].get("indoor", false)))
@@ -3705,15 +3753,17 @@ func _test_cabin_family() -> void:
 	_check(settled and al.pos.distance_to(spot[0]) < 0.5, "昼は小屋に入って、ストーブの前に立つ")
 	_check(absf(view.figure_of("alyona").position.y - view.CABIN_FLOOR_Y) < 0.01 and not al.shape.disabled, "小屋の中でも当たり判定がある")
 	_check(al.wait >= view.INDOOR_SECONDS[0], "しばらく小屋の中で過ごす")
-	# 夜になったら、小屋の中からそのまま布団へ
+	# 寝る時刻になったら、小屋の中からそのままベッドへ
 	view.set_night(1.0)
+	view.hours_override = 22.5
 	al.wait = 0.0
 	var slept: bool = steps.call(func(): return al.state == "inside")
-	_check(slept and view.figure_of("alyona").basis.y.normalized().is_equal_approx(Vector3(1, 0, 0)), "小屋の中にいれば、夜はそのまま布団で寝る")
+	_check(slept and view.figure_of("alyona").basis.y.normalized().is_equal_approx(Vector3(-1, 0, 0)), "小屋の中にいれば、寝る時刻にそのままベッドで寝る")
 	# 片付け(このあとのテストのため)
 	view.set_night(0.0)
+	view.hours_override = 12.0
 	view.step(0.1)
 	w.cabin.site = null
 	w.cabin.stage = 0
 	view._sync_tent()
-	view._sync_futons()
+	view._sync_beds()

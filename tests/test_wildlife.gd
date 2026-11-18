@@ -268,8 +268,8 @@ func _test_places() -> void:
 	_check(wl.is_free(Vector2(0, 0)), "土地の中は行ける")
 	_check(not wl.is_free(Vector2(50, 0)) and not wl.is_free(Vector2(0, -60)), "土地の外へは行かない")
 	w.cabin.site = Vector2(20, 20)
-	_check(not wl.is_free(Vector2(20, 20)) and not wl.is_free(Vector2(22.2, 20)), "小屋の上へは行かない")
-	_check(wl.is_free(Vector2(23, 20)), "小屋の外は行ける")
+	_check(not wl.is_free(Vector2(20, 20)) and not wl.is_free(Vector2(23.2, 20)), "小屋の上へは行かない")
+	_check(wl.is_free(Vector2(24, 20)), "小屋の外は行ける")
 	w.land.pond = Vector2(-20, -20)
 	_check(not wl.is_free(Vector2(-20, -20)) and wl.is_free(Vector2(-25, -20)), "池の上へは行かない")
 

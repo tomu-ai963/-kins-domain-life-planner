@@ -16,9 +16,9 @@ const DAYS := 121                        # 11/1 〜 3/1
 const SITE := Vector2(20, 20)            # 小屋
 const POND := Vector2(-20, 20)
 const PLOTS := [Vector2(1.5, 25.5), Vector2(4.5, 25.5), Vector2(7.5, 25.5), Vector2(10.5, 25.5)]
-const OUTSIDE := Vector2(20, 22.5)       # 小屋の南の外
-const WEST := Vector2(14.0, 20.0)        # 増築する部屋の西の外
-const CHOP := SITE + Vector2(3.4, 0.7)   # 薪割り台
+const OUTSIDE := Vector2(20, 23.0)       # 小屋の南の外
+const WEST := Vector2(13.0, 20.0)        # 増築する部屋の西の外
+const CHOP := SITE + Vector2(4.4, 0.9)   # 薪割り台
 
 var _failed := 0
 var _passed := 0

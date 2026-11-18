@@ -11,8 +11,13 @@ const Land = preload("res://logic/Land.gd")
 signal changed  # 見た目に関わる状態が変わった
 signal dirty    # セーブに入る状態が変わった
 
-const WIDTH := 4.0   # 東西の幅(m)。12m² の小さな小屋
-const DEPTH := 3.0   # 南北の奥行き(m)
+# 2026-11-18 とむ決定: 家族と暮らせるよう、最初から 6m × 4m(24m²)。はじめは 4m × 3m だった。
+# 西側が寝る場所(南西に自分と配偶者の大きいベッド、北の壁際に子どものベッド。子どものベッドは logic/Family.gd)、
+# 東側がストーブ(北東)とテーブル(南東)
+const WIDTH := 6.0   # 東西の幅(m)
+const DEPTH := 4.0   # 南北の奥行き(m)
+const LAYOUT := 2    # セーブに書く間取りの版。1(記録なし)= 4m × 3m のころに場所を決めた小屋
+const OLD_WIDTH := 4.0  # 版 1 の幅。読み込むときは西の壁をそのままにして東へ広げる(西の増築の場所が、近くの井戸などにかからないように)
 const REACH := 2.0   # 小屋からこの距離までなら作業できる
 const BODY_MARGIN := 0.5  # 壁ができたときに閉じ込められないよう、これより内側では作業しない
 const EDGE_MARGIN := 3.0  # 境界からこの幅は生垣クエストのために空ける(Quests.HEDGE_BAND と同じ)
@@ -20,22 +25,22 @@ const CENTER_CLEAR := 5.0 # 中心からこの範囲は家族の杉のために�
 const TREE_CLEARANCE := 0.3  # 小屋の周りでこの距離に木があると建てられない
 
 # 部屋の家具(小屋の中心からの位置 m)。使える範囲はロジック、形は view/ が同じ値を読む
-const STOVE_OFFSET := Vector2(1.45, -1.0)
+const STOVE_OFFSET := Vector2(2.4, -1.45)
 const STOVE_SIZE := Vector2(0.7, 0.7)
 const STOVE_REACH := 1.1  # ストーブの中心からこの距離までなら使える(東の窓辺は苗づくりに残す)
-const BED_OFFSET := Vector2(-0.9, -0.95)
-const BED_SIZE := Vector2(1.9, 0.85)
+const BED_OFFSET := Vector2(-1.95, 1.2)  # 自分と配偶者の大きいベッド(南西。枕は西。南の半分が自分、北の半分が配偶者)
+const BED_SIZE := Vector2(1.9, 1.15)
 const BED_REACH := 0.5    # ベッドの縁からこの距離までなら使える(部屋の真ん中は苗づくりに残す)
-const STOOL_OFFSET := Vector2(-0.45, 0.75)  # テーブルの東の腰掛け
+const STOOL_OFFSET := Vector2(2.05, 1.2)  # テーブルの東の腰掛け
 const STOOL_REACH := 0.55 # 腰掛けの中心からこの距離までなら座れる(部屋の真ん中は苗づくりに残す)
 # 東の庭(小屋の外)。薪割り台と、壁際に積んだ薪の山を置く
-const CHOP_OFFSET := Vector2(3.4, 0.7)
+const CHOP_OFFSET := Vector2(4.4, 0.9)
 const CHOP_REACH := 1.4   # 薪割り台の中心からこの距離までなら割れる
-const YARD_RECT := Rect2(2.0, -1.5, 2.2, 3.0)  # 小屋の中心からの範囲。区画や木を置かない
+const YARD_RECT := Rect2(3.0, -2.0, 2.2, 4.0)  # 小屋の中心からの範囲。区画や木を置かない
 
 # ── 増築(2026-11-11 とむ決定) ──
-# 完成した小屋の西に、もう 1 部屋(3m × 3m)を建て足す。市場で頼む(窓ガラス・かまど・釘の代金)と西に杭が立ち、
-# 西の外から H で 1 日 1 回、丸太を使って建てる。できると小屋は 7m × 3m になり、窓辺の鉢が 12 に、鍋が 2 つ(かまど)になる。
+# 完成した小屋の西に、もう 1 部屋(3m × 4m)を建て足す。市場で頼む(窓ガラス・かまど・釘の代金)と西に杭が立ち、
+# 西の外から H で 1 日 1 回、丸太を使って建てる。できると小屋は 9m × 4m になり、窓辺の鉢が 12 に、鍋が 2 つ(かまど)になる。
 # 家具(市場で買う)は新しい部屋(居間)に置く
 const EXT_WIDTH := 3.0    # 増築する部屋の東西の幅(m)
 const EXT_STAGES := [
@@ -43,14 +48,14 @@ const EXT_STAGES := [
 	{"id": "walls", "days": 2, "logs_per_day": 4},
 	{"id": "roof", "days": 1, "logs_per_day": 3},
 ]
-const PASS_Z := -0.05     # 母屋と新しい部屋のあいだの出入り口の中心(南北。ベッドとテーブルのあいだ)
+const PASS_Z := -0.3      # 母屋と新しい部屋のあいだの出入り口の中心(南北。大きいベッドと子どものベッドのあいだ)
 const PASS_W := 0.8       # 出入り口の幅(m)
-const KAMADO_OFFSET := Vector2(-4.45, -1.0)  # 新しい部屋の北西のかまど(2 つ目の鍋)
+const KAMADO_OFFSET := Vector2(-5.45, -1.45)  # 新しい部屋の北西のかまど(2 つ目の鍋)
 const KAMADO_SIZE := Vector2(0.7, 0.7)
 const KAMADO_REACH := 1.0
-const CHAIR_OFFSET := Vector2(-3.0, 0.75)    # 揺り椅子
+const CHAIR_OFFSET := Vector2(-4.0, 1.0)    # 揺り椅子
 const CHAIR_REACH := 0.6
-const SHELF_OFFSET := Vector2(-3.1, -1.22)   # 保存食の棚(北の壁際)
+const SHELF_OFFSET := Vector2(-4.1, -1.72)   # 保存食の棚(北の壁際)
 const SHELF_SIZE := Vector2(1.3, 0.3)
 # 買える家具(市場の GOODS の species と同じ id)。新しい部屋ができてから置ける
 const FURNITURE := ["shelf", "rocking_chair", "rug", "lamp", "clock"]
@@ -374,7 +379,7 @@ func fell(pos: Vector2, max_dist: float) -> int:
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
-	var d := {"stage": stage, "days_done": days_done, "last_worked": last_worked, "logs": materials.log, "own_logs": own_logs,
+	var d := {"layout": LAYOUT, "stage": stage, "days_done": days_done, "last_worked": last_worked, "logs": materials.log, "own_logs": own_logs,
 		"ext_stage": ext_stage, "ext_days_done": ext_days_done, "ext_last_worked": ext_last_worked, "furniture": furniture}
 	if site != null:
 		d["site"] = [site.x, site.y]
@@ -382,6 +387,8 @@ func to_save() -> Dictionary:
 
 func from_save(d: Dictionary) -> void:
 	site = SaveRead.pair(d.get("site"))
+	if site != null and SaveRead.whole(d, "layout", 1) < LAYOUT:
+		site += Vector2((WIDTH - OLD_WIDTH) * 0.5, 0)  # 4m × 3m のころの小屋: 西の壁はそのままで、東と南北へ広げる(2026-11-18)
 	stage = clampi(SaveRead.whole(d, "stage"), 0, STAGES.size())
 	days_done = SaveRead.count(d, "days_done")
 	last_worked = SaveRead.text(d, "last_worked")

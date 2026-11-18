@@ -372,7 +372,7 @@ func _test_chop_place() -> void:
 	_check(c.is_at_chop_block(chop + Vector2(1.0, 0)) and not c.is_at_chop_block(chop + Vector2(2.0, 0)), "台のそばだけ")
 	_check(not c.is_at_stove(chop) and not c.is_inside(chop), "台は小屋の外にある")
 	_check(not c.is_at_chop_block(AT + Vector2(1.9, 0.7)), "小屋の中からは割れない")
-	_check(c.in_yard(chop) and not c.in_yard(AT + Vector2(5, 0)), "台は東の庭の中にある")
+	_check(c.in_yard(chop) and not c.in_yard(AT + Vector2(6, 0)), "台は東の庭の中にある")
 	_check(w.bees.is_blocked(chop), "東の庭には巣箱を置けない")
 	w.cabin.materials.log = 1
 	_check(w.feeders.act(chop) == "blocked", "東の庭には餌台を立てられない")

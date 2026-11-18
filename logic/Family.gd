@@ -6,7 +6,9 @@ extends RefCounted
 # 子どもは 1 人ずつ、息子か娘かと年齢(0〜MAX_START_AGE 歳)も選ぶ。
 # 家族は最初から土地で暮らす。小屋が完成するまでは、夜はテントで休む(テントの場所はここで決める)。
 # テントには南の入口から歩いて入れる。中には寝袋が並び、自分の寝袋のそばで H を押すと休める(日記。2026-11-16 とむ)。
-# 小屋が完成したら、家族は小屋で暮らす: 夜は母屋の床に敷いた布団で寝る。昼もときどき小屋に入って過ごす(見た目は view。2026-11-16 とむ)。
+# 小屋が完成したら、家族は小屋で暮らす: 夜はベッドで寝る。昼もときどき小屋に入って過ごす(見た目は view。2026-11-16 とむ)。
+#   配偶者は自分と同じ大きいベッドの北の半分、子どもは北の壁際の 2 段ベッド(1 人なら 1 段)と、3 人目は小さいベッド(2026-11-18 とむ: 小屋を広げて家族もベッドで)
+# 寝る時刻は時計で決める(BEDTIME。暗くなってから寝るまでは家の中で起きている。2026-11-18 とむ「寝るのが少し早い」)。
 # 毎朝(日付が変わった最初の確認で)小さな手伝いをする:
 #   配偶者: 水のいる区画か木に WATER_HELP か所まで水をやる(井戸・池・川のどれかで汲めるときだけ。雨の日は要らない)
 #   子ども: HELP_AGE 歳から、雑草の生えた区画を 1 つ抜く(WEED_MORE_AGE 歳から 2 つ)
@@ -57,10 +59,15 @@ const TENT_DOOR := 1.0                 # 入口の幅(m)
 const BEDROLL_SIZE := Vector2(0.62, 1.9)  # 寝袋 1 枚(東西 × 南北)。北の奥に頭を向けて並べる
 const BEDROLL_REACH := 0.6             # 寝袋からこの距離までなら H で休める
 const TENT_SAMPLE := 1.0               # テントを張れるか確かめる点の間隔(m)
-# 小屋の布団(2026-11-16): 母屋の東側の空いた床(小屋の中心からの範囲)に、東西に長く北から並べて敷く。枕は東
-const FUTON_ZONE := Rect2(0.15, -0.45, 1.75, 1.9)
-const FUTON_ADULT := Vector2(1.7, 0.6)  # 東西の長さ × 南北の幅
-const FUTON_CHILD_W := 0.41             # 子どもの布団の幅(南北)
+# 小屋の子どものベッド(小屋の中心から。2026-11-18)。北の壁際に東西に置く(枕は西)。2 段ベッドは北西の隅、3 人目の小さいベッドはその東。
+# 背の高い 2 段ベッドを奥(北)に置いて、見下ろすカメラから大きいベッドを隠さない
+const BUNK_OFFSET := Vector2(-2.0, -1.45)
+const BUNK_SIZE := Vector2(1.7, 0.85)    # 東西 × 南北
+const COT_OFFSET := Vector2(-0.45, -1.58)  # 3 人目の子どもの小さいベッド
+const COT_SIZE := Vector2(1.25, 0.6)
+# 寝る時刻(時。現実の時計)と、起きる時刻。暗くなってから寝るまでは家の中で起きている(2026-11-18。仮の数字)
+const BEDTIME := {"child": 20.5, "spouse": 22.0}
+const WAKE_HOUR := 6.0
 const DOOR_OUT := 1.0                   # 小屋の戸口の外、この距離のところで出入りする
 const TENT_SEARCH := 30.0     # テントの場所を探す範囲(目安の場所からの距離)
 const CENTER_CLEAR := 5.0     # 中心は家族の杉のために空ける(Quests.FAMILY_CEDAR_RADIUS と同じ)
@@ -408,27 +415,45 @@ func is_at_bedroll(pos: Vector2) -> bool:
 	var r := Rect2(spot - Vector2(bedroll_width(), BEDROLL_SIZE.y) * 0.5, Vector2(bedroll_width(), BEDROLL_SIZE.y))
 	return r.grow(BEDROLL_REACH).has_point(pos)
 
-# ── 小屋の布団 ────────────────────────────────────────────
-# 布団の並び [{id, pos(中心), size(東西 × 南北)}]。小屋が完成していなければ空。
-# 母屋の東側の床に、北から 配偶者・子ども(上から)の順。子どもの布団は幅が狭く、背に合わせて短い
-func futon_spots() -> Array:
+# ── 寝る時刻 ──────────────────────────────────────────────
+# その人が寝ている時刻か(hours は 0〜24 の時刻)
+static func is_bedtime(role: String, hours: float) -> bool:
+	return hours >= float(BEDTIME.get(role, BEDTIME.spouse)) or hours < WAKE_HOUR
+
+# ── 小屋のベッド ──────────────────────────────────────────
+# 家族の寝る場所 [{id, kind, pos(寝る人の体の中心), feet(足の裏), head(west / north), approach(そばの床)}]。小屋が完成していなければ空。
+# kind: double(配偶者。自分と同じベッドの北の半分) / bunk_low・bunk_high(2 段ベッドの下・上) / single(子どもが 1 人なら 2 段ベッドの代わり) / cot(3 人目)
+# 子どもは上の子から 2 段ベッドの上 → 下 → 小さいベッド(1 人だけなら 1 段のベッド)
+func bed_spots() -> Array:
 	if not chosen or members.is_empty() or not cabin.is_complete():
 		return []
+	var site: Vector2 = cabin.site
 	var out := []
-	var z: float = FUTON_ZONE.position.y
+	var bed_c: Vector2 = site + cabin.BED_OFFSET
+	var bed_s: Vector2 = cabin.BED_SIZE
+	var kids := children()
 	for m in members:
-		var size := FUTON_ADULT
-		if m.role == "child":
-			size = Vector2(minf(FUTON_ADULT.x, 1.0 + age_of(m) * 0.04), FUTON_CHILD_W)
-		var x: float = FUTON_ZONE.end.x - size.x * 0.5  # 東の壁に寄せる(枕は東)
-		out.append({"id": m.id, "pos": cabin.site + Vector2(x, z + size.y * 0.5), "size": size})
-		z += size.y + 0.02
+		if m.role != "child":
+			var z: float = bed_c.y - bed_s.y * 0.25  # 北の半分
+			out.append({"id": m.id, "kind": "double", "pos": Vector2(bed_c.x, z), "feet": Vector2(bed_c.x + bed_s.x * 0.5 - 0.15, z), "head": "west",
+				"approach": Vector2(bed_c.x + bed_s.x * 0.5 + 0.35, bed_c.y)})
+	for i in range(kids.size()):
+		var m: Dictionary = kids[i]
+		if i < 2:
+			var bunk: Vector2 = site + BUNK_OFFSET
+			var kind := "single" if kids.size() == 1 else ("bunk_high" if i == 0 else "bunk_low")
+			out.append({"id": m.id, "kind": kind, "pos": bunk, "feet": Vector2(bunk.x + BUNK_SIZE.x * 0.5 - 0.12, bunk.y), "head": "west",
+				"approach": Vector2(bunk.x + 0.3, bunk.y + BUNK_SIZE.y * 0.5 + 0.35)})
+		else:
+			var cot: Vector2 = site + COT_OFFSET
+			out.append({"id": m.id, "kind": "cot", "pos": cot, "feet": Vector2(cot.x + COT_SIZE.x * 0.5 - 0.1, cot.y), "head": "west",
+				"approach": Vector2(cot.x, cot.y + COT_SIZE.y * 0.5 + 0.35)})
 	return out
 
-func futon_of(id: String) -> Dictionary:
-	for f in futon_spots():
-		if f.id == id:
-			return f
+func bed_of(id: String) -> Dictionary:
+	for b in bed_spots():
+		if b.id == id:
+			return b
 	return {}
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────

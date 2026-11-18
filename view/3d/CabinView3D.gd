@@ -25,7 +25,7 @@ const ROOM_LIGHT_ENERGY := 1.1
 const DOOR_OPEN_NEAR := 2.2       # ドアからこの距離まで来ると開く(m)
 const DOOR_OPEN_ANGLE := -1.8     # 開いたときの角度(南へ外開き)
 const DOOR_SPEED := 4.0           # 開け閉めの速さ
-const TABLE_POS := Vector2(-1.2, 0.75)
+const TABLE_POS := Vector2(1.3, 1.2)   # 南東(2026-11-18 に小屋を広げて、西側は寝る場所に)
 const TABLE_SIZE := Vector2(0.95, 0.7)
 const STOOL_H := 0.45             # 腰掛けの高さ(m)
 const SIT_YAW := PI * 0.5         # 腰掛けに座る向き(西のテーブルのほう)
@@ -37,10 +37,10 @@ const STEAM_PUFFS := 3            # 仕込んでいるあいだの湯気の玉�
 const STEAM_SECONDS := 1.6        # 湯気の玉が 1 つ昇って消えるまでの時間
 const STEAM_RISE := 0.55          # 湯気の玉が昇る高さ(m)
 const STEAM_SIZE := 0.10          # 湯気の玉の大きさ(m)
-# 横になったときの足の裏の位置(小屋の中心から。頭が枕にのる)。高さは床の上
-const LYING_OFFSET := Vector3(-0.14, 0.49, -0.95)
-const COVER_POS := Vector3(-0.60, 0.52, -0.95)   # 掛け布団のふくらみ(床の上)
-const COVER_SCALE := Vector3(1.25, 0.4, 0.84)
+# 横になったときの足の裏の位置(小屋の中心から。頭が西の枕にのる)。高さは床の上。大きいベッドの南の半分(北の半分は配偶者)
+const LYING_OFFSET := Vector3(-1.15, 0.49, 1.49)
+const COVER_POS := Vector3(-1.61, 0.52, 1.49)   # 掛け布団のふくらみ(床の上)
+const COVER_SCALE := Vector3(1.25, 0.4, 0.55)
 const COVER_SECONDS := 0.3
 const CHOP_STUMP_R := 0.3     # 薪割り台(切り株)の半径(m)
 const CHOP_STUMP_H := 0.42
@@ -56,8 +56,8 @@ const SHELF_BOARDS := 3           # 棚板の数
 const SHELF_JARS := 8             # 棚板 1 枚に並べる瓶の数
 const CHAIR_YAW := PI * 0.5       # 揺り椅子に座る向き(西の窓のほう)
 const CHAIR_SEAT_H := 0.42
-const CLOCK_POS := Vector3(-3.5, 2.15, -1.38)  # 掛け時計(西の部屋の北の壁。小屋の中心から)
-const LAMP_POS := Vector2(-2.45, 1.2)          # 立てたランプ(西の部屋の南東の隅)
+const CLOCK_POS := Vector3(-4.5, 2.15, -1.88)  # 掛け時計(西の部屋の北の壁。小屋の中心から)
+const LAMP_POS := Vector2(-3.45, 1.6)          # 立てたランプ(西の部屋の南東の隅)
 const FOOD_COLORS := {
 	"jam": Color(0.70, 0.30, 0.20), "sauce": Color(0.78, 0.16, 0.12), "pickles": Color(0.42, 0.56, 0.26),
 	"garlic_pickle": Color(0.90, 0.86, 0.68), "pirozhki": Color(0.76, 0.54, 0.26),
@@ -324,7 +324,7 @@ func _yard(parent: Node3D) -> void:
 	for i in range(pieces):
 		var column: int = i % PILE_COLUMNS
 		var row: int = i / PILE_COLUMNS
-		var z: float = -1.15 + column * PILE_GAP + (0.1 if row % 2 == 1 else 0.0)
+		var z: float = -1.6 + column * PILE_GAP + (0.1 if row % 2 == 1 else 0.0)
 		_piece(spot, _firewood, Vector3(x, 0.07 + row * 0.13, z), Vector3(0.4, 0.12, 0.13)).name = "Woodpile"
 
 # 薪割り機: 薪割り台の北に置く。黄色い横長の台に、くさびと押し板、横に小さなエンジン、車輪 2 つ
@@ -363,19 +363,22 @@ func _pots(spot: Node3D) -> void:
 		var s: float = lerpf(0.06, 0.26, seedlings.growth_ratio(seedlings.pots[i]))
 		spot.add_child(Look.mesh_node(_ball, _sprout, Vector3(x, y + 0.18 + s * 0.5, z), Vector3(s, s, s)))
 
-# 部屋の中: ベッド(北西)・ストーブ(北東)・テーブルと腰掛け(南西)・敷物・明かり。
+# 部屋の中: 大きいベッド(南西)・ストーブ(北東)・テーブルと腰掛け(南東)・敷物・明かり。子どものベッド(北西)は家族の view が置く。
 # まとめて 1 つの Node3D に入れる
 func _interior(spot: Node3D) -> void:
 	var room := Node3D.new()
 	room.name = "Interior"
 	room.position = Vector3(0, FLOOR_Y, 0)
 	spot.add_child(room)
-	# ベッド: 枠・敷布団・掛け布団・枕
+	# 大きいベッド(自分と配偶者): 枠・敷布団・掛け布団・枕 2 つ(西)
 	var bed: Vector2 = Cabin.BED_OFFSET
-	_piece(room, _sill, Vector3(bed.x, 0.15, bed.y), Vector3(Cabin.BED_SIZE.x, 0.3, Cabin.BED_SIZE.y))
-	_piece(room, _bed, Vector3(bed.x, 0.34, bed.y), Vector3(1.8, 0.1, 0.75))
-	_piece(room, _blanket, Vector3(bed.x + 0.3, 0.41, bed.y), Vector3(1.2, 0.06, 0.78))
-	_piece(room, _bed, Vector3(bed.x - 0.65, 0.43, bed.y), Vector3(0.35, 0.1, 0.5))
+	var size: Vector2 = Cabin.BED_SIZE
+	_piece(room, _sill, Vector3(bed.x, 0.15, bed.y), Vector3(size.x, 0.3, size.y)).name = "Bed"
+	_piece(room, _bed, Vector3(bed.x, 0.34, bed.y), Vector3(size.x - 0.1, 0.1, size.y - 0.1))
+	_piece(room, _blanket, Vector3(bed.x + 0.3, 0.41, bed.y), Vector3(1.2, 0.06, size.y - 0.07))
+	_piece(room, _sill, Vector3(bed.x - size.x * 0.5 + 0.04, 0.55, bed.y), Vector3(0.08, 0.5, size.y))  # 頭の板
+	for side in [-1.0, 1.0]:
+		_piece(room, _bed, Vector3(bed.x - 0.65, 0.43, bed.y + side * size.y * 0.25), Vector3(0.35, 0.1, size.y * 0.4))
 	# 横になっているあいだの掛け布団のふくらみ
 	_sleep_cover = Look.mesh_node(_ball, _blanket, COVER_POS, COVER_SCALE)
 	_sleep_cover.name = "SleepCover"
@@ -384,19 +387,20 @@ func _interior(spot: Node3D) -> void:
 	_stove_pieces(room)
 	# テーブル(天板と脚 4 本)と腰掛け
 	_piece(room, _rafter, Vector3(TABLE_POS.x, 0.72, TABLE_POS.y), Vector3(TABLE_SIZE.x, 0.05, TABLE_SIZE.y))
-	for x in [-1.6, -0.8]:
-		for z in [0.47, 1.03]:
-			_piece(room, _sill, Vector3(x, 0.35, z), Vector3(0.06, 0.7, 0.06))
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var leg: Vector2 = TABLE_POS + Vector2(sx * (TABLE_SIZE.x * 0.5 - 0.07), sz * (TABLE_SIZE.y * 0.5 - 0.07))
+			_piece(room, _sill, Vector3(leg.x, 0.35, leg.y), Vector3(0.06, 0.7, 0.06))
 	_piece(room, _sill, Vector3(Cabin.STOOL_OFFSET.x, STOOL_H * 0.5, Cabin.STOOL_OFFSET.y), Vector3(0.3, STOOL_H, 0.3)).name = "Stool"
 	_food_on_table(room)
 	# 敷物(ドアを入ったところ)
-	room.add_child(Look.strip(Vector2(-0.2, 0.2), Vector2(0.2, 0.2), 1.0, 0.01, _rug))
+	room.add_child(Look.strip(Vector2(-0.25, 1.1), Vector2(0.25, 1.1), 1.0, 0.01, _rug))
 	# 部屋の明かり(中にいるあいだだけ)
 	var light := OmniLight3D.new()
 	light.position = Vector3(0, 1.9, 0)
 	light.light_color = Color(1.0, 0.82, 0.6)
 	light.light_energy = ROOM_LIGHT_ENERGY
-	light.omni_range = 5.5
+	light.omni_range = 7.0
 	# 壁を突き抜けて外を照らさないように影を付ける。Compatibility(Web)では影つきの光が明るくなりすぎるので付けない
 	light.shadow_enabled = RenderingServer.get_current_rendering_method() != "gl_compatibility"
 	light.light_cull_mask = 0xFFFFF & ~Look.GROUND_LAYER  # 開いたドアから漏れて、外の地面に台形の光が出ないように

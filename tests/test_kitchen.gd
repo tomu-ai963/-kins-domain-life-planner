@@ -351,9 +351,9 @@ func _test_places() -> void:
 	_check(c.is_at_stove(stove + Vector2(-0.65, 0)), "ストーブの西に立つと前にいる")
 	_check(c.is_at_stove(stove + Vector2(0, 0.65)), "ストーブの南に立つと前にいる")
 	_check(not c.is_at_stove(SITE) and not c.is_at_bed(SITE), "部屋の真ん中はどちらでもない(苗づくり)")
-	_check(not c.is_at_stove(SITE + Vector2(1.6, 0.4)), "東の窓辺はストーブの前ではない(苗づくり)")
-	_check(c.is_at_bed(bed + Vector2(0, 0.73)), "ベッドの南に立つとそばにいる")
-	_check(not c.is_at_bed(SITE + Vector2(-1.2, 0.8)) and not c.is_at_stove(stove + Vector2(0, -3)), "テーブルや外は違う")
+	_check(not c.is_at_stove(SITE + Vector2(2.4, 0.2)), "東の窓辺はストーブの前ではない(苗づくり)")
+	_check(c.is_at_bed(bed + Vector2(Cabin.BED_SIZE.x * 0.5 + 0.35, 0)), "ベッドの足元(東)に立つとそばにいる")
+	_check(not c.is_at_bed(SITE + Vector2(1.3, 0.6)) and not c.is_at_stove(SITE + Vector2(1.3, 0.6)) and not c.is_at_stove(stove + Vector2(0, -3)), "テーブルや外は違う")
 	c.stage = 1
 	_check(not c.is_at_stove(stove) and not c.is_at_bed(bed), "完成前は使えない")
 
