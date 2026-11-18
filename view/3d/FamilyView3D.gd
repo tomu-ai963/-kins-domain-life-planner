@@ -8,6 +8,8 @@ extends Node3D
 #   寝る時刻(Family.BEDTIME。子どもが先): テントなら自分の寝袋、小屋ならベッド(配偶者は大きいベッドの北の半分、子どもは 2 段ベッドなど)で横になる。
 #     目を閉じ、掛け布団がかかる。寝ている人は踏めない(小屋はベッドの当たり判定、テントは寝袋の上に当たり判定)。WAKE_HOUR に起きて、明るくなったら出てくる
 #   小屋が完成していれば、昼もときどき戸口から小屋に入り、配偶者はストーブの前、子どもはテーブルのあたりでしばらく過ごす(2026-11-16 とむ)
+# 誘われたとき(2026-11-18。Main の話す画面から): 収穫はうしろをついてきて、自分が収穫すると近くの区画を採りに行く。
+#   料理は配偶者がストーブの前で待ち、仕込むと鍋をかき混ぜる。夕食は家族がテーブルの席(西の腰掛け・北の長椅子)に座り、自分が食べると一緒に食べる
 # テントは歩いて入れる大きさで、南の入口だけ当たり判定を空ける。プレイヤーが中に入ると、小屋と同じく布を影だけにして中を見せる。
 # 中には寝袋(西から プレイヤー・家族の順)とランタン。プレイヤーは自分の寝袋のそばで H を押すと休める(Main)
 # 体は PlayerFigure3D を色違いで使う。子どもは年齢に合わせて小さい。
@@ -53,7 +55,14 @@ const VISIT_CHANCE := 0.2         # 昼に次の行き先を決めるとき、�
 const INDOOR_SECONDS := [20.0, 40.0]  # 小屋の中で過ごす時間(秒)
 # 小屋の中で立つ場所(小屋の中心から)と、向く先。配偶者はストーブの前、子どもはテーブルのまわり(昼に入ったときと、暗くなってから寝るまで)
 const INDOOR_SPOUSE := [Vector2(2.1, -0.6), Vector2(2.4, -1.45)]
-const INDOOR_CHILDREN := [[Vector2(0.5, 1.2), Vector2(1.3, 1.2)], [Vector2(1.3, 0.55), Vector2(1.3, 1.2)], [Vector2(0.55, 0.5), Vector2(1.3, 1.2)]]
+const INDOOR_CHILDREN := [[Vector2(0.6, 1.65), Vector2(1.3, 1.2)], [Vector2(0.3, 0.05), Vector2(1.3, 1.2)], [Vector2(0.9, 0.05), Vector2(1.3, 1.2)]]
+# 一緒にする作業(2026-11-18)
+const INVITE_SECONDS := 600.0     # 誘ってから一緒にしてくれる長さ(秒。10 分)
+const FOLLOW_DIST := 2.2          # 一緒に収穫するとき、プレイヤーからこれより離れるとついていく
+const FOLLOW_GAP := 1.3           # ついていって立つ、プレイヤーからの距離
+const COOK_AFTER := 6.0           # 鍋をかき混ぜたあと、ストーブの前にいる長さ(秒)
+const DINNER_AFTER := 15.0        # みんなで食べたあと、席を立つまで(秒)
+const BENCH_SEATS := [-0.35, 0.0, 0.35]  # 長椅子の席(長椅子の中心から東西に)
 const HELP_ACTIONS := {"water": "water", "weed": "pull"}  # 手伝いの種類 → 体の動き
 
 # 服の色(PlayerFigure3D の look)と、足す物
@@ -98,7 +107,7 @@ var clock = null           # logic/DayClock.gd(寝る時刻を見る。Main が 
 var hours_override := -1.0 # テスト用: 0 以上なら時計の代わりにこの時刻
 
 var _player: Node3D
-var _people := {}          # id → {figure, pos, route, state: walk/stand/inside, wait, solid, shape, tasks, action}
+var _people := {}          # id → {figure, pos, route, state: walk/stand/inside/sit, wait, solid, shape, tasks, action, invite, invite_t}
 var _tent: Node3D
 var _tent_body: StaticBody3D
 var _tent_at = null        # 今テントを建てている場所(動いたら建て直す)
@@ -340,10 +349,21 @@ func step(delta: float) -> void:
 
 func _step_person(p: Dictionary, delta: float) -> void:
 	var home = family.home_pos()
+	if p.get("invite", "") != "":
+		p.invite_t -= delta
+		if p.invite_t <= 0.0:
+			_end_invite(p)
 	match p.state:
 		"inside":
 			if home == null or not is_bedtime(p.id):
 				_wake(p, home)
+			return
+		"sit":  # 夕食の席に座っている
+			if p.get("busy", 0.0) > 0.0:  # 食べる動きが終わるまで
+				p.busy -= delta
+				return
+			if home == null or is_bedtime(p.id) or p.get("invite", "") != "dinner":
+				_get_up(p)
 			return
 		"walk":
 			_walk(p, delta)
@@ -356,21 +376,199 @@ func _step_person(p: Dictionary, delta: float) -> void:
 				p.busy -= delta
 				return
 			p.wait -= delta
+			var invite: String = p.get("invite", "")
 			if home != null and is_bedtime(p.id):
+				if invite != "":
+					_end_invite(p)
 				if p.get("indoor", false):
 					_go_inner(p, bed_approach(p.id), "bed")  # 家の中から、そのまま寝床へ
 				else:
 					_go(p, home, "home")
 			elif home != null and is_night():
-				if not p.get("indoor", false):
+				if invite == "harvest":  # 暗くなったら収穫はおしまい
+					_end_invite(p)
+				if invite == "dinner":
+					_go_seat(p)
+				elif not p.get("indoor", false):
 					_go(p, home, "home")
 				elif not p.get("settled", false) and p.wait <= 0.0:  # 起きたばかり: いつもの場所へ
 					var spot := indoor_spot(p.id)
 					p.look_at = spot[1]
 					_go_inner(p, spot[0], "indoor")
+			elif invite == "harvest":
+				_follow(p)
+			elif invite == "cook":
+				if p.get("indoor", false) and p.get("settled", false):
+					p.wait = maxf(p.wait, 1.0)  # ストーブの前で待つ
+				elif p.wait <= 0.0:
+					_go_indoor_spot(p)  # 話しかけられて止まったら、またストーブの前へ
 			elif p.wait <= 0.0:
 				_next_goal(p, home)
 	_place(p)
+
+# ── 一緒にする作業(2026-11-18) ───────────────────────────────
+# 誘われた(Main がロジックの Family.invite を済ませてから呼ぶ)。kind: harvest / cook
+func start_invite(id: String, kind: String) -> void:
+	if not _people.has(id):
+		return
+	var p: Dictionary = _people[id]
+	if p.state == "inside":
+		return
+	if p.state == "sit":
+		_get_up(p)
+	p.invite = kind
+	p.invite_t = INVITE_SECONDS
+	p.tasks = []  # 朝の手伝いの続きより、誘われたことを先に
+	match kind:
+		"harvest":
+			p.wait = 0.0
+			if p.state == "walk":
+				_stand(p)
+		"cook":  # ストーブの前へ
+			_go_indoor_spot(p)
+
+# 家の中のいつもの場所(配偶者はストーブの前)へ行く。外にいれば戸口から入る
+func _go_indoor_spot(p: Dictionary) -> void:
+	var spot := indoor_spot(p.id)
+	p.look_at = spot[1]
+	if p.get("indoor", false):
+		_go_inner(p, spot[0], "indoor")
+	elif family.home_pos() != null:
+		_go(p, family.home_pos(), "home" if is_night() else "enter")
+
+func invite_of(id: String) -> String:
+	return _people[id].get("invite", "") if _people.has(id) else ""
+
+func _end_invite(p: Dictionary) -> void:
+	var was: String = p.get("invite", "")
+	p.invite = ""
+	p.invite_t = 0.0
+	if was == "dinner" and p.state == "sit":
+		_get_up(p)
+
+# 一緒に収穫: プレイヤーのうしろをついていく。プレイヤーが小屋の中なら戸口の外で待つ。収穫できる区画がなくなったらおしまい
+func _follow(p: Dictionary) -> void:
+	if not family.any_ripe():
+		_end_invite(p)
+		return
+	if p.get("indoor", false):  # 家の中にいたら、まず出る
+		_next_goal(p, family.home_pos())
+		return
+	var pp: Vector2 = _player.ground_pos()
+	var target: Vector2 = family.home_pos() if family.cabin.is_inside(pp) and family.home_pos() != null else pp
+	if p.pos.distance_to(target) > FOLLOW_DIST:
+		if p.wait <= 0.0:
+			var spot = _free_near(target, FOLLOW_GAP)
+			if spot != null:
+				_go(p, spot, "follow")
+			p.wait = 0.5
+	else:
+		_face(p, pp - p.pos, 0.1)
+
+# 一緒に収穫している人(近い順)。プレイヤーが収穫したとき、この順に近くの区画を採る
+func harvest_helpers() -> Array:
+	var pp: Vector2 = _player.ground_pos()
+	var ids: Array = _people.keys().filter(func(id): return _people[id].get("invite", "") == "harvest" and _people[id].state != "inside")
+	ids.sort_custom(func(a, b): return _people[a].pos.distance_to(pp) < _people[b].pos.distance_to(pp))
+	return ids
+
+# その区画へ行って、採る動きをする(ロジックの収穫は Main が済ませている)
+func help_pick(id: String, plot: Vector2) -> void:
+	if not _people.has(id):
+		return
+	var p: Dictionary = _people[id]
+	var spot = _free_near(plot, 0.9)
+	p.action = "pick"
+	p.help_at = plot
+	_go(p, spot if spot != null else plot, "help")
+
+# 一緒に料理: 配偶者がストーブの前(小屋の中)で待っているか。その id。いなければ ""
+func cook_helper() -> String:
+	for id in _people:
+		var p: Dictionary = _people[id]
+		if p.get("invite", "") == "cook" and p.state == "stand" and p.get("indoor", false) and family.cabin.is_inside(p.pos):
+			return id
+	return ""
+
+# 仕込んだ: 鍋をかき混ぜる(石臼を回すのと同じ、取っ手を回す動き)。少しして、いつもの暮らしに戻る
+func cook_with(id: String) -> void:
+	if not _people.has(id):
+		return
+	var p: Dictionary = _people[id]
+	_face_now(p, family.cabin.site + family.cabin.STOVE_OFFSET - p.pos)
+	_play(p, "grind")
+	p.invite_t = minf(p.invite_t, COOK_AFTER)
+
+# 夕食の席: 配偶者は西の腰掛け、子どもは北の長椅子(上の子から西に)。[座る場所, そばの床, 向く先](世界の座標)
+func seat_of(id: String) -> Array:
+	var c = family.cabin
+	var table: Vector2 = c.site + c.TABLE_OFFSET
+	var m: Dictionary = family.member(id)
+	if m.role == "spouse":
+		var stool: Vector2 = c.site + c.SIDE_STOOL_OFFSET
+		return [stool, stool + Vector2(-0.35, 0), table]
+	var i: int = maxi(0, family.children().find(m)) % BENCH_SEATS.size()
+	var seat: Vector2 = c.site + c.BENCH_OFFSET + Vector2(BENCH_SEATS[i], 0)
+	return [seat, seat + Vector2(0, -0.4), seat + Vector2(0, 1.0)]
+
+# みんなで夕食: 起きている家族が席へ行って座る
+func start_dinner() -> void:
+	if not family.cabin.is_complete():
+		return
+	for id in _people:
+		var p: Dictionary = _people[id]
+		if p.state == "inside" or is_bedtime(id):
+			continue
+		p.invite = "dinner"
+		p.invite_t = INVITE_SECONDS
+		p.tasks = []
+		_go_seat(p)
+
+func _go_seat(p: Dictionary) -> void:
+	if p.state == "sit" or (p.state == "walk" and p.get("purpose", "") == "seat"):
+		return
+	_go_inner(p, seat_of(p.id)[1], "seat")
+
+func _sit(p: Dictionary) -> void:
+	var seat: Array = seat_of(p.id)
+	var s: float = float(p.get("scale", 1.0))
+	p.indoor = true
+	p.settled = false
+	p.pos = seat[0]
+	p.state = "sit"
+	p.figure.moving = false
+	p.figure.sitting = true
+	var dir: Vector2 = seat[2] - seat[0]
+	p.figure.rotation = Vector3(0, atan2(-dir.x, -dir.y), 0)
+	p.figure.position = Vector3(seat[0].x, CABIN_FLOOR_Y + family.cabin.SEAT_H - PlayerFigure.HIP_Y * s, seat[0].y)
+	p.solid.position = Vector3(seat[0].x, CABIN_FLOOR_Y, seat[0].y)
+	p.shape.disabled = false
+
+# 席を立つ(席のそばの床に立つ)
+func _get_up(p: Dictionary) -> void:
+	p.figure.sitting = false
+	p.pos = seat_of(p.id)[1]
+	p.state = "stand"
+	p.busy = 0.0
+	p.settled = false
+	if p.get("invite", "") == "dinner":
+		p.invite = ""
+	p.wait = _rng.randf_range(1.0, 3.0)
+	p.figure.position = Vector3(p.pos.x, _floor_at(p.pos), p.pos.y)
+	_stand(p)
+
+func dinner_seated() -> bool:
+	return _people.values().any(func(p): return p.state == "sit")
+
+func seated_ids() -> Array:
+	return _people.keys().filter(func(id): return _people[id].state == "sit")
+
+# みんなで食べた: 座っている家族も食べる動きをして、少しして席を立つ
+func dinner_eat() -> void:
+	for id in seated_ids():
+		var p: Dictionary = _people[id]
+		_play(p, "eat")
+		p.invite_t = minf(p.invite_t, DINNER_AFTER)
 
 # 起きる: 寝床のそば(家の中)に立つ。明るければ、そのあと戸口から出ていく
 func _wake(p: Dictionary, home) -> void:
@@ -578,8 +776,16 @@ func _reached(p: Dictionary) -> void:
 			if p.action != "":
 				_play(p, p.action)
 			p.action = ""
+		"seat":
+			if p.get("invite", "") == "dinner" and not is_bedtime(p.id):
+				_sit(p)
+				return
+		"follow":
+			_stand(p)
+			p.wait = 0.3
+			return
 	_stand(p)
-	p.wait = _rng.randf_range(STAND_SECONDS[0], STAND_SECONDS[1])
+	p.wait = 0.5 if p.get("invite", "") == "harvest" else _rng.randf_range(STAND_SECONDS[0], STAND_SECONDS[1])
 
 # 寝る: 小屋が完成していればベッド、テントなら自分の寝袋(どちらも屋根・布の下なので、外からは見えない)。
 # 目を閉じて、掛け布団がかかる。どちらもなければ見えなくする
@@ -668,7 +874,7 @@ func _avoid_points(id: String) -> Array:
 	return list
 
 func _place(p: Dictionary) -> void:
-	if p.state == "inside":
+	if p.state == "inside" or p.state == "sit":
 		return  # 寝袋か布団で横になっている(_lie_down が置いた場所のまま)
 	p.figure.position = Vector3(p.pos.x, _floor_at(p.pos), p.pos.y)
 

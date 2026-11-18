@@ -33,6 +33,13 @@ const BED_SIZE := Vector2(1.9, 1.15)
 const BED_REACH := 0.5    # ベッドの縁からこの距離までなら使える(部屋の真ん中は苗づくりに残す)
 const STOOL_OFFSET := Vector2(2.05, 1.2)  # テーブルの東の腰掛け
 const STOOL_REACH := 0.55 # 腰掛けの中心からこの距離までなら座れる(部屋の真ん中は苗づくりに残す)
+# 家族が座る席(2026-11-18。みんなで夕食): テーブルの北に長椅子(子ども 3 人)、西に腰掛け(配偶者)
+const TABLE_OFFSET := Vector2(1.3, 1.2)
+const TABLE_SIZE := Vector2(0.95, 0.7)
+const BENCH_OFFSET := Vector2(1.3, 0.6)
+const BENCH_SIZE := Vector2(1.1, 0.3)
+const SIDE_STOOL_OFFSET := Vector2(0.5, 1.2)
+const SEAT_H := 0.45      # 腰掛けと長椅子の座面の高さ(m)
 # 東の庭(小屋の外)。薪割り台と、壁際に積んだ薪の山を置く
 const CHOP_OFFSET := Vector2(4.4, 0.9)
 const CHOP_REACH := 1.4   # 薪割り台の中心からこの距離までなら割れる

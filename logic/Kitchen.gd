@@ -31,6 +31,7 @@ const MEAL_SPEED := 1.15     # 力がつく: 歩く速さの倍率
 const MEAL_POINTS := 1       # 甘い: 親しくなるたびに足す点
 const MEAL_HARVEST := 1.2    # 漬物: 畑と果樹の収穫の倍率
 const MEAL_SPLIT := 2        # 温まる: 1 回で割れる量の倍率(丸太 1 本からできる薪の量は変わらない)
+const COOK_HELP_RATE := 0.2  # 配偶者と一緒に仕込んだ鍋の増える割合(少なくとも 1 つ。2026-11-18 とむ決定「少し得」)
 const MEAL_SHOVEL_SPEED := 0.8  # 温まる: 雪かきしながら歩く速さの倍率(ふだんは Snow.SHOVEL_SPEED)
 
 # input: 材料 / amount: 1 回に使う量(リンゴは個、野菜は kg) / output: できる数 / days: できるまでの暦の日数 / meal: 食べたときの効果の系統
@@ -175,8 +176,8 @@ func is_ready() -> bool:
 func ready_tomorrow() -> bool:
 	return not pot.is_empty() and days_left() <= 1
 
-# 仕込む。結果: started / unknown / busy / no_input / no_wood
-func start(id: String) -> String:
+# 仕込む。結果: started / unknown / busy / no_input / no_wood。helped なら配偶者が一緒に仕込んだ(できる数が増える)
+func start(id: String, helped := false) -> String:
 	if not RECIPES.has(id):
 		return "unknown"
 	if not pot.is_empty():
@@ -190,6 +191,8 @@ func start(id: String) -> String:
 	cooked = true
 	_pile(r.input)[_key(r.input)] -= int(r.amount)
 	pot = {"recipe": id, "start_day": forest.day_number()}
+	if helped:
+		pot["helped"] = true
 	_commit()
 	return "started"
 
@@ -275,16 +278,25 @@ func collect() -> String:
 		return "cooking"
 	var id: String = pot.recipe
 	var n: int = int(RECIPES[id].output)
+	var extra: int = help_extra(id) if pot.get("helped", false) else 0
+	n += extra
 	stock[id] += n
-	last_collected = {"recipe": id, "count": n}
+	last_collected = {"recipe": id, "count": n, "extra": extra}
 	pot = {}
 	_commit()
 	return "collected"
 
+# 配偶者と一緒に仕込んだときに増える数
+static func help_extra(id: String) -> int:
+	return maxi(1, roundi(int(RECIPES[id].output) * COOK_HELP_RATE))
+
 static func _read_pot(p) -> Dictionary:
 	var d := SaveRead.dict(p)
 	if RECIPES.has(SaveRead.text(d, "recipe")):
-		return {"recipe": d.recipe, "start_day": SaveRead.whole(d, "start_day")}
+		var out := {"recipe": d.recipe, "start_day": SaveRead.whole(d, "start_day")}
+		if SaveRead.flag(d, "helped", false):
+			out["helped"] = true
+		return out
 	return {}
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────

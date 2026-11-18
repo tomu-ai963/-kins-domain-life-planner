@@ -25,8 +25,8 @@ const ROOM_LIGHT_ENERGY := 1.1
 const DOOR_OPEN_NEAR := 2.2       # ドアからこの距離まで来ると開く(m)
 const DOOR_OPEN_ANGLE := -1.8     # 開いたときの角度(南へ外開き)
 const DOOR_SPEED := 4.0           # 開け閉めの速さ
-const TABLE_POS := Vector2(1.3, 1.2)   # 南東(2026-11-18 に小屋を広げて、西側は寝る場所に)
-const TABLE_SIZE := Vector2(0.95, 0.7)
+const TABLE_POS := Cabin.TABLE_OFFSET   # 南東(2026-11-18 に小屋を広げて、西側は寝る場所に)
+const TABLE_SIZE := Cabin.TABLE_SIZE
 const STOOL_H := 0.45             # 腰掛けの高さ(m)
 const SIT_YAW := PI * 0.5         # 腰掛けに座る向き(西のテーブルのほう)
 const STOVE_H := 0.85             # ストーブの高さ(m)
@@ -392,6 +392,14 @@ func _interior(spot: Node3D) -> void:
 			var leg: Vector2 = TABLE_POS + Vector2(sx * (TABLE_SIZE.x * 0.5 - 0.07), sz * (TABLE_SIZE.y * 0.5 - 0.07))
 			_piece(room, _sill, Vector3(leg.x, 0.35, leg.y), Vector3(0.06, 0.7, 0.06))
 	_piece(room, _sill, Vector3(Cabin.STOOL_OFFSET.x, STOOL_H * 0.5, Cabin.STOOL_OFFSET.y), Vector3(0.3, STOOL_H, 0.3)).name = "Stool"
+	# 家族の席(2026-11-18): 西の腰掛けと北の長椅子(座面と脚)
+	var side_stool: Vector2 = Cabin.SIDE_STOOL_OFFSET
+	_piece(room, _sill, Vector3(side_stool.x, STOOL_H * 0.5, side_stool.y), Vector3(0.3, STOOL_H, 0.3)).name = "SideSeat"
+	var bench: Vector2 = Cabin.BENCH_OFFSET
+	var bs: Vector2 = Cabin.BENCH_SIZE
+	_piece(room, _rafter, Vector3(bench.x, Cabin.SEAT_H - 0.025, bench.y), Vector3(bs.x, 0.05, bs.y)).name = "Bench"
+	for sx in [-1.0, 1.0]:
+		_piece(room, _sill, Vector3(bench.x + sx * (bs.x * 0.5 - 0.08), (Cabin.SEAT_H - 0.05) * 0.5, bench.y), Vector3(0.06, Cabin.SEAT_H - 0.05, bs.y - 0.04))
 	_food_on_table(room)
 	# 敷物(ドアを入ったところ)
 	room.add_child(Look.strip(Vector2(-0.25, 1.1), Vector2(0.25, 1.1), 1.0, 0.01, _rug))
@@ -614,6 +622,7 @@ func _collider(spot: Node3D) -> void:
 		_collider_box(body, Vector3(Cabin.BED_OFFSET.x, 0, Cabin.BED_OFFSET.y), Cabin.BED_SIZE)
 		_collider_box(body, Vector3(Cabin.STOVE_OFFSET.x, 0, Cabin.STOVE_OFFSET.y), Cabin.STOVE_SIZE)
 		_collider_box(body, Vector3(TABLE_POS.x, 0, TABLE_POS.y), TABLE_SIZE)
+		_collider_box(body, Vector3(Cabin.BENCH_OFFSET.x, 0, Cabin.BENCH_OFFSET.y), Cabin.BENCH_SIZE)  # 長椅子(腰掛けはドアの通り道に近いので付けない)
 	spot.add_child(body)
 
 # 床から壁の上までの箱の判定。size は 東西 × 南北(m)

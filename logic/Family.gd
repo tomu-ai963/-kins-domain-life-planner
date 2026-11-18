@@ -13,6 +13,10 @@ extends RefCounted
 #   配偶者: 水のいる区画か木に WATER_HELP か所まで水をやる(井戸・池・川のどれかで汲めるときだけ。雨の日は要らない)
 #   子ども: HELP_AGE 歳から、雑草の生えた区画を 1 つ抜く(WEED_MORE_AGE 歳から 2 つ)
 # 話しかける(C)と、その日はじめてのときに GIFT_CHANCE で贈り物をくれる(配偶者は料理、子どもは拾った木の種)。
+# 話す画面から「一緒に○○しよう」と誘える(2026-11-18 とむ決定。人ごと・作業ごとに 1 日 1 回。得は少しだけ):
+#   収穫(配偶者と HELP_AGE 歳からの子ども): ついてきて、自分が区画を収穫すると近くの区画をもう 1 つ採る
+#   料理(配偶者・小屋ができてから): ストーブの前で待ち、仕込むと横でかき混ぜて、できる数が 2 割増える(Kitchen.COOK_HELP_RATE)
+#   夕食(小屋ができてから・暗くなってから寝るまで): 家族がテーブルに座り、自分が食べると「みんなで食べた」。翌朝の手伝いが増える
 # 子どもは AGE_DAYS 日で 1 歳育ち、ADULT_AGE で止まる(木は 1 日 1 年だが、人は一月で 1 歳にした。仮の数字)。
 # 文言は Main、姿と歩く道は view/3d/FamilyView3D.gd が決める
 const SaveRead = preload("res://logic/SaveRead.gd")
@@ -53,6 +57,10 @@ const SPOUSE_GIFTS := {       # 配偶者の贈り物(季節の料理。品と�
 	"winter": {"item": "sbiten", "count": 2},
 }
 const CHILD_GIFT_SEEDS := 2   # 子どもが拾ってくる木の種の数
+const INVITE_KINDS := ["harvest", "cook", "dinner"]  # 誘える作業
+const HARVEST_REACH := 4.0    # 一緒に収穫するとき、家族が採る区画の範囲(自分の足元から m)
+const DINNER_WATER_HELP := 5  # みんなで夕食を食べた翌朝、配偶者が水をやる数(ふだんは WATER_HELP)
+const DINNER_WEED_MORE := 1   # みんなで夕食を食べた翌朝、子どもが余分に抜く区画
 # テント(2026-11-16 とむ: 歩いて入れて、中で休める)。人が立てる大きさ。入口は南の真ん中
 const TENT_SIZE := Vector2(3.2, 3.6)   # 東西 × 南北(m)
 const TENT_DOOR := 1.0                 # 入口の幅(m)
@@ -83,6 +91,8 @@ var chosen := false      # 家族を決めたか(決める前は誰もいない)
 var members := []        # [{id, name, sex, relation, role: spouse/child, age(はじめの年齢), joined_day}]
 var tent = null          # テントの中心 Vector2(小屋が完成するまで)。まだなければ null
 var talked := {}         # 人ごとに、最後に話しかけた日の通し番号
+var invited := {}        # "人の id:作業" → 誘った日の通し番号(1 日 1 回。夕食はみんなで 1 回なので "all:dinner")
+var dined_day := -1      # みんなで夕食を食べた日の通し番号(翌朝の手伝いが増える)
 var helped_day := -1     # 最後に手伝った日
 var last_help := []      # 今朝の手伝い [{who, kind: water/weed, pos}](文言と姿の動き用。保存しない)
 var last_gift := {}      # 直前にもらった贈り物 {who, type, item/species, count}(文言用)
@@ -198,20 +208,21 @@ func help_today() -> bool:
 		return false
 	helped_day = today
 	var s := spouse()
+	var dined: bool = dined_day == today - 1  # ゆうべ、みんなで夕食を食べた
 	if not s.is_empty() and (not can_draw_water.is_valid() or can_draw_water.call()):
-		_water_help(s.id)
+		_water_help(s.id, DINNER_WATER_HELP if dined else WATER_HELP)
 	for c in children():
 		var age := age_of(c)
 		if age >= HELP_AGE:
-			_weed_help(c.id, 2 if age >= WEED_MORE_AGE else 1)
+			_weed_help(c.id, (2 if age >= WEED_MORE_AGE else 1) + (DINNER_WEED_MORE if dined else 0))
 	dirty.emit()
 	if not last_help.is_empty():
 		changed.emit()
 	return not last_help.is_empty()
 
-# 水のいる区画を先に、次に木へ、合わせて WATER_HELP か所まで
-func _water_help(who: String) -> void:
-	var left := WATER_HELP
+# 水のいる区画を先に、次に木へ、合わせて count か所まで
+func _water_help(who: String, count: int) -> void:
+	var left := count
 	for c in garden.crops:
 		if left <= 0:
 			return
@@ -269,6 +280,66 @@ func talk(id: String) -> String:
 
 func talked_today(id: String) -> bool:
 	return int(talked.get(id, -1)) == day_number()
+
+# ── 一緒にする作業(2026-11-18) ───────────────────────────────
+# 誘えない理由。誘えるなら ""。unknown / young(小さい子は収穫できない) / spouse_only / no_cabin / done_today(今日はもう誘った)
+# 時刻(収穫は明るいうち、夕食は暗くなってから)は姿の view が知っているので、Main が見る
+func invite_problem(id: String, kind: String) -> String:
+	var m := member(id)
+	if m.is_empty() or not kind in INVITE_KINDS:
+		return "unknown"
+	match kind:
+		"harvest":
+			if m.role == "child" and age_of(m) < HELP_AGE:
+				return "young"
+		"cook":
+			if m.role != "spouse":
+				return "spouse_only"
+			if not cabin.is_complete():
+				return "no_cabin"
+		"dinner":
+			if not cabin.is_complete():
+				return "no_cabin"
+	return "done_today" if invited_today(id, kind) else ""
+
+func invited_today(id: String, kind: String) -> bool:
+	return int(invited.get(_invite_key(id, kind), -1)) == day_number()
+
+static func _invite_key(id: String, kind: String) -> String:
+	return ("all" if kind == "dinner" else id) + ":" + kind
+
+# 誘う。結果: invited か、invite_problem の理由
+func invite(id: String, kind: String) -> String:
+	var problem := invite_problem(id, kind)
+	if problem != "":
+		return problem
+	invited[_invite_key(id, kind)] = day_number()
+	dirty.emit()
+	return "invited"
+
+# pos から reach 以内で、いちばん近い収穫できる区画(exclude の区画は除く)。なければ null
+func ripe_near(pos: Vector2, reach: float, exclude: Array = []):
+	var best = null
+	var best_d := reach
+	for c in garden.crops:
+		if c.pos in exclude or not garden.is_ripe(c):
+			continue
+		var d: float = pos.distance_to(c.pos)
+		if d <= best_d:
+			best_d = d
+			best = c.pos
+	return best
+
+func any_ripe() -> bool:
+	return garden.crops.any(func(c): return garden.is_ripe(c))
+
+# みんなで夕食を食べた(翌朝の手伝いが増える)
+func dine_together() -> void:
+	dined_day = day_number()
+	dirty.emit()
+
+func dined_today() -> bool:
+	return dined_day == day_number()
 
 # 贈り物をくれる日か(日付と人で決まる。開き直しても変わらない)
 static func _gift_roll(id: String, day: int) -> bool:
@@ -458,7 +529,12 @@ func bed_of(id: String) -> Dictionary:
 
 # ── セーブ用(ファイルの読み書きは GameWorld) ───────────────────────
 func to_save() -> Dictionary:
-	var d := {"chosen": chosen, "members": members, "talked": talked, "helped_day": helped_day}
+	var today := day_number()
+	var keep := {}
+	for k in invited:  # 今日の分だけ残す
+		if int(invited[k]) == today:
+			keep[k] = invited[k]
+	var d := {"chosen": chosen, "members": members, "talked": talked, "helped_day": helped_day, "invited": keep, "dined_day": dined_day}
 	if tent != null:
 		d["tent"] = [tent.x, tent.y]
 	return d
@@ -494,6 +570,11 @@ func from_save(d: Dictionary) -> void:
 		if known.has(id):
 			talked[id] = SaveRead.whole(t, id, -1)
 	helped_day = SaveRead.whole(d, "helped_day", -1)
+	invited = {}
+	var inv := SaveRead.dict(d.get("invited"))
+	for k in inv:
+		invited[str(k)] = SaveRead.whole(inv, k, -1)
+	dined_day = SaveRead.whole(d, "dined_day", -1)
 	tent = SaveRead.pair(d.get("tent"))
 	last_help = []
 	last_gift = {}

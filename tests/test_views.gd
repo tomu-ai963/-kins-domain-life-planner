@@ -1857,6 +1857,7 @@ func _test_table_view() -> void:
 	player.global_position = Vector3(stool.x + 0.3, 0, stool.y)
 	view._process(0.0)  # 中に入った
 	_check(_room_pieces(view, "Stool").size() == 1, "腰掛けが見える")
+	_check(_room_pieces(view, "Bench").size() == 1 and _room_pieces(view, "SideSeat").size() == 1, "家族の席(北の長椅子と西の腰掛け)もある")
 	_check(main.furniture_line().contains("腰掛け"), "そばで案内が出る")
 	figure._process(10.0)
 	press.call(KEY_H)
@@ -3471,14 +3472,20 @@ func _test_family_view() -> void:
 	_check(main.family_near() == "alyona", "近くの家族に話せる")
 	_check(main.people_line() == "アリョーナ(妻)(C で話す)", "左上に「C で話す」")
 	press.call(KEY_C)
-	_check(hud._message.begins_with("アリョーナ「"), "C で話しかけると、言葉が出る(%s)" % hud._message.left(30))
+	_check(hud.is_shop_open() and main._panel == "family" and main.shop_title() == "アリョーナ(妻)" and main.shop_header().begins_with("「"), "C で話しかけると、話す画面に言葉が出る(%s)" % main.shop_header().left(30))
+	_check(not player.is_physics_processing(), "話しているあいだは歩かない")
+	var talk_ids: Array = main.shop_rows().map(func(r): return r.id)
+	_check(talk_ids == ["invite_harvest", "close"], "テントのころは「一緒に収穫しよう」と「またね」(料理と夕食は小屋ができてから): %s" % str(talk_ids))
 	_check(f.talked_today("alyona") and view.figure_of("alyona").current_action() == "wave", "話しかけると手を振る")
 	_check(view.state_of("alyona") == "stand", "話しているあいだは立ち止まる")
+	press.call(KEY_C)
+	_check(not hud.is_shop_open() and player.is_physics_processing(), "もう一度 C で閉じる")
 	for _i in range(20):
 		view.step(0.1)
 	_check(view.state_of("alyona") == "stand", "少しのあいだは歩きださない")
 	press.call(KEY_C)
-	_check(not hud._message.contains("をもらった"), "同じ日の 2 回目は贈り物なし")
+	_check(not main.shop_header().contains("をもらった"), "同じ日の 2 回目は贈り物なし")
+	main._on_shop_action("close")
 	player.global_position = Vector3(30, 0, 30)
 	_check(main.family_near() == "" and main.people_line() == main.visitor_line(), "離れると話せない")
 	# 朝の手伝いの動き
@@ -3631,6 +3638,145 @@ func _test_family_collision() -> void:
 	var front_side := Transform3D(Basis.IDENTITY, Vector3(t.x + 1.2, 0, t.y + 3.0))
 	_check(player.test_move(front_side, Vector3(0, 0, -3.0)), "入口の横の布は通り抜けられない")
 
+# 家族と一緒にする作業(2026-11-18 とむ決定: 収穫・料理・夕食。C で話す画面から誘う)
+func _test_family_together() -> void:
+	print("家族と一緒にする作業")
+	var w = main.world
+	var f = w.family
+	var g = w.garden
+	var k = w.kitchen
+	var view: Node3D = main.get_node("Family")
+	var player: CharacterBody3D = main.get_node("Player")
+	var hud = main.get_node("HUD")
+	var steps := func(cond: Callable) -> bool:
+		for _i in range(2000):
+			if cond.call():
+				return true
+			view.step(0.1)
+		return cond.call()
+	# 昼、みんな外にいる
+	view.set_night(0.0)
+	view.hours_override = 12.0
+	view.step(0.1)
+	for id in view.people_ids():
+		var p: Dictionary = view._people[id]
+		p.pos = Vector2(-8, -4) + Vector2(view.people_ids().find(id) * 1.2, 0)
+		p.indoor = false
+		p.tasks = []
+		view._stand(p)
+		p.wait = 1000.0  # 勝手に歩きださない
+	player.global_position = Vector3(-7.5, 0, -1.5)
+	# 話す画面: 小屋ができていれば 3 つの誘い。小さい子は夕食だけ
+	main._talk_family("alyona")
+	_check(main.shop_rows().map(func(r): return r.id) == ["invite_harvest", "invite_cook", "invite_dinner", "close"], "配偶者には 収穫・料理・夕食 を誘える")
+	main._on_shop_action("close")
+	main._talk_family("polya")
+	_check(main.shop_rows().map(func(r): return r.id) == ["invite_dinner", "close"], "3 歳の子は夕食だけ")
+	main._on_shop_action("close")
+	# 収穫: 実った区画がなければ断られる
+	main._talk_family("alyona")
+	main._on_shop_action("invite_harvest")
+	_check(not hud.is_shop_open() and hud._message.contains("まだないみたい") and not f.invited_today("alyona", "harvest"), "実った区画がなければ「まだないみたい」(誘ったことにならない)")
+	# 実った区画を 3 つ(3m おき)
+	var plots := [Vector2(-7.5, -1.5), Vector2(-4.5, -1.5), Vector2(-7.5, 1.5)]  # 区画の格子(3m おき)にそろえる
+	for q in plots:
+		g.crops.append({"pos": q, "kind": "radish", "sown_day": g.day_number(), "water_days": 0, "last_watered": "", "head": float(g.CROPS.radish.grow_days),
+			"weeded_day": g.day_number(), "weed_days": 0, "mulched": false, "bites": 0})
+	_check(plots.all(func(q): return g.is_ripe(g.crop_at(q))), "区画が実っている")
+	# 暗いと断られる
+	view.set_night(1.0)
+	main._talk_family("alyona")
+	main._on_shop_action("invite_harvest")
+	_check(hud._message.contains("明日にしよう") and not f.invited_today("alyona", "harvest"), "暗いと「収穫は明日にしよう」")
+	view.set_night(0.0)
+	for id in view.people_ids():  # 暗くなって家へ向かいかけたのを戻す
+		var p: Dictionary = view._people[id]
+		p.pos = Vector2(-8, -4) + Vector2(view.people_ids().find(id) * 1.2, 0)
+		p.indoor = false
+		view._stand(p)
+		p.wait = 1000.0
+	main._talk_family("alyona")
+	main._on_shop_action("invite_harvest")
+	_check(f.invited_today("alyona", "harvest") and view.invite_of("alyona") == "harvest" and hud._message.contains("一緒に採ろう"), "配偶者を収穫に誘う: " + hud._message.left(40))
+	main._talk_family("vanya")
+	main._on_shop_action("invite_harvest")
+	_check(view.invite_of("vanya") == "harvest" and hud._message.contains("得意だよ"), "子どもも収穫に誘える")
+	main._talk_family("alyona")
+	_check(not main.shop_rows().any(func(r): return r.id == "invite_harvest"), "同じ日にもう一度は誘えない")
+	main._on_shop_action("close")
+	var follows: bool = steps.call(func(): return ["alyona", "vanya"].all(func(id): return view.person_pos(id).distance_to(main.player_pos()) <= view.FOLLOW_DIST + 0.3 and view.state_of(id) == "stand"))
+	_check(follows, "誘った 2 人がついてくる")
+	_check(view.state_of("masha") == "stand" and view.invite_of("masha") == "", "誘っていない人はついてこない")
+	# 自分が収穫すると、2 人が近くの区画を 1 つずつ採る
+	var radish_before: int = int(g.produce.radish)
+	main._harvest()
+	_check(plots.all(func(q): return g.crop_at(q).is_empty()), "1 回の収穫で 3 区画とも採れた")
+	_check(int(g.produce.radish) > radish_before and hud._message.contains("採ってくれた") and hud._message.contains("アリョーナ") and hud._message.contains("ワーニャ"), "家族が採った分も持ち物に入り、知らせが出る: " + hud._message.replace("\n", " ").left(80))
+	var picked: bool = steps.call(func(): return ["alyona", "vanya"].any(func(id): return view.figure_of(id).current_action() == "pick"))
+	_check(picked, "家族が区画へ行って採る動きをする")
+	var done: bool = steps.call(func(): return view.invite_of("alyona") == "" and view.invite_of("vanya") == "")
+	_check(done, "実った区画がなくなると、一緒の収穫はおしまい")
+	# 料理: 配偶者がストーブの前で待ち、仕込むと鍋をかき混ぜる。できる数が 2 割増える
+	main._talk_family("alyona")
+	main._on_shop_action("invite_cook")
+	_check(view.invite_of("alyona") == "cook" and hud._message.contains("ストーブの前で待ってる"), "配偶者を料理に誘う")
+	var at_stove: bool = steps.call(func(): return view.cook_helper() == "alyona")
+	_check(at_stove and view.person_pos("alyona").distance_to(view.indoor_spot("alyona")[0]) < 0.3, "配偶者が小屋に入って、ストーブの前で待つ")
+	k.active = 0
+	k.pots[0] = {}
+	k.firewood = 5
+	g.produce.tomato = 20
+	var sauce_before: int = int(k.stock.sauce)
+	main._kitchen_action("cook_sauce")
+	_check(k.pots[0].get("helped", false) and hud._message.contains("鍋をかき混ぜてくれた"), "一緒に仕込む: " + hud._message.replace("\n", " ").left(60))
+	_check(view.figure_of("alyona").current_action() == "grind", "配偶者が鍋をかき混ぜる動きをする")
+	k.pots[0].start_day = int(k.pots[0].start_day) - 1
+	main._kitchen_action("pot_collect")
+	_check(int(k.stock.sauce) == sauce_before + int(k.RECIPES.sauce.output) + 1 and hud._message.contains("一緒に作ったぶん +1瓶"), "できる数が増える: " + hud._message.left(60))
+	var cook_done: bool = steps.call(func(): return view.invite_of("alyona") == "")
+	_check(cook_done, "かき混ぜたあと、いつもの暮らしに戻る")
+	# 夕食: 昼は断られる。暗くなってから誘うと、家族が席に座る
+	main._talk_family("masha")
+	main._on_shop_action("invite_dinner")
+	_check(hud._message.contains("暗くなってから") and not f.invited_today("masha", "dinner"), "昼は「夕ごはんは暗くなってから」")
+	view.set_night(1.0)
+	view.hours_override = 19.0
+	main._talk_family("masha")
+	main._on_shop_action("invite_dinner")
+	_check(f.invited_today("polya", "dinner") and hud._message.contains("みんな、座って"), "暗くなってから誘うと、みんなに声をかける")
+	var seated: bool = steps.call(func(): return view.seated_ids().size() == 4)
+	_check(seated, "家族 4 人がテーブルの席に座る")
+	var al_seat: Array = view.seat_of("alyona")
+	_check(view.person_pos("alyona") == al_seat[0] and al_seat[0] == w.cabin.site + w.cabin.SIDE_STOOL_OFFSET and view.figure_of("alyona").sitting, "配偶者は西の腰掛けに座る")
+	var bench: Rect2 = Rect2(w.cabin.site + w.cabin.BENCH_OFFSET - w.cabin.BENCH_SIZE * 0.5, w.cabin.BENCH_SIZE)
+	_check(["vanya", "masha", "polya"].all(func(id): return bench.has_point(view.person_pos(id)) and absf(view.figure_of(id).position.y + view.PlayerFigure.HIP_Y * view.figure_of(id).scale.x - (view.CABIN_FLOOR_Y + w.cabin.SEAT_H)) < 0.01), "子どもは北の長椅子に並んで座る(腰が座面の高さ)")
+	_check(view.figure_of("masha").rotation.y == 0.0 or absf(absf(view.figure_of("masha").rotation.y) - PI) < 0.01, "長椅子からはテーブル(南)を向く")
+	# 自分が食べると、みんなで食べたことになる
+	for id in k.stock:
+		k.stock[id] = 0
+	k.stock.jam = 1
+	main._table_action("eat_jam")
+	_check(f.dined_today() and hud._message.contains("みんなで食べた"), "腰掛けで食べると、みんなで食べた: " + hud._message.replace("\n", " ").left(60))
+	_check(view.seated_ids().all(func(id): return view.figure_of(id).current_action() == "eat"), "座っている家族も食べる動きをする")
+	var stood: bool = steps.call(func(): return view.seated_ids().is_empty())
+	_check(stood and not view.figure_of("alyona").sitting, "食べ終わると席を立つ")
+	# 子どもは寝る時刻に席を立って寝に行く
+	main._talk_family("alyona")
+	_check(not main.shop_rows().any(func(r): return r.id == "invite_dinner"), "夕食は 1 日 1 回")
+	main._on_shop_action("close")
+	f.invited.erase("all:dinner")
+	view.start_dinner()
+	var seated2: bool = steps.call(func(): return view.seated_ids().size() == 4)
+	view.hours_override = 21.0
+	var kids_bed: bool = steps.call(func(): return ["vanya", "masha", "polya"].all(func(id): return view.state_of(id) == "inside"))
+	_check(seated2 and kids_bed and view.state_of("alyona") == "sit", "21 時: 子どもは席を立って寝に行き、配偶者はまだ座っている")
+	view.hours_override = 23.0
+	var all_bed: bool = steps.call(func(): return view.state_of("alyona") == "inside")
+	_check(all_bed and not view.figure_of("alyona").sitting, "配偶者も寝る時刻に寝る")
+	view.set_night(0.0)
+	view.hours_override = 12.0
+	view.step(0.1)
+
 # ── 自分の名前と性別(2026-11-16) ─────────────────────────────────
 func _test_profile_view() -> void:
 	print("自分の名前と性別")
@@ -3767,6 +3913,7 @@ func _test_cabin_family() -> void:
 	al.wait = 0.0
 	var slept: bool = steps.call(func(): return al.state == "inside")
 	_check(slept and view.figure_of("alyona").basis.y.normalized().is_equal_approx(Vector3(-1, 0, 0)), "小屋の中にいれば、寝る時刻にそのままベッドで寝る")
+	_test_family_together()
 	# 片付け(このあとのテストのため)
 	view.set_night(0.0)
 	view.hours_override = 12.0

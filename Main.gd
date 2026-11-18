@@ -107,7 +107,8 @@ const CROP_GROUP_NAMES := {"root": "根菜", "imo": "いも", "fruit": "実も�
 var _season_timer := 0.0
 var _fell_pending := {}      # Z を 1 回押して確認中の木(Forest.trees の要素)
 var _fell_deadline := 0.0    # いつまでにもう一度押せば伐れるか(秒)
-var _panel := "market"       # 右の画面に出しているもの: market(市場) / kitchen(ストーブ)
+var _panel := "market"       # 右の画面に出しているもの: market(市場) / kitchen(ストーブ) / family(家族と話す)
+var _family_talk := {}       # 話している家族 {id, text}(話す画面の見出しと行に使う)
 var _wildlife_timer := 0.0
 var _guide_timer := 0.0
 var _shovel_wait := 0.0
@@ -901,6 +902,12 @@ const FAMILY_CHILD := [
 const FAMILY_CHILD_TEEN := ["畑のことなら、もう任せてよ。", "いつか、この土地を守るのは自分だと思ってる。", "町の学校の話、聞く?
 でも、ここがいちばん落ち着く。"]
 const FAMILY_TEEN_AGE := 13
+# 話す画面に出す誘い(2026-11-18 とむ決定: 収穫・料理・夕食。得は少しだけ)
+const FAMILY_INVITES := {
+	"harvest": "一緒に収穫しよう(となりの区画も採ってくれる)",
+	"cook": "一緒に料理しよう(仕込むと 2 割多くできる)",
+	"dinner": "みんなで夕食にしよう(翌朝の手伝いが増える)",
+}
 const FAMILY_GIFT_SPOUSE := "{呼}%sを作ったよ。
 持っていって。"
 const FAMILY_GIFT_CHILD := "{親}%sを拾ったよ!
@@ -975,16 +982,84 @@ func _talk_family(id: String) -> void:
 	var m: Dictionary = f.member(id)
 	var result: String = f.talk(id)
 	$Family.greet(id)
-	var text := "%s「%s」" % [m.name, family_chat(id)]
+	var text := "「%s」" % family_chat(id)
 	if result == "gift":
 		var gift := family_gift_text(f.last_gift)
 		var said: String = with_call((FAMILY_GIFT_SPOUSE if m.role == "spouse" else FAMILY_GIFT_CHILD) % gift, m.role)
-		text = "%s「%s」
-(%sをもらった)" % [m.name, said, gift]
+		text = "「%s」\n(%sをもらった)" % [said, gift]
 		_sfx("coin")
 	else:
 		_sfx("open")
-	$HUD.show_message(text, 6.0)
+	# 話す画面: 言葉と、「一緒に○○しよう」の誘い(2026-11-18 とむ決定)
+	_family_talk = {"id": id, "text": text}
+	_panel = "family"
+	$Player.set_physics_process(false)
+	$HUD.open_shop()
+
+# 話す画面の行: そのときに誘える作業と「またね」
+func family_rows() -> Array:
+	var f := world.family
+	var id: String = _family_talk.get("id", "")
+	var rows := []
+	for kind in FAMILY_INVITES:
+		if f.invite_problem(id, kind) == "":
+			rows.append({"id": "invite_" + kind, "text": FAMILY_INVITES[kind], "column": 0})
+	rows.append({"id": "close", "text": "またね(C / Esc)", "column": 0})
+	return rows
+
+# 誘う。断られたとき(暗い・収穫できる区画がない)も、その人の言葉で知らせる
+func _family_action(action: String) -> void:
+	var f := world.family
+	var id: String = _family_talk.get("id", "")
+	var m: Dictionary = f.member(id)
+	var kind := action.trim_prefix("invite_")
+	if m.is_empty() or not FAMILY_INVITES.has(kind):
+		return
+	var line := ""
+	match kind:
+		"harvest":
+			if $Family.is_night():
+				line = "もう暗いから、収穫は明日にしよう。"
+			elif not f.any_ripe():
+				line = "収穫できる畑は、まだないみたい。\n実ったら呼んでね。"
+		"dinner":
+			if not $Family.is_night():
+				line = "夕ごはんは、暗くなってからにしよう。"
+	if line == "":
+		if f.invite(id, kind) != "invited":
+			return
+		match kind:
+			"harvest":
+				$Family.start_invite(id, "harvest")
+				line = "うん! 採るの得意だよ!" if m.role == "child" else "いいよ、一緒に採ろう。"
+				line += "\n(ついてきて、となりの区画を採ってくれる)"
+			"cook":
+				$Family.start_invite(id, "cook")
+				line = "いいね。ストーブの前で待ってるね。\n(ストーブかかまどで仕込むと、一緒に作ってくれる)"
+			"dinner":
+				$Family.start_dinner()
+				line = "ごはんにしよう。みんな、座って!\n(テーブルの東の腰掛けで H を押して食べる)"
+	_close_shop()
+	$HUD.show_message("%s「%s」" % [m.name, with_call(line, m.role)], 6.0)
+
+# 一緒に収穫している家族が、足元の近くの収穫できる区画を 1 人 1 つ採る(2026-11-18)。知らせの文言を返す
+func _family_harvest(done: Vector2, pos: Vector2) -> String:
+	if not has_node("Family"):
+		return ""
+	var g := world.garden
+	var taken := [done]
+	var parts := PackedStringArray()
+	for id in $Family.harvest_helpers():
+		var plot = world.family.ripe_near(pos, world.family.HARVEST_REACH, taken)
+		if plot == null:
+			break
+		var crop: Dictionary = g.crop_at(plot)
+		if g.harvest_at(plot) != "harvested":
+			continue
+		taken.append(plot)
+		$Family.help_pick(id, plot)
+		parts.append("%sが%sを%dkg" % [world.family.member(id).name, g.CROPS[crop.kind].name, g.last_harvest_kg])
+	return "" if parts.is_empty() else "\n%s採ってくれた" % "、".join(parts)
 
 # 朝の手伝いの知らせ(日記の 1 日のはじめに出す)
 func family_help_lines() -> PackedStringArray:
@@ -1549,13 +1624,19 @@ func _kitchen_action(id: String) -> void:
 		if k.collect() == "collected":
 			var made: Dictionary = k.last_collected
 			var r: Dictionary = k.RECIPES[made.recipe]
-			$HUD.show_message("%sが%d%sできた(%s)" % [r.name, made.count, r.unit, _preserve_price_text(made.recipe, r.unit)], 5.0)
+			var together: String = "。一緒に作ったぶん +%d%s" % [made.extra, r.unit] if int(made.get("extra", 0)) > 0 else ""
+			$HUD.show_message("%sが%d%sできた(%s%s)" % [r.name, made.count, r.unit, _preserve_price_text(made.recipe, r.unit), together], 5.0)
 	elif id.begins_with("cook_"):
 		var recipe := id.trim_prefix("cook_")
 		var r: Dictionary = k.RECIPES[recipe]
-		match k.start(recipe):
+		var helper: String = $Family.cook_helper() if has_node("Family") else ""
+		match k.start(recipe, helper != ""):
 			"started":
-				$HUD.show_message("%sを仕込んだ(%d日でできる・薪 -1回分)" % [r.name, r.days], 5.0)
+				var together := ""
+				if helper != "":
+					$Family.cook_with(helper)
+					together = "\n%sが横で鍋をかき混ぜてくれた(できる数 +%d%s)" % [world.family.member(helper).name, k.help_extra(recipe), r.unit]
+				$HUD.show_message("%sを仕込んだ(%d日でできる・薪 -1回分)%s" % [r.name, r.days, together], 5.0)
 			"busy":
 				$HUD.show_message("%sは使っている(受け取ってから次を仕込む)" % POT_NAMES[k.active])
 			"no_input":
@@ -1649,6 +1730,10 @@ func _table_action(id: String) -> void:
 				$Player.eat_motion()
 			var meal: Dictionary = k.MEALS[k.RECIPES[food].meal]
 			var note: String = "同じ「%s」の効果はもう効いている" % meal.name if was_active else "「%s」で今日は%s" % [meal.name, meal.short]
+			if has_node("Family") and $Family.dinner_seated():  # みんなで夕食(2026-11-18)
+				world.family.dine_together()
+				$Family.dinner_eat()
+				note += "\nみんなで食べた。明日の朝の手伝いが増える"
 			$HUD.show_message("%sを食べた。%s" % [k.RECIPES[food].name, note], 5.0)
 		"same":
 			$HUD.show_message("%sは今日もう食べた(同じものは1日1つまで)" % k.RECIPES[id.trim_prefix("eat_")].name)
@@ -2113,6 +2198,9 @@ func good_name(g: Dictionary) -> String:
 
 # 右の画面の見出し
 func shop_title() -> String:
+	if _panel == "family":
+		var m: Dictionary = world.family.member(_family_talk.get("id", ""))
+		return "%s(%s)" % [m.get("name", ""), m.get("relation", "")]
 	if _panel == "visitor":
 		var v := world.visitors
 		return "%s(%s)" % [v.CAST[v.who()].name, v.LEVEL_NAMES[v.level_of(v.who())]]
@@ -2126,6 +2214,8 @@ func shop_title() -> String:
 
 # 右の画面の 2 行目
 func shop_header() -> String:
+	if _panel == "family":
+		return _family_talk.get("text", "")
 	if _panel == "visitor":
 		return visitor_text()
 	if _panel == "chair":
@@ -2147,6 +2237,8 @@ func shop_rows() -> Array:
 		return table_rows()
 	if _panel == "visitor":
 		return visitor_rows()
+	if _panel == "family":
+		return family_rows()
 	if _panel == "chair":
 		return [{"id": "close", "text": "立つ(H / Esc)", "column": 0}]
 	var m := world.market
@@ -2283,6 +2375,10 @@ func _on_shop_action(id: String) -> void:
 		return
 	if _panel == "visitor":
 		_visitor_action(id)
+		return
+	if _panel == "family":
+		_sfx("click")
+		_family_action(id)
 		return
 	if id == "page_buy" or id == "page_sell":
 		_sfx("click")
@@ -2447,7 +2543,8 @@ func _harvest() -> void:
 			spoiled += "わら +%d束。" % g.last_straw
 		if g.last_meal_extra > 0:
 			spoiled += "漬物で +%dkg。" % g.last_meal_extra
-		$HUD.show_message("%sを%dkg収穫した(%s市場で1kg %d₽で売れる)" % [g.CROPS[kind].name, g.last_harvest_kg, spoiled, world.market.SELL_PRICES[kind]])
+		var text := "%sを%dkg収穫した(%s市場で1kg %d₽で売れる)" % [g.CROPS[kind].name, g.last_harvest_kg, spoiled, world.market.SELL_PRICES[kind]]
+		$HUD.show_message(text + _family_harvest(c.pos, pos))
 		return
 	if crop == "preview":
 		$HUD.show_message(HARVEST_MESSAGES.preview)
@@ -2698,7 +2795,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if $HUD.is_shop_open():
 		# 開いているあいだは閉じるキーだけ(選ぶのは画面のボタン)。市場は B、ストーブは H、訪問者は C でも閉じる
-		var close_key: int = {"kitchen": KEY_H, "table": KEY_H, "chair": KEY_H, "visitor": KEY_C}.get(_panel, KEY_B)
+		var close_key: int = {"kitchen": KEY_H, "table": KEY_H, "chair": KEY_H, "visitor": KEY_C, "family": KEY_C}.get(_panel, KEY_B)
 		if event.keycode == close_key or event.keycode == KEY_ESCAPE:
 			_close_shop()
 		return

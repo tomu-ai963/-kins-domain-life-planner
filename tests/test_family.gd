@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_save()
 	_test_picker()
 	_test_custom_rules()
+	_test_together()
 	_remove_save()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -315,6 +316,93 @@ func _test_tent() -> void:
 	_check(Family.is_bedtime("spouse", 3.0) and Family.is_bedtime("child", 5.9) and not Family.is_bedtime("child", 6.0), "朝 6 時に起きる")
 	_check(not Family.is_bedtime("child", 18.0), "暗くなってもすぐには寝ない(冬の 18 時)")
 	_check(w2.toggle_plot(Vector2(-19.5, -19.5)) == "placed", "テントがなければ区画を作れる")
+
+# 一緒にする作業(2026-11-18 とむ決定: 収穫・料理・夕食。1 日 1 回。少し得)
+func _ripe(w: GameWorld, pos: Vector2, kind := "radish") -> Dictionary:
+	var c := _crop(w, pos, kind)
+	c.head = float(w.garden.CROPS[kind].grow_days)  # もう実っている
+	return c
+
+func _test_together() -> void:
+	print("一緒にする作業")
+	var w := _world()
+	var f := w.family
+	f.choose("alyona", 3)  # ワーニャ 9・マーシャ 6・ポーリャ 3 歳
+	# 誘えるか
+	_check(f.invite_problem("alyona", "harvest") == "" and f.invite_problem("masha", "harvest") == "", "収穫は配偶者と 6 歳からの子どもを誘える")
+	_check(f.invite_problem("polya", "harvest") == "young", "3 歳の子は収穫に誘えない")
+	_check(f.invite_problem("alyona", "cook") == "no_cabin" and f.invite_problem("alyona", "dinner") == "no_cabin", "料理と夕食は小屋ができてから")
+	w.cabin.site = Vector2(20, 20)
+	w.cabin.stage = w.cabin.STAGES.size()
+	_check(f.invite_problem("alyona", "cook") == "" and f.invite_problem("vanya", "cook") == "spouse_only", "料理に誘えるのは配偶者")
+	_check(f.invite_problem("polya", "dinner") == "", "夕食は小さい子からも誘える")
+	_check(f.invite("alyona", "harvest") == "invited" and f.invited_today("alyona", "harvest"), "誘う")
+	_check(f.invite("alyona", "harvest") == "done_today" and f.invite_problem("vanya", "harvest") == "", "同じ人・同じ作業は 1 日 1 回(ほかの人は誘える)")
+	_check(f.invite("masha", "dinner") == "invited" and f.invite_problem("alyona", "dinner") == "done_today", "夕食はみんなで 1 日 1 回")
+	w.time.shift_days(1)
+	_check(f.invite_problem("alyona", "harvest") == "", "次の日はまた誘える")
+	_check(f.invite("nobody", "harvest") == "unknown" and f.invite("alyona", "nap") == "unknown", "知らない人・作業は誘えない")
+	# 近くの収穫できる区画
+	_check(not f.any_ripe() and f.ripe_near(Vector2(-10, -10), Family.HARVEST_REACH) == null, "実った区画がなければ何もない")
+	_crop(w, Vector2(-16.5, -10.5))
+	var a := _ripe(w, Vector2(-13.5, -10.5))
+	var b := _ripe(w, Vector2(-10.5, -10.5))
+	_ripe(w, Vector2(-1.5, -10.5))
+	_check(f.any_ripe(), "実った区画がある")
+	_check(f.ripe_near(Vector2(-13.5, -10.5), Family.HARVEST_REACH, [a.pos]) == b.pos, "自分が採った区画のほかで、近くの実った区画(育っている区画は採らない)")
+	_check(f.ripe_near(Vector2(-13.5, -10.5), Family.HARVEST_REACH, [a.pos, b.pos]) == null, "4m より遠い区画は採らない")
+	# 料理: 一緒に仕込むと 2 割多くできる(少なくとも 1 つ)
+	var k := w.kitchen
+	k.firewood = 5
+	w.garden.produce.tomato = 20
+	k.active = 0
+	_check(k.start("sauce", true) == "started" and k.pot.get("helped", false), "一緒に仕込んだ鍋")
+	k.pot.start_day = int(k.pot.start_day) - 1
+	var out: int = int(k.RECIPES.sauce.output)
+	_check(k.collect() == "collected" and k.last_collected.count == out + 1 and k.last_collected.extra == 1 and k.stock.sauce == out + 1, "トマトソース 5 瓶 → 6 瓶")
+	_check(k.help_extra("pirozhki") == 4 and k.help_extra("jam") == 1, "ピロシキ 20 個なら +4、ジャム 4 瓶なら +1(少なくとも 1)")
+	_check(k.start("sauce") == "started" and not k.pot.has("helped"), "ひとりで仕込むと増えない")
+	w.save_game()
+	var wk := GameWorld.new()
+	wk.save_path = TEST_SAVE
+	wk.time.offset_seconds = w.time.offset_seconds
+	wk.load_game()
+	k.pot = {}
+	# 夕食: みんなで食べた翌朝は手伝いが増える
+	var w2 := _world()
+	var f2 := w2.family
+	f2.choose("alyona", 2)  # ワーニャ 9・マーシャ 6
+	w2.time.shift_days(Family.AGE_DAYS * 2)  # ワーニャ 11 歳(2 区画)・マーシャ 8 歳(1 区画)
+	var dry := []
+	for i in range(8):
+		dry.append(Vector2(-19.5 + i * 3.0, -19.5))
+	for q in dry:
+		_crop(w2, q)
+	f2.help_today()
+	_check(f2.help_summary().alyona.water == Family.WATER_HELP, "ふだんの朝の水やりは %d か所" % Family.WATER_HELP)
+	f2.dine_together()
+	_check(f2.dined_today(), "みんなで食べた")
+	w2.time.shift_days(1)
+	for c in w2.garden.crops:
+		c.weed_days = 10  # みんな雑草が生えている
+		c.weeded_day = -100
+	f2.help_today()
+	var sum: Dictionary = f2.help_summary()
+	_check(sum.alyona.water == Family.DINNER_WATER_HELP, "みんなで夕食を食べた翌朝は、水やりが %d か所(%d)" % [Family.DINNER_WATER_HELP, sum.alyona.water])
+	_check(sum.vanya.weed == 3 and sum.masha.weed == 2, "子どもの草抜きも 1 区画ずつ増える(%d・%d)" % [sum.vanya.weed, sum.masha.weed])
+	w2.time.shift_days(1)
+	f2.help_today()
+	_check(f2.help_summary().alyona.water == Family.WATER_HELP, "その次の朝はふだんどおり")
+	# セーブ
+	f2.invite("alyona", "harvest")
+	f2.dine_together()
+	w2.save_game()
+	var w3 := GameWorld.new()
+	w3.save_path = TEST_SAVE
+	w3.time.offset_seconds = w2.time.offset_seconds
+	w3.load_game()
+	_check(w3.family.invited_today("alyona", "harvest") and w3.family.dined_today(), "誘った記録と夕食の記録は読み直しても残る(同じ日に 2 回は誘えない)")
+	_check(wk.kitchen.pots[0].get("helped", false) == false and wk.kitchen.pots[0].get("recipe", "") == "sauce", "鍋の記録も読み直せる")
 
 func _test_save() -> void:
 	print("セーブ")

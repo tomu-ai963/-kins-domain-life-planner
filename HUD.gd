@@ -303,7 +303,7 @@ func status_text() -> String:
 	var lines := _status_lines()
 	# 市場を開いているあいだは持ち物を自動で出す。ストーブの画面は行の中に持っている数が出るので、重ならないよう出さない
 	var in_kitchen: bool = is_shop_open() and (_main._panel == "kitchen" or _main._panel == "table")
-	var talking: bool = is_shop_open() and _main._panel == "visitor"  # 話しているときも、持っている数は行の中に出る
+	var talking: bool = is_shop_open() and (_main._panel == "visitor" or _main._panel == "family")  # 話しているときも、持っている数は行の中に出る
 	if (inventory_open or is_shop_open()) and not in_kitchen and not talking:
 		lines.append_array(_inventory_lines())
 	if help_open:
