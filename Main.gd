@@ -600,6 +600,60 @@ func _talk() -> void:
 	$HUD.open_shop()
 
 # HUD に出す、話せる人の 1 行: 訪問者と話せる距離ならその人、家族のそばなら家族、遠くに訪問者が来ていればその案内
+# 体のそばに出す、今ここでできること 1 つ(レビュー G6)。[キー(KEY_E など), 言葉]。なければ []
+# 左上の文字の行(people_line・furniture_line・plot_line など)と同じ判断で、上ほど優先する:
+# 話す → 家具 → 市場 → 足元の区画 → 果樹 → 石臼 → 水場 → 餌台 → ムクドリの巣箱 → 蜂の巣箱 → 剪定
+func near_action() -> Array:
+	var pos := player_pos()
+	if people_line().ends_with("(C で話す)"):
+		return [KEY_C, "話す"]
+	var c := world.cabin
+	if c.is_at_chop_block(pos):
+		return [KEY_H, "薪を割る"]
+	if c.is_at_stool(pos):
+		return [KEY_H, "食べる"]
+	if c.is_at_stove(pos):
+		return [KEY_H, "料理"]
+	if c.is_at_bed(pos) or world.family.is_at_bedroll(pos):
+		return [KEY_H, "日記"]
+	if world.market.is_near(pos):
+		return [KEY_B, "市場"]
+	var g := world.garden
+	if world.land.plot_at(pos) != null:
+		var crop: Dictionary = g.crop_at(pos)
+		if crop.is_empty():
+			return [KEY_SPACE, "まく"]
+		if g.is_spoiled(crop) or g.is_ripe(crop):
+			return [KEY_E, "収穫"]
+		if not g.watered_today(crop):
+			return [KEY_Q, "水やり"]
+		if g.has_weeds(crop):
+			return [KEY_E, "草取り"]
+		return []
+	var f := world.forest
+	var fruit: int = f.nearest_fruit_index(pos, REACH)
+	if fruit >= 0 and f.shows_fruit(f.trees[fruit]):
+		return [KEY_E, "収穫"]
+	if world.mill.is_near(pos) and world.mill.total_grain() > 0:
+		return [KEY_O, "挽く"]
+	var beside := pond_beside_line()
+	if beside.contains("Q でジョウロに汲む"):
+		return [KEY_Q, "汲む"]
+	if beside.contains("Q でポンプ"):
+		return [KEY_Q, "まとめて水やり"]
+	if feeder_line().contains("L で"):
+		return [KEY_L, "餌を置く"]
+	if nest_box_line().contains("L で"):
+		return [KEY_L, "巣箱を作る"]
+	var hive := hive_line()
+	if hive.contains("J でくり抜く"):
+		return [KEY_J, "くり抜く"]
+	if hive.contains("採れる(J)"):
+		return [KEY_J, "はちみつ"]
+	if prune_line().contains("X で"):
+		return [KEY_X, "剪定"]
+	return []
+
 func people_line() -> String:
 	var visitor := visitor_talk.visitor_line()
 	if visitor.ends_with("(C で話す)"):

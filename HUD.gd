@@ -42,6 +42,9 @@ var _message_label: Label
 var inventory_open := false  # Tab
 var help_open := false       # F1
 var text_hidden := false     # F2: 左上の文字とヒントを隠して眺める(レビュー G10。知らせは出る)
+var _action_panel: PanelContainer  # 体の上に出す、今ここでできること 1 つ(レビュー G6。Main.near_action)
+var _action_label: Label
+var _action_text := ""            # 札の文字(左上の文字と同じ間隔で作り直す。位置は毎フレーム体に合わせる)
 var touch_mode := false      # タッチ操作のとき(市場の画面のボタンを指で押せる大きさにする)
 var _status_timer := 0.0
 var _shop: PanelContainer
@@ -63,6 +66,7 @@ func setup(player: Node, trees: Forest, main: Node) -> void:
 	_trees = trees
 	_main = main
 	_build_message()
+	_build_action()
 	_build_shop()
 	_build_hint()
 	_build_diary()
@@ -125,6 +129,54 @@ func _build_message() -> void:
 	_message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_message_panel.add_child(_message_label)
 	add_child(_message_panel)
+
+# 体の上の小さな札: 今ここでできること 1 つ(「E 収穫」。タッチでは押すボタンの名前だけ)。
+# 左上の文字まで目を動かさなくても分かるように(レビュー G6)
+func _build_action() -> void:
+	_action_panel = PanelContainer.new()
+	_action_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_action_panel.visible = false
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.10, 0.08, 0.72)
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(4)
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	_action_panel.add_theme_stylebox_override("panel", style)
+	_action_label = Label.new()
+	_action_label.add_theme_font_size_override("font_size", 14)
+	_action_panel.add_child(_action_label)
+	add_child(_action_panel)
+
+# 札の文字(なければ "")
+func action_text() -> String:
+	var a: Array = _main.near_action()
+	if a.is_empty():
+		return ""
+	return a[1] if touch_mode else "%s %s" % [OS.get_keycode_string(a[0]).to_upper(), a[1]]
+
+func _update_action() -> void:
+	var show: bool = _action_text != "" and not text_hidden and not is_shop_open() and not is_diary_open() and not is_picker_open()
+	var at = _action_anchor() if show else null
+	_action_panel.visible = at != null
+	if at == null:
+		return
+	if _action_label.text != _action_text:
+		_action_label.text = _action_text
+		_action_panel.reset_size()
+	_action_panel.position = (at as Vector2) - Vector2(_action_panel.size.x * 0.5, _action_panel.size.y)
+
+# 札を置く画面の位置(頭の少し上)。カメラの後ろなどで出せなければ null
+func _action_anchor():
+	if _player is Node3D:
+		var cam := get_viewport().get_camera_3d()
+		var head: Vector3 = (_player as Node3D).global_position + Vector3(0, 2.4, 0)
+		if cam == null or cam.is_position_behind(head):
+			return null
+		return cam.unproject_position(head)
+	if _player is Node2D:
+		return (_player as Node2D).get_global_transform_with_canvas().origin - Vector2(0, 40)
+	return null
 
 # ── 市場の画面 ──────────────────────────────────────────────
 func _build_shop() -> void:
@@ -292,12 +344,14 @@ func _process(delta: float) -> void:
 		_status_timer = TOUCH_STATUS_SECONDS
 		_label.text = status_text()
 		_update_hint()
+		_action_text = action_text()
 		# 背景は文字の量に合わせる
 		_bg.size = _label.get_combined_minimum_size() + Vector2(12, 8)
 	# タッチの狭い画面では、市場の画面と左の文字が重なるので、開いているあいだは文字を隠す(所持金は市場の画面にも出る)
 	var hide_status: bool = (touch_mode and is_shop_open()) or text_hidden
 	_label.visible = not hide_status
 	_bg.visible = not hide_status
+	_update_action()
 
 # 左上に出す文字
 func status_text() -> String:

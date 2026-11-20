@@ -42,6 +42,7 @@ func _process(_delta: float) -> bool:
 			_test_3d_mill()
 			_test_fell_confirm()
 			_test_hud()
+			_test_near_action()
 			_test_plot_limit()
 			_test_toon()
 			_test_winter_work()
@@ -4124,3 +4125,55 @@ func _test_market_no_rebuild() -> void:
 	w.kitchen.changed.disconnect(count)
 	_check(kitchen_changes[0] == 1, "保存食を売ると、小屋の棚の瓶だけ描き直す")
 	m.money = keep_money
+
+# 体の上の札: 今ここでできること 1 つ(レビュー G6)
+func _test_near_action() -> void:
+	print("体のそばに、今できること")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var player = main.get_node("Player")
+	var g = w.garden
+	var keep_season: String = w.forest.season
+	w.forest.set_season("autumn")
+	var spot := Vector2(-38, 38)
+	player.global_position = Vector3(spot.x, 0, spot.y)
+	var before: Array = main.near_action()
+	_check(w.land.plot_at(spot) == null, "(前提) 足元に区画がない")
+	w.land.toggle_plot(spot)
+	_check(main.near_action() == [KEY_SPACE, "まく"], "空いた区画では「SPACE まく」(前は %s)" % [before])
+	g.seeds.radish = int(g.seeds.get("radish", 0)) + 1
+	_check(g.sow(spot, "radish") == "sown", "(前提) ラディッシュをまいた")
+	var crop: Dictionary = g.crop_at(spot)
+	crop.last_watered = ""
+	_check(main.near_action() == [KEY_Q, "水やり"], "水をやっていない野菜は「Q 水やり」")
+	crop.last_watered = w.forest.today()
+	_check(main.near_action().is_empty() or main.near_action()[1] != "水やり", "水をやったら「水やり」は出ない")
+	crop.sown_day -= 30
+	crop.water_days = 30
+	_check(main.near_action() == [KEY_E, "収穫"], "実った野菜は「E 収穫」")
+	# 札の見た目
+	hud._action_text = hud.action_text()
+	hud._process(0.0)
+	_check(hud._action_panel.visible and hud._action_label.text == "E 収穫", "体の上に「E 収穫」の札が出る")
+	var cam: Camera3D = main.get_viewport().get_camera_3d()
+	var head: Vector2 = cam.unproject_position(player.global_position + Vector3(0, 2.4, 0))
+	var box: Rect2 = hud._action_panel.get_rect()
+	_check(absf(box.get_center().x - head.x) < 1.0 and absf(box.end.y - head.y) < 1.0, "札は頭の上(真ん中の下が頭の位置)")
+	hud.touch_mode = true
+	_check(hud.action_text() == "収穫", "タッチではキーを出さず、押すボタンの名前だけ")
+	hud.touch_mode = false
+	hud.text_hidden = true
+	hud._process(0.0)
+	_check(not hud._action_panel.visible, "F2 で文字を隠しているあいだは札も出ない")
+	hud.text_hidden = false
+	# 市場の前
+	player.global_position = Vector3(w.market.POS.x, 0, w.market.POS.y)
+	_check(main.near_action() == [KEY_B, "市場"], "市場の前では「B 市場」")
+	main._toggle_shop()
+	hud._process(0.0)
+	_check(hud.is_shop_open() and not hud._action_panel.visible, "市場の画面を開いているあいだは札を出さない")
+	main._close_shop()
+	# 片付け
+	g.crops.erase(crop)
+	w.land.toggle_plot(spot)
+	w.forest.set_season(keep_season)
