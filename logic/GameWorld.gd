@@ -81,6 +81,10 @@ var sound_level := 3             # 音量の段階(0 = 消す、3 = いちばん
 var save_path := SAVE_PATH       # テストでは別のファイルに向ける
 var backup_dir := ""             # 控えを置くフォルダ。空なら控えを取らない(本物のセーブのときだけ Main が設定する)
 var load_notice := ""            # 読み込みで知らせることがあれば、その文(セーブが読めず控えから戻したときなど)
+var _save_failing := false       # 直前の保存が失敗していた(知らせるのは失敗が始まったときの 1 回だけ)
+
+# 保存に失敗しはじめたとき(1 回だけ。一度うまく保存できたら、次の失敗でまた出す)。Main が画面に出す(レビュー S8)
+signal save_failed(message: String)
 
 func _init() -> void:
 	wilds.forest = forest
@@ -488,7 +492,10 @@ func save_game() -> void:
 	data["pests"] = pests.to_save()
 	data["family"] = family.to_save()
 	data["profile"] = profile.to_save()
-	_write_save(JSON.stringify(data))
+	var ok := _write_save(JSON.stringify(data))
+	if not ok and not _save_failing:
+		save_failed.emit("保存できなかった(%s)。空き容量やフォルダの書き込みを確かめてほしい。直るまで、閉じると今日の分が残らないかもしれない" % ProjectSettings.globalize_path(save_path).get_base_dir())
+	_save_failing = not ok
 
 # 別の名前(.tmp)に書き、書けたことを確かめてから本物の名前に付け替える。
 # 途中で落ちても、本物のセーブは前の状態のまま残る

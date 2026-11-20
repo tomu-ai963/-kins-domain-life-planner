@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_keep()
 	_test_off_by_default()
 	_test_atomic_write()
+	_test_save_failed_notice()
 	_test_restore_from_backup()
 	_test_restore_skips_broken_backup()
 	_test_no_backup()
@@ -270,3 +271,24 @@ func _test_truncated_real_like() -> void:
 	var w2 := _world()
 	w2.load_game()
 	_check(w2.market.money == 4321 and w2.forest.trees.size() == 1, "前半だけのセーブでも、控えの土地で始まる(新しいゲームで上書きしない)")
+
+# 保存に失敗したら 1 回だけ知らせる(レビュー S8)。書けない場所(ないフォルダ)へ向けて確かめる
+func _test_save_failed_notice() -> void:
+	print("保存に失敗したら知らせる")
+	_clean()
+	var w := _world()
+	var told := []
+	w.save_failed.connect(func(message: String): told.append(message))
+	w.save_path = "user://test_no_such_dir/test_backup.json"
+	w.save_game()
+	_check(told.size() == 1 and told[0].contains("保存できなかった"), "失敗したら知らせる: " + (told[0] if told.size() > 0 else "なし"))
+	w.save_game()
+	w.save_game()
+	_check(told.size() == 1, "失敗が続いても、知らせるのは 1 回だけ")
+	w.save_path = TEST_SAVE
+	w.save_game()
+	_check(told.size() == 1 and FileAccess.file_exists(TEST_SAVE), "保存できたときは知らせない")
+	w.save_path = "user://test_no_such_dir/test_backup.json"
+	w.save_game()
+	_check(told.size() == 2, "一度直ってから、また失敗したら知らせる")
+	_check(not DirAccess.dir_exists_absolute("user://test_no_such_dir"), "ないフォルダは作らない")

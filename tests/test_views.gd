@@ -71,6 +71,7 @@ func _process(_delta: float) -> bool:
 			_test_profile_view()
 			_test_no_planting_outside()
 			_test_cabin_family()
+			_test_visitor_day_change()  # 日付を進めるので、3D のテストのいちばん最後
 			main.queue_free()
 			_remove_save()
 			main = _open("res://Main2D.tscn")
@@ -4055,3 +4056,31 @@ func _test_cabin_family() -> void:
 	w.cabin.stage = 0
 	view._sync_tent()
 	view._sync_beds()
+
+# 訪問者と話す画面を開いたまま日付をまたぐ(レビュー S7)。日付を 1 日進めるので、3D のテストの最後に置く
+func _test_visitor_day_change() -> void:
+	print("訪問者の画面を開いたまま日付をまたぐ")
+	var w = main.world
+	var hud = main.get_node("HUD")
+	var player: CharacterBody3D = main.get_node("Player")
+	var today: int = w.forest.day_number()
+	w.visitors.visit = {"day": today, "who": "nina", "kind": "chat", "done": false, "line": 0}
+	w.visitors.changed.emit()
+	main._panel = "visitor"
+	player.set_physics_process(false)
+	hud.open_shop()
+	w.time.shift_days(1)
+	main._check_new_day()
+	_check(int(w.visitors.visit.get("day", -1)) == today + 1, "次の日の訪問に入れ替わった")
+	_check(main._panel != "visitor" and not hud.is_shop_open(), "前の日の人と話す画面は閉じる")
+	_check(player.is_physics_processing(), "閉じたあとは歩ける")
+	_check(not bool(w.visitors.visit.get("done", false)), "今日の人を「話し終えた」ことにはしない(今日も来られる)")
+	# 同じ日のうちに訪問がなくなったとき(来ない日の形)も閉じる
+	w.visitors.visit = {"day": today + 1, "who": "nina", "kind": "chat", "done": false, "line": 0}
+	main._panel = "visitor"
+	player.set_physics_process(false)
+	hud.open_shop()
+	w.visitors.visit = {"day": today + 1}
+	main._check_new_day()
+	_check(main._panel != "visitor" and not hud.is_shop_open(), "訪問がなくなったら画面を閉じる")
+	w.time.shift_days(-1)

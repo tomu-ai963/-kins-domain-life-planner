@@ -336,7 +336,12 @@ func _test_preview_keys() -> void:
 	_press(KEY_F1)
 	_check(hud.status_text().contains("N:+1時間"), "F1 の操作説明に N が出る")
 	_press(KEY_F1)
+	# 訪問者の来る日(5 日に 2 回)に出る行は外して数える。外さないと、結果が今日の日付で変わる(レビュー C2)
+	var visitors = main.world.visitors
+	var keep_visit: Dictionary = visitors.visit
+	visitors.visit = {}
 	var lines: int = hud.status_text().split("\n").size()
+	visitors.visit = keep_visit
 	_check(lines <= 8, "HUD のいつもの行数は増やしていない(%d 行)" % lines)
 
 func _test_rules_ignore_clock() -> void:

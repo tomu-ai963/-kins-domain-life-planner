@@ -138,6 +138,7 @@ func _ready() -> void:
 	$HUD.family_renamed.connect(_on_family_renamed)
 	$HUD.family_names_closed.connect(func(): $Player.set_physics_process(true))
 	$Player.plant_tree.connect(_on_plant_tree)
+	world.save_failed.connect(func(message: String): $HUD.show_message(message, 15.0))
 	_setup_3d_only()
 	world.load_game()
 	_check_new_day()
@@ -342,6 +343,11 @@ func update_shovel(delta: float, holding: bool) -> void:
 func _check_new_day() -> void:
 	var f := world.forest
 	var id: String = world.check_new_day()
+	# 訪問者と話す画面を開いたまま日付をまたいだ: 前の日の人の画面なので閉じる(レビュー S7)。
+	# 市場の画面として閉じるのは、今日の人を「話し終えた」ことにして帰さないため
+	if _panel == "visitor" and (id != "" or not world.visitors.is_here()):
+		_panel = "market"
+		_close_shop()
 	# セーブが読めず控えから戻したときは、その日のはじめの知らせの先頭に出す(1 回だけ)
 	var notice := world.load_notice
 	world.load_notice = ""
