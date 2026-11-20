@@ -448,6 +448,7 @@ func choose_region(id: String) -> String:
 	wilds.refresh()
 	if is_new_game:
 		forest.start_stock()
+	forest.calendar_changed.emit()  # 土地の気候が決まる(季節・池・川が変わる)
 	forest.changed.emit()
 	save_game()
 	return "chosen"

@@ -3,7 +3,8 @@ extends Node3D
 # ── 畑の野菜の 3D 表示 ───────────────────────────────────────
 # 状態とルールは logic/Garden.gd。区画(LandView3D の土の箱)の上に、畝に沿って 3 列 × 4 株を並べる。
 # 葉は育ち具合で大きくなり、収穫できる野菜には実を付ける。今日水をあげた区画は土が濡れて暗くなる。
-# 雑草が生えた区画は、株のあいだに草が増える(生えて長いほど多い)。わらを敷いた区画は、土の上が黄土色になる
+# 雑草が生えた区画は、株のあいだに草が増える(生えて長いほど多い)。わらを敷いた区画は、土の上が黄土色になる。
+# 同じ形・同じ色の部品は MultiMesh でまとめて 1 回で描く(1 区画 25 個ほどの部品を、別々の部品にしない。レビュー M1)
 const Garden = preload("res://logic/Garden.gd")
 const Look = preload("res://view/3d/Look.gd")
 
@@ -58,6 +59,10 @@ var _wet_mesh := BoxMesh.new()
 var _wet_mat := Look.mat(Color(0.14, 0.09, 0.06, 0.55))
 var _straw_mesh := BoxMesh.new()
 var _mats := {}
+# 描く部品は、形・種類・色ごとの組に入れる(組ごとに 1 つの MultiMesh)
+var _groups := []                  # [{what: leaf/fruit/wet/water/straw/weed, mesh, color, xforms: [Transform3D]}]
+var _index := {}                   # [mesh, what, color] → _groups の番号
+var _order := PackedInt32Array()   # 置いた順の組の番号(区画ごとに 濡れた土 → 水 → わら → 雑草 → 株と実)。テスト用の parts() が使う
 
 func setup(g: Garden) -> void:
 	garden = g
@@ -74,16 +79,81 @@ func setup(g: Garden) -> void:
 	_wet_mesh.size = Vector3(size, 0.01, size)
 	_straw_mesh.size = Vector3(size, 0.03, size)
 	garden.changed.connect(_rebuild)
-	garden.forest.changed.connect(_rebuild)  # 先送りプレビュー・日付の変化
+	garden.forest.calendar_changed.connect(_rebuild)  # 先送りプレビュー・日付の変化(木の変化では作り直さない。レビュー M2)
 	_rebuild()
 
 func _mat(c: Color) -> Material:
 	if not _mats.has(c):
 		_mats[c] = Look.mat(c)
+		_mats[c].scaled_instances = true  # 株は伸び縮みさせて置くので、面の向きを直す(下の _rebuild で伸び縮みを渡す)
 	return _mats[c]
 
+# 描いている部品の数(テスト用)
+func part_count() -> int:
+	return _order.size()
+
+# 描いている部品を置いた順に [{what, mesh, color, transform}](テスト用。ふだんの描画では作らない)
+func parts() -> Array:
+	var used := {}
+	var out := []
+	for gi in _order:
+		var k: int = used.get(gi, 0)
+		used[gi] = k + 1
+		var g: Dictionary = _groups[gi]
+		out.append({"what": g.what, "mesh": g.mesh, "color": g.color, "transform": g.xforms[k]})
+	return out
+
+func _part(what: String, mesh: Mesh, c: Color, pos: Vector3, scl := Vector3.ONE) -> void:
+	_put(_group(what, mesh, c), pos, scl)
+
+# 形・種類・色の組の番号(なければ作る)
+func _group(what: String, mesh: Mesh, c: Color) -> int:
+	var key := [mesh, what, c]
+	var gi: int = _index.get(key, -1)
+	if gi < 0:
+		gi = _groups.size()
+		_index[key] = gi
+		_groups.append({"what": what, "mesh": mesh, "color": c, "xforms": []})
+	return gi
+
+func _put(gi: int, pos: Vector3, scl: Vector3) -> void:
+	_groups[gi].xforms.append(Transform3D(Basis.from_scale(scl), pos))
+	_order.append(gi)
+
 func _rebuild() -> void:
+	_groups.clear()
+	_index.clear()
+	_order.clear()
+	_collect()
 	Look.clear_children(self)
+	for g in _groups:
+		var xforms: Array = g.xforms
+		# 16 個の数で 1 つ: 置き方 12 個(基底の行ごとに x・y・z と位置)+ 伸び縮み 4 個(材質が面の向きを直すのに使う)。
+		# まとめて渡すと 1 つずつ渡すより速い
+		var buf := PackedFloat32Array()
+		buf.resize(xforms.size() * 16)
+		for i in range(xforms.size()):
+			var t: Transform3D = xforms[i]
+			var j := i * 16
+			buf[j] = t.basis.x.x; buf[j + 1] = t.basis.y.x; buf[j + 2] = t.basis.z.x; buf[j + 3] = t.origin.x
+			buf[j + 4] = t.basis.x.y; buf[j + 5] = t.basis.y.y; buf[j + 6] = t.basis.z.y; buf[j + 7] = t.origin.y
+			buf[j + 8] = t.basis.x.z; buf[j + 9] = t.basis.y.z; buf[j + 10] = t.basis.z.z; buf[j + 11] = t.origin.z
+			buf[j + 12] = t.basis.x.x; buf[j + 13] = t.basis.y.y; buf[j + 14] = t.basis.z.z; buf[j + 15] = 1.0
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = g.mesh
+		mm.instance_count = xforms.size()
+		mm.buffer = buf
+		var node := MultiMeshInstance3D.new()
+		node.multimesh = mm
+		node.material_override = _wet_mat if g.what == "wet" else _mat(g.color)
+		node.extra_cull_margin = Look.BEND_CULL_MARGIN
+		if g.what in ["wet", "water", "straw"]:
+			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # 土の上の平たい板
+		add_child(node)
+
+func _collect() -> void:
 	var plot: float = garden.land.PLOT_SIZE - 0.2
 	for c in garden.crops:
 		var look: Dictionary = LOOKS[c.kind]
@@ -92,27 +162,23 @@ func _rebuild() -> void:
 		var mesh: Mesh = _ball if look.ball else _cone
 		var fruit: Color = SPOILED if garden.is_spoiled(c) else look.ripe
 		if garden.watered_today(c):
-			var wet := Look.mesh_node(_wet_mesh, _wet_mat, Look.at(c.pos, BED_TOP + 0.005))
-			wet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(wet)
+			_part("wet", _wet_mesh, _wet_mat.albedo_color, Look.at(c.pos, BED_TOP + 0.005))
 		if garden.CROPS[c.kind].get("paddy", false):
-			var water := Look.mesh_node(_straw_mesh, _mat(PADDY_WATER), Look.at(c.pos, BED_TOP + 0.02))
-			water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(water)
+			_part("water", _straw_mesh, PADDY_WATER, Look.at(c.pos, BED_TOP + 0.02))
 		if c.get("mulched", false):
-			var straw := Look.mesh_node(_straw_mesh, _mat(STRAW), Look.at(c.pos, BED_TOP + 0.015))
-			straw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(straw)
+			_part("straw", _straw_mesh, STRAW, Look.at(c.pos, BED_TOP + 0.015))
 		_add_weeds(c, plot)
+		var leaves: int = _group("leaf", mesh, look.leaf)  # 1 区画の株は同じ組なので、探すのは 1 回だけ
+		var fruits: int = _group("fruit", _ball, fruit) if ratio >= 1.0 else -1
 		for r in range(ROWS):
 			for k in range(COLUMNS):
 				var p := Vector2(
 					c.pos.x - plot * 0.5 + plot * (k + 0.5) / COLUMNS,
 					c.pos.y - plot * 0.5 + plot * (r + 1.0) / (ROWS + 1.0))
-				add_child(Look.mesh_node(mesh, _mat(look.leaf), Look.at(p, BED_TOP + leaf.y * 0.5), leaf))
-				if ratio >= 1.0:
+				_put(leaves, Look.at(p, BED_TOP + leaf.y * 0.5), leaf)
+				if fruits >= 0:
 					# 引いたカメラからも分かるように、実は葉の上に見せる
-					add_child(Look.mesh_node(_ball, _mat(fruit), Look.at(p, BED_TOP + leaf.y), look.ripe_size))
+					_put(fruits, Look.at(p, BED_TOP + leaf.y), look.ripe_size)
 
 # 雑草: 株と株のあいだ(畝のあいだ)に、尖った草の束を置く。場所は区画の位置から決まる(描き直しても動かない)
 func _add_weeds(c: Dictionary, plot: float) -> void:
@@ -124,4 +190,4 @@ func _add_weeds(c: Dictionary, plot: float) -> void:
 	for i in range(n):
 		var p := Vector2(c.pos.x + rng.randf_range(-0.45, 0.45) * plot, c.pos.y - plot * 0.5 + plot * (rng.randi_range(0, ROWS) + 0.5) / (ROWS + 1.0))
 		var h: float = rng.randf_range(0.22, 0.4)
-		add_child(Look.mesh_node(_cone, _mat(WEED), Look.at(p, BED_TOP + h * 0.5), Vector3(0.22, h, 0.22)))
+		_part("weed", _cone, WEED, Look.at(p, BED_TOP + h * 0.5), Vector3(0.22, h, 0.22))

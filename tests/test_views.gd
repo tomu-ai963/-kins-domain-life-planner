@@ -34,6 +34,7 @@ func _process(_delta: float) -> bool:
 			_test_player_figure()
 			_test_ground()
 			_test_3d_market_and_pickups()
+			_test_market_no_rebuild()
 			_test_3d_garden()
 			_test_3d_cabin()
 			_test_3d_pond()
@@ -132,10 +133,11 @@ func _test_3d_follows_logic() -> void:
 	var land: Node3D = main.get_node("Land")
 	main.get_node("Player").global_position = Vector3(1, 0, 1)
 	main._toggle_plot()
-	_check(land.get_child_count() == 4, "菜園の区画(土 + 畝 3 本)ができる")
+	_check(land.bed_count() == 1 and land.furrow_count() == 3, "菜園の区画(土 + 畝 3 本)ができる")
+	_check(land.get_child_count() == 2, "区画がいくつあっても、土と畝の 2 つにまとめて描く(レビュー M1)")
 	main.get_node("Player").global_position = Vector3(1, 0, 1)
 	main._toggle_plot()
-	_check(land.get_child_count() == 0, "取り消すと消える")
+	_check(land.bed_count() == 0 and land.furrow_count() == 0, "取り消すと消える")
 
 func _test_3d_quest_marks() -> void:
 	print("クエストの目印")
@@ -443,34 +445,43 @@ func _test_3d_garden() -> void:
 	w.forest.set_season("autumn")
 	player.global_position = Vector3(1, 0, 1)
 	main._toggle_plot()
-	_check(view.get_child_count() == 0 and main.plot_line() != "", "空きの区画: 野菜はなく、足元の様子が HUD に出る")
+	_check(view.part_count() == 0 and main.plot_line() != "", "空きの区画: 野菜はなく、足元の様子が HUD に出る")
 
 	# 区画の上の SPACE は、木を植えずに野菜をまく
 	var trees: int = w.forest.trees.size()
 	g.seeds.radish = 1
 	main._on_plant_tree(main.player_pos())
 	_check(g.crops.size() == 1 and w.forest.trees.size() == trees, "区画の上で SPACE を押すと、木ではなく選んだ野菜をまく")
-	_check(view.get_child_count() == 12, "野菜は 3 列 × 4 株で並ぶ")
-	var small: Vector3 = view.get_child(0).scale
+	_check(view.part_count() == 12, "野菜は 3 列 × 4 株で並ぶ")
+	_check(view.get_child_count() == 1, "同じ形・同じ色の株は 1 つにまとめて描く(レビュー M1)")
+	var small: Vector3 = view.parts()[0].transform.basis.get_scale()
 	main._water()
-	_check(view.get_child_count() == 13, "水をあげると土が濡れた色になる")
+	_check(view.part_count() == 13 and view.parts()[0].what == "wet", "水をあげると土が濡れた色になる")
 	w.forest.advance_years(3.0)
-	_check(view.get_child_count() == 1 + 12 + 12, "先送りプレビューで、育った姿(実)が見える")
+	_check(view.part_count() == 1 + 12 + 12, "先送りプレビューで、育った姿(実)が見える")
 	w.forest.reset_preview()
-	_check(view.get_child_count() == 13, "プレビューをやめると今日の姿に戻る")
+	_check(view.part_count() == 13, "プレビューをやめると今日の姿に戻る")
 
 	var c: Dictionary = g.crop_at(main.player_pos())
 	c.sown_day -= 3
 	c.water_days = 4
 	g.changed.emit()
-	_check(view.get_child_count() == 1 + 12 + 12, "収穫できると、株ごとに実が見える")
-	_check(view.get_child(1).scale.x > small.x, "育つと葉が大きくなる")
+	_check(view.part_count() == 1 + 12 + 12, "収穫できると、株ごとに実が見える")
+	_check(view.get_child_count() == 3, "濡れた土・葉・実の 3 つにまとめて描く")
+	_check(view.parts()[1].what == "leaf" and view.parts()[1].transform.basis.get_scale().x > small.x, "育つと葉が大きくなる")
 	_check(main.plot_line().contains("あと3日で傷む"), "HUD に傷むまでの日数が出る")
-	var fruit_before: Color = view.get_child(2).material_override.albedo_color
+	var fruit_before: Color = view.parts()[2].color
 	c.sown_day -= 8
 	g.changed.emit()
 	_check(main.plot_line().contains("傷みはじめた"), "傷むと HUD が変わる")
-	_check(view.get_child(2).material_override.albedo_color != fruit_before, "傷むと実の色が変わる")
+	_check(view.parts()[2].what == "fruit" and view.parts()[2].color != fruit_before, "傷むと実の色が変わる")
+	var fruit_drawn := view.get_children().filter(func(n): return n.multimesh.mesh == view.parts()[2].mesh and n.material_override.albedo_color == view.parts()[2].color)
+	_check(fruit_drawn.size() == 1 and fruit_drawn[0].multimesh.instance_count == 12, "傷んだ実は、傷んだ色で 12 個描いている")
+	var drawn_before: Node = view.get_child(0)
+	w.forest.changed.emit()
+	_check(view.get_child(0) == drawn_before and not drawn_before.is_queued_for_deletion(), "木が変わっただけ(forest.changed)では、畑を作り直さない(レビュー M2)")
+	w.forest.calendar_changed.emit()
+	_check(drawn_before.is_queued_for_deletion() and view.part_count() == 25, "日付・季節が変わると作り直す")
 	main._harvest()
 	_check(g.produce.radish == 3 and main.get_node("HUD")._message.contains("半分"), "傷んだ野菜は半分だけ採れて、そう知らせる")
 	g.produce.radish = 0
@@ -482,7 +493,7 @@ func _test_3d_garden() -> void:
 	c.water_days = 4
 	g.changed.emit()
 	main._harvest()
-	_check(g.produce.radish == 6 and view.get_child_count() == 0, "E で収穫でき、区画は空きに戻る")
+	_check(g.produce.radish == 6 and view.part_count() == 0 and view.get_child_count() == 0, "E で収穫でき、区画は空きに戻る")
 
 	# 市場の画面の行: 持っている野菜だけ売る行が出る
 	var has_row := func(id): return main.shop_rows().any(func(r): return r.id == id)
@@ -4084,3 +4095,32 @@ func _test_visitor_day_change() -> void:
 	main._check_new_day()
 	_check(main._panel != "visitor" and not hud.is_shop_open(), "訪問がなくなったら画面を閉じる")
 	w.time.shift_days(-1)
+
+# 市場で売り買いしても、木・畑・池・クエストの印を作り直さない(レビュー M2)。見える持ち物(棚の瓶)だけ描き直す
+func _test_market_no_rebuild() -> void:
+	print("市場の売り買いでは、木や畑を作り直さない")
+	var w = main.world
+	var m = w.market
+	var added := {}
+	for name in ["Trees", "Garden", "Pond", "Quests"]:
+		added[name] = 0
+		main.get_node(name).child_entered_tree.connect(func(_n): added[name] += 1)
+	w.forest.changed.emit()
+	_check(added.Quests > 0, "(確かめ方) forest.changed ならクエストの印を作り直す")
+	for name in added:
+		added[name] = 0
+	var keep_money: int = m.money
+	m.money = 100000
+	_check(m.buy("birch_seed") == "bought", "種を買える")
+	w.forest.produce["apple"] = 2
+	_check(m.sell_all("apple") > 0, "リンゴを売れる")
+	_check(added.values().all(func(n): return n == 0), "買っても売っても作り直さない: %s" % [added])
+	var jar: String = w.kitchen.RECIPES.keys()[0]
+	var kitchen_changes := [0]
+	var count := func(): kitchen_changes[0] += 1
+	w.kitchen.changed.connect(count)
+	w.kitchen.stock[jar] = 1
+	m.sell_all(jar)
+	w.kitchen.changed.disconnect(count)
+	_check(kitchen_changes[0] == 1, "保存食を売ると、小屋の棚の瓶だけ描き直す")
+	m.money = keep_money

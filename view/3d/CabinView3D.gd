@@ -134,7 +134,7 @@ func setup(c: Cabin, s: Seedlings = null) -> void:
 	cabin.changed.connect(_rebuild)
 	if seedlings != null:
 		seedlings.changed.connect(_rebuild)
-		seedlings.forest.changed.connect(_rebuild)  # 日付が変わると苗が育つ
+		seedlings.forest.calendar_changed.connect(_rebuild)  # 日付が変わると苗が育つ。木の変化では作り直さない(レビュー M2)
 	_rebuild()
 
 func _piece(parent: Node3D, m: Material, pos: Vector3, scl: Vector3) -> MeshInstance3D:
@@ -145,7 +145,7 @@ func _piece(parent: Node3D, m: Material, pos: Vector3, scl: Vector3) -> MeshInst
 func set_player(p: Node3D) -> void:
 	_player = p
 
-# 料理の様子を見せる(3D のときだけ Main が渡す)。日付が変わると鍋ができるのは forest.changed で描き直す
+# 料理の様子を見せる(3D のときだけ Main が渡す)。日付が変わると鍋ができるのは forest.calendar_changed で描き直す
 # 道具(薪割り機を持っていれば、薪割り台の横に置く)。ジョウロの水が減るたびには作り直さない
 func set_tools(t) -> void:
 	tools = t

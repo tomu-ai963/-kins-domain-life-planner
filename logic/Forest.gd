@@ -8,8 +8,11 @@ extends RefCounted
 const SaveRead = preload("res://logic/SaveRead.gd")
 const Region = preload("res://logic/Region.gd")
 
-signal changed  # 見た目に関わる状態が変わった
+signal changed  # 見た目に関わる状態が変わった(木・落ちている種のほか、下の calendar_changed のときも出す)
 signal dirty    # セーブに入る状態が変わった
+# 日付・季節・先送りプレビューが変わった。畑・池・小屋など、木ではなく日付で見た目が変わる表示はこちらを聞く。
+# changed を聞くと、木に水をやるたびに作り直すことになる(レビュー M2)
+signal calendar_changed
 
 # ── 現実時間で成長するシステム ──────────────────────────────
 # 1 現実日 = 樹齢 1 年。アプリを閉じている間も現実時間ぶん育つ。
@@ -465,6 +468,7 @@ func set_season(s: String) -> void:
 	if season == s:
 		return
 	season = s
+	calendar_changed.emit()
 	changed.emit()
 
 # 今の季節に植えられるか。冬は地面が凍っているので苗木は植えられない。
@@ -615,6 +619,7 @@ func check_new_day() -> String:
 	drop_seeds(t)
 	today_event = roll_daily_event(t)
 	_apply_event(today_event)
+	calendar_changed.emit()
 	_commit()
 	return today_event
 
@@ -856,11 +861,13 @@ func remove_nearest(pos: Vector2, max_dist: float) -> bool:
 
 func advance_years(years: float) -> void:
 	time_offset_years += years
+	calendar_changed.emit()
 	changed.emit()
 
 # プレビューをやめて今日の姿に戻す
 func reset_preview() -> void:
 	time_offset_years = 0.0
+	calendar_changed.emit()
 	changed.emit()
 
 # 表示用の樹齢(プレビューの先送りを含む)
@@ -952,4 +959,5 @@ func from_save(data: Dictionary) -> void:
 		var pos = SaveRead.point(p)
 		if pos != null and SaveRead.text(p, "species") in SPECIES:
 			pickups.append({"pos": pos, "species": p.species, "amount": SaveRead.count(p, "amount")})
+	calendar_changed.emit()
 	changed.emit()

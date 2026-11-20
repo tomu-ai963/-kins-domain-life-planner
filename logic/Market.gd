@@ -211,8 +211,7 @@ func buy(id: String) -> String:
 	elif g.form == "material":
 		stock = cabin.materials
 	stock[g.species] = int(stock.get(g.species, 0)) + int(g.amount)
-	changed.emit()
-	forest.changed.emit()
+	changed.emit()  # 種・苗木・丸太は持ち物だけ。木や畑の見た目は変わらないので forest.changed は出さない(レビュー M2)
 	return "bought"
 
 # 増築・家具を今買えない理由("" なら買える)
@@ -344,8 +343,18 @@ func sell_all(item: String) -> int:
 	pile[key] = 0
 	money += income
 	changed.emit()
-	forest.changed.emit()
+	_stock_shown(item)
 	return income
+
+# 売って減った持ち物が、見える場所(小屋の苗の鉢・棚の瓶、石臼のそばの粉袋)にあれば描き直す。
+# 木や畑は変わらないので forest.changed は出さない(出すと全部作り直す。レビュー M2)
+func _stock_shown(item: String) -> void:
+	if item.begins_with("seedling_"):
+		seedlings.changed.emit()
+	elif Kitchen.RECIPES.has(item):
+		kitchen.changed.emit()
+	elif item.begins_with("flour_") and mill != null:
+		mill.changed.emit()
 
 # ── セーブ用 ──────────────────────────────────────────────
 func to_save() -> Dictionary:

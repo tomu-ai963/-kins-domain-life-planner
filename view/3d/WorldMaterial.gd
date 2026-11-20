@@ -39,6 +39,12 @@ var emission_energy_multiplier := 1.0:
 	set(e):
 		emission_energy_multiplier = e
 		set_shader_parameter("emission_energy", e)
+# MultiMesh で部品を伸び縮みさせて置くとき true。置き方の伸び縮み(x・y・z)を INSTANCE_CUSTOM に入れておくと、面の向きを直す。
+# MultiMesh では伸び縮みが面の向きにそのまま掛かり、陰と輪郭線(面の向きの差で引く)が MeshInstance3D のときと変わってしまう
+var scaled_instances := false:
+	set(on):
+		scaled_instances = on
+		set_shader_parameter("scaled_instances", on)
 
 func _init(c := Color.WHITE, is_unshaded := false) -> void:
 	unshaded = is_unshaded
@@ -71,8 +77,13 @@ uniform bool use_vertex_color = false;
 uniform bool emission_on = false;
 uniform vec3 emission_color : source_color = vec3(0.0);
 uniform float emission_energy = 1.0;
+uniform bool scaled_instances = false;
 
 void vertex() {
+	if (scaled_instances) {
+		// 伸び縮み s が掛かった向きを s² で割ると、MeshInstance3D と同じ向きになる(部品は回さずに置いている前提)
+		NORMAL = normalize(NORMAL / max(INSTANCE_CUSTOM.xyz * INSTANCE_CUSTOM.xyz, vec3(1e-6)));
+	}
 	vec2 d = VERTEX.xz - bend_center.xz;
 	VERTEX.y -= %f * d.y * d.y + %f * d.x * d.x;
 }

@@ -43,7 +43,7 @@ func setup(p: Pond) -> void:
 	_ball.rings = 10
 	pond.changed.connect(_rebuild)
 	pond.land.changed.connect(_rebuild)
-	pond.forest.changed.connect(_rebuild)  # 季節(氷・生き物)
+	pond.forest.calendar_changed.connect(_rebuild)  # 季節(氷・生き物)。木の変化では作り直さない(レビュー M2)
 	_rebuild()
 
 func set_player(p: Node3D) -> void:
