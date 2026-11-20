@@ -143,7 +143,6 @@ func _init() -> void:
 	well.is_blocked = bees.is_blocked  # 巣箱と同じ決まり(区画・小屋・池・木・巣箱・餌台・井戸のそばと土地の端には掘れない)
 	tools.forest = forest
 	market.tools = tools
-	market.well = well
 	mill.forest = forest
 	mill.garden = garden
 	mill.tools = tools
@@ -157,11 +156,11 @@ func _init() -> void:
 	feeders.garden = garden
 	river.forest = forest
 	garden.paddy_ok = _paddy_ok
+	market.rect_problem = rect_problem
 	pests.forest = forest
 	pests.garden = garden
 	pests.wildlife = wildlife
 	tools.machine_used.connect(pests.on_machine)
-	market.feeders = feeders
 	visitors.feeders = feeders
 	guide.feeders = feeders
 	family.forest = forest
@@ -219,6 +218,67 @@ func _paddy_ok(c: Vector2) -> bool:
 # 巣箱・餌台・井戸を置く場所に、ほかの物(餌台・井戸・石臼・家族のテント)がかかるか(Bees.is_blocked から呼ぶ)
 func _taken_nearby(pos: Vector2, radius: float) -> bool:
 	return feeders.covers(pos, radius) or well.covers(pos, radius) or mill.covers(pos, radius) or family.covers(pos, radius)
+
+# ── ここに置けるか(レビュー C3。前は Main にあり、ロジックのテストで守られていなかった) ──────────
+# 木を植えられない理由。"" なら植えられる(区画の上は野菜をまくので、呼ぶ側で先に分ける)
+# outside(土地の外) / cabin / hive / feeder / well / mill / tent / yard(小屋の東の庭)
+func tree_spot_problem(pos: Vector2) -> String:
+	if forest.is_outside_land(pos):
+		return "outside"  # 外の林では種を拾うだけ(2026-11-16 とむ)
+	if cabin.covers(pos):
+		return "cabin"
+	var r: float = bees.CLEARANCE
+	if bees.covers(pos, r):
+		return "hive"
+	if feeders.covers(pos, r):
+		return "feeder"
+	if well.covers(pos, r):
+		return "well"
+	if mill.covers(pos, r):
+		return "mill"
+	if family.covers(pos, r):
+		return "tent"
+	if cabin.in_yard(pos):
+		return "yard"
+	return ""
+
+# 長方形 rect(小屋・増築)に、巣箱・餌台・井戸・石臼がかかるか。"" ならかからない / hive / feeder / well / mill
+func rect_problem(rect: Rect2) -> String:
+	var r := rect.grow(bees.CLEARANCE)
+	if bees.hives.any(func(h): return r.has_point(h.pos)):
+		return "hive"
+	if feeders.feeders.any(func(f): return r.has_point(f.pos)):
+		return "feeder"
+	if well.is_placed() and r.grow(well.RADIUS).has_point(well.site):
+		return "well"
+	if mill.is_placed() and r.grow(mill.RADIUS).has_point(mill.site):
+		return "mill"
+	return ""
+
+# 足元 pos に小屋を建てはじめられない理由(巣箱・餌台・井戸・石臼がかかる)。"" なら Cabin.place に任せる
+func cabin_spot_problem(pos: Vector2) -> String:
+	return rect_problem(cabin.rect_at(pos.round()))
+
+# 足元 pos で雪かきできるか(雪の積もる冬で、小屋の中でない)
+func can_shovel_at(pos: Vector2) -> bool:
+	return snow.can_clear_now() and not cabin.covers(pos)
+
+# 歩く速さの倍率: 雪かき中は遅く、かいた道は速い。食事の効果(温まる・力が出る)も掛ける
+func walk_speed(pos: Vector2, shoveling: bool) -> float:
+	var speed := 1.0
+	if shoveling:
+		speed = kitchen.MEAL_SHOVEL_SPEED if kitchen.has_effect("warm") else snow.SHOVEL_SPEED
+	elif snow.is_cleared(pos):
+		speed = snow.PATH_SPEED
+	if kitchen.has_effect("strength"):
+		speed *= kitchen.MEAL_SPEED
+	return speed
+
+# 区画に野菜を植える: 育った苗があれば種より先に苗を使う。{result: Garden.sow / Seedlings.transplant の結果, from_seedling}
+func plant_crop(pos: Vector2, kind: String) -> Dictionary:
+	var from_seedling: bool = int(seedlings.ready.get(kind, 0)) > 0
+	var result: String = seedlings.transplant(pos, kind) if from_seedling else garden.sow(pos, kind)
+	return {"result": result, "from_seedling": from_seedling}
 
 # 家族が手伝いの水を汲めるか: 掘り終えた井戸、水のある凍っていない池、土地の外の川のどれか
 func _family_can_draw() -> bool:

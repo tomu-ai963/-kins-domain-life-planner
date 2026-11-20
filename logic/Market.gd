@@ -151,9 +151,8 @@ var cabin: Cabin    # GameWorld が設定する(丸太の持ち物は Cabin に�
 var seedlings: Seedlings  # GameWorld が設定する(苗の持ち物は Seedlings にある)
 var kitchen: Kitchen  # GameWorld が設定する(保存食の持ち物は Kitchen にある)
 var bees: Bees        # GameWorld が設定する(はちみつの持ち物は Bees にある)
-var feeders = null    # GameWorld が設定する(増築する場所に餌台がないか見る)
+var rect_problem: Callable  # GameWorld が設定する(長方形に巣箱・餌台・井戸・石臼がかかるか。GameWorld.rect_problem)
 var tools = null      # GameWorld が設定する(道具とガソリンの持ち物は Tools にある)
-var well = null       # GameWorld が設定する(増築する場所に井戸がないか見る)
 var mill = null       # GameWorld が設定する(粉の持ち物は Mill にある)
 
 func is_near(pos: Vector2) -> bool:
@@ -220,15 +219,10 @@ func _cabin_problem(g: Dictionary) -> String:
 		var p: String = cabin.ext_problem()
 		if p != "":
 			return p
-		var r: Rect2 = cabin.ext_rect()
-		if bees != null and bees.hives.any(func(h): return r.grow(bees.CLEARANCE).has_point(h.pos)):
-			return "hive"
-		if feeders != null and feeders.feeders.any(func(f): return r.grow(bees.CLEARANCE).has_point(f.pos)):
-			return "feeder"
-		if well != null and well.is_placed() and r.grow(bees.CLEARANCE + well.RADIUS).has_point(well.site):
-			return "well"
-		if mill != null and mill.is_placed() and r.grow(bees.CLEARANCE + mill.RADIUS).has_point(mill.site):
-			return "mill"
+		if rect_problem.is_valid():
+			var taken: String = rect_problem.call(cabin.ext_rect())  # 巣箱・餌台・井戸・石臼がかかるか(GameWorld.rect_problem)
+			if taken != "":
+				return taken
 	elif g.form == "tool":
 		if tools.has(g.species):
 			return "owned"

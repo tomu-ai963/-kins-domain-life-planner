@@ -322,21 +322,13 @@ func _process(delta: float) -> void:
 func update_shovel(delta: float, holding: bool) -> void:
 	var s := world.snow
 	var pos := player_pos()
-	var shoveling: bool = holding and s.can_clear_now() and not $HUD.is_shop_open() and not $HUD.is_diary_open() and not world.cabin.covers(pos)
+	var shoveling: bool = holding and world.can_shovel_at(pos) and not $HUD.is_shop_open() and not $HUD.is_diary_open()
 	_shovel_wait -= delta
 	if shoveling and _shovel_wait <= 0.0 and s.clear_at(pos) == "cleared":
 		_shovel_wait = SHOVEL_GAP
 		_act("shovel")
 		_family_snow()
-	var k := world.kitchen
-	var speed := 1.0
-	if shoveling:
-		speed = k.MEAL_SHOVEL_SPEED if k.has_effect("warm") else s.SHOVEL_SPEED
-	elif s.is_cleared(pos):
-		speed = s.PATH_SPEED
-	if k.has_effect("strength"):
-		speed *= k.MEAL_SPEED
-	$Player.speed_scale = speed
+	$Player.speed_scale = world.walk_speed(pos, shoveling)
 	if "slippery" in $Player:
 		$Player.slippery = world.pond.is_on_ice(pos)
 
@@ -1412,6 +1404,19 @@ const POND_WATER_MESSAGES := {
 }
 
 # 小屋の場所決め(Cabin.place)の結果ごとの文言
+# 木を植えられない場所(GameWorld.tree_spot_problem の結果)
+const TREE_SPOT_MESSAGES := {
+	"outside": "一族の土地の外には植えられない(外の林では種を拾うだけ)",
+	"cabin": "小屋の場所には植えられない",
+	"hive": "巣箱の近くには植えられない",
+	"feeder": "餌台の近くには植えられない",
+	"well": "井戸の近くには植えられない",
+	"mill": "石臼の近くには植えられない",
+	"tent": "テントの近くには植えられない",
+	"yard": "小屋の東の庭には植えられない(薪割り台と薪を置く場所)",
+}
+# 小屋を建てる場所にかかる物(GameWorld.cabin_spot_problem の結果)
+const TAKEN_NAMES := {"hive": "巣箱", "feeder": "餌台", "well": "井戸", "mill": "石臼"}
 const CABIN_PLACE_MESSAGES := {
 	"placed": "ここに小屋を建てることにした(外から H で作業する。始める前なら Z で取り消せる)",
 	"edge": "境界の近くには建てられない(生垣のために3m空ける)",
@@ -1499,33 +1504,16 @@ func _act(kind: String, target = null, item := "") -> void:
 func _on_plant_tree(pos: Vector2) -> void:
 	if $HUD.is_shop_open() or $HUD.is_diary_open() or $HUD.is_picker_open():
 		return
-	if world.forest.is_outside_land(pos):  # 外の林では種を拾うだけ(2026-11-16 とむ)
-		$HUD.show_message("一族の土地の外には植えられない(外の林では種を拾うだけ)")
+	var problem: String = world.tree_spot_problem(pos)
+	if problem == "outside":
+		$HUD.show_message(TREE_SPOT_MESSAGES.outside)
 		return
 	# 菜園の区画の上では、木ではなく野菜をまく
 	if world.land.plot_at(pos) != null:
 		_sow(pos)
 		return
-	if world.cabin.covers(pos):
-		$HUD.show_message("小屋の場所には植えられない")
-		return
-	if world.bees.covers(pos, world.bees.CLEARANCE):
-		$HUD.show_message("巣箱の近くには植えられない")
-		return
-	if world.feeders.covers(pos, world.bees.CLEARANCE):
-		$HUD.show_message("餌台の近くには植えられない")
-		return
-	if world.well.covers(pos, world.bees.CLEARANCE):
-		$HUD.show_message("井戸の近くには植えられない")
-		return
-	if world.mill.covers(pos, world.bees.CLEARANCE):
-		$HUD.show_message("石臼の近くには植えられない")
-		return
-	if world.family.covers(pos, world.bees.CLEARANCE):
-		$HUD.show_message("テントの近くには植えられない")
-		return
-	if world.cabin.in_yard(pos):
-		$HUD.show_message("小屋の東の庭には植えられない(薪割り台と薪を置く場所)")
+	if problem != "":
+		$HUD.show_message(TREE_SPOT_MESSAGES[problem])
 		return
 	if selected_form == "seed" and selected_species in world.forest.SAPLING_ONLY:
 		$HUD.show_message("%sは苗木から育てる(V で苗木に切り替える。市場で買える)" % world.forest.SPECIES[selected_species].name, 5.0)
@@ -1597,17 +1585,9 @@ func _cabin_action() -> void:
 		_sleep()
 		return
 	if c.site == null:
-		if world.bees.hives.any(func(h): return c.rect_at(pos.round()).grow(world.bees.CLEARANCE).has_point(h.pos)):
-			$HUD.show_message("巣箱にかかる場所には建てられない")
-			return
-		if world.feeders.feeders.any(func(f): return c.rect_at(pos.round()).grow(world.bees.CLEARANCE).has_point(f.pos)):
-			$HUD.show_message("餌台にかかる場所には建てられない")
-			return
-		if world.well.is_placed() and c.rect_at(pos.round()).grow(world.bees.CLEARANCE + world.well.RADIUS).has_point(world.well.site):
-			$HUD.show_message("井戸にかかる場所には建てられない")
-			return
-		if world.mill.is_placed() and c.rect_at(pos.round()).grow(world.bees.CLEARANCE + world.mill.RADIUS).has_point(world.mill.site):
-			$HUD.show_message("石臼にかかる場所には建てられない")
+		var taken: String = world.cabin_spot_problem(pos)
+		if taken != "":
+			$HUD.show_message("%sにかかる場所には建てられない" % TAKEN_NAMES[taken])
 			return
 		$HUD.show_message(CABIN_PLACE_MESSAGES[c.place(pos)], 5.0)
 		return
@@ -2104,12 +2084,10 @@ func crop_seasons(kind: String) -> String:
 
 func _sow(pos: Vector2) -> void:
 	var g := world.garden
-	var sl := world.seedlings
 	var crop: Dictionary = g.CROPS[selected_crop]
-	# 育った苗があれば、種より先に苗を使う
-	var from_seedling: bool = int(sl.ready.get(selected_crop, 0)) > 0
-	var result: String = sl.transplant(pos, selected_crop) if from_seedling else g.sow(pos, selected_crop)
-	match result:
+	var planted_by: Dictionary = world.plant_crop(pos, selected_crop)  # 育った苗があれば、種より先に苗を使う
+	var from_seedling: bool = planted_by.from_seedling
+	match planted_by.result:
 		"sown":
 			_act("plant", world.land.plot_center(pos))
 			var verb := "の苗を植えた" if from_seedling else "をまいた"
