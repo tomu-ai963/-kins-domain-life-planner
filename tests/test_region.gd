@@ -654,10 +654,10 @@ func _run_scene() -> void:
 	main._panel = "market"
 	var tallest := 0
 	var seen := {}
-	for bp in main.BUY_PAGES.size():
-		main._buy_page = bp
-		for sp in main.SELL_PAGES.size():
-			main._sell_page = sp
+	for bp in main.market_panel.BUY_PAGES.size():
+		main.market_panel._buy_page = bp
+		for sp in main.market_panel.SELL_PAGES.size():
+			main.market_panel._sell_page = sp
 			var rows: Array = main.visible_shop_rows()
 			for r in rows:
 				seen[r.id] = true
@@ -675,21 +675,21 @@ func _run_scene() -> void:
 	var longest := 0
 	for panel in ["kitchen", "table"]:
 		main._panel = panel
-		for cp in main.COOK_PAGES.size():
-			main._cook_page = cp
+		for cp in main.kitchen_panel.COOK_PAGES.size():
+			main.kitchen_panel._cook_page = cp
 			longest = maxi(longest, main.visible_shop_rows().filter(func(r): return r.column == 0).size())
 	main._panel = "market"
-	for sp in main.SELL_PAGES.size():
-		main._sell_page = sp
+	for sp in main.market_panel.SELL_PAGES.size():
+		main.market_panel._sell_page = sp
 		longest = maxi(longest, main.visible_shop_rows().filter(func(r): return r.column == 1).size())
 	_check(longest <= 15, "料理を全部持っていても、ストーブ・腰掛け・売る列は 1 列 15 行まで(%d 行)" % longest)
 	main._panel = "kitchen"
-	main._cook_page = 0
+	main.kitchen_panel._cook_page = 0
 	var ids0: Array = main.visible_shop_rows().map(func(r): return r.id)
 	_check(ids0.has("cook_hoshigaki") and ids0.has("cook_jam") and not ids0.has("cook_takuan"), "ストーブの 1 ページ目は果物とはちみつ(材料を持っていれば、土地に育たない果物の料理も出る)")
 	main._on_shop_action("page_cook")
 	var ids1: Array = main.visible_shop_rows().map(func(r): return r.id)
-	_check(main._cook_page == 1 and ids1.has("cook_takuan") and ids1.has("cook_goya_champuru") and not ids1.has("cook_hoshigaki"), "押すと野菜の料理のページ")
+	_check(main.kitchen_panel._cook_page == 1 and ids1.has("cook_takuan") and ids1.has("cook_goya_champuru") and not ids1.has("cook_hoshigaki"), "押すと野菜の料理のページ")
 	main._on_shop_action("cook_takuan")
 	_check(k.pot.get("recipe", "") == "takuan", "たくあんを仕込める")
 	main._panel = "market"

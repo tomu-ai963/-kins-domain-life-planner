@@ -660,7 +660,7 @@ func _test_extension_view() -> void:
 	w.forest.trees = w.forest.trees.filter(func(t): return not c.ext_rect().grow(1.0).has_point(t.pos))
 	m.money = 50000
 	main._panel = "market"
-	main._buy_page = main.BUY_PAGES.map(func(p): return p.name).find("小屋")
+	main.market_panel._buy_page = main.market_panel.BUY_PAGES.map(func(p): return p.name).find("小屋")
 	var rows: Array = main.visible_shop_rows()
 	_check(rows.any(func(r): return r.text.contains("小屋の増築")) and rows.any(func(r): return r.text.contains("揺り椅子")), "市場の「小屋」のページに増築と家具が並ぶ")
 	main._on_shop_action("furniture_rug")
@@ -1257,14 +1257,14 @@ func _test_fruit_view() -> void:
 	_check(main.shop_rows().any(func(r): return r.id == "sell_cherry" and r.text.contains("サクランボ 3kg × 60₽")), "市場に売る行が出る")
 	main._on_shop_action("sell_cherry")
 	_check(f.produce.cherry == 0, "売れる")
-	_check(main.kitchen_rows().any(func(r): return r.id == "cook_cherry_jam" and r.text.contains("サクランボ 3kg") and r.text.contains("4瓶")), "ストーブの料理に出る")
+	_check(main.kitchen_panel.kitchen_rows().any(func(r): return r.id == "cook_cherry_jam" and r.text.contains("サクランボ 3kg") and r.text.contains("4瓶")), "ストーブの料理に出る")
 	var room: Node3D = main.get_node("Cabin")
 	w.kitchen.stock.cherry_jam = 1
 	w.kitchen.changed.emit()
 	_check(room.FOOD_COLORS.has("cherry_jam") and room.FOOD_COLORS.has("plum_jam") and room.FOOD_COLORS.has("pear_compote"), "保存食の色がある")
 	w.kitchen.stock.cherry_jam = 0
 	w.kitchen.changed.emit()
-	_check(main.diary_text().contains("果物を収穫できる木") == (f.fruiting_in(w.season_for_month(int(w.tomorrow_date().substr(5, 2)))) > 0), "日記の果物の行は、明日の季節に合う")
+	_check(main.kitchen_panel.diary_text().contains("果物を収穫できる木") == (f.fruiting_in(w.season_for_month(int(w.tomorrow_date().substr(5, 2)))) > 0), "日記の果物の行は、明日の季節に合う")
 	_check(hud.status_text() != "", "HUD が崩れない")
 	hud.inventory_open = true
 	_check(hud.status_text().contains("サクランボ") and hud.status_text().contains("ナシ"), "持ち物に苗木の枠が出る")
@@ -1339,7 +1339,7 @@ func _test_hive_view() -> void:
 	_check(visitor._mark.get_child(0).material_override == visitor._request_mat, "蜂を分けてくれる人は橙の印")
 	main._talk()
 	_check(main.shop_header().contains("蜂を一群れ"), "言葉: %s" % main.shop_header())
-	_check(main.visitor_rows().any(func(r): return r.id == "receive_bees"), "受け取る行が出る")
+	_check(main.visitor_talk.visitor_rows().any(func(r): return r.id == "receive_bees"), "受け取る行が出る")
 	main._on_shop_action("receive_bees")
 	_check(h.occupied and not vs.is_here() and not hud.is_shop_open(), "分けてもらうと巣箱に蜂が入る")
 	_check(has_piece.call("HiveBee"), "蜂が飛ぶ")
@@ -1361,7 +1361,7 @@ func _test_hive_view() -> void:
 	b.changed.emit()
 	_check(has_piece.call("HiveHoney"), "たまると金色になる")
 	_check(main.hive_line().contains("3kg 採れる"), "採れる量が分かる: %s" % main.hive_line())
-	_check(main.diary_text().contains("はちみつが採れる巣箱が 1"), "日記に出る")
+	_check(main.kitchen_panel.diary_text().contains("はちみつが採れる巣箱が 1"), "日記に出る")
 	figure._process(10.0)
 	main._unhandled_input(key)
 	_check(int(b.stock.honey) == 3 and hud._message.contains("3kg") and figure.current_action() == "pick", "J で採る")
@@ -1556,11 +1556,11 @@ func _test_winter_work() -> void:
 	var tree: Dictionary = f.trees[-1]
 	player.global_position = Vector3(at.x + 1.0, 0, at.y)
 	_check(main.prune_line().contains("X で剪定できる"), "果樹のそばで案内が出る")
-	_check(main.diary_text().contains("剪定できる果樹が"), "日記に剪定が出る")
+	_check(main.kitchen_panel.diary_text().contains("剪定できる果樹が"), "日記に剪定が出る")
 	w.feeders.feeders[0].fed_day = f.day_number() - 2
-	_check(main.diary_text().contains("餌台の餌が切れている"), "日記に餌切れが出る")
+	_check(main.kitchen_panel.diary_text().contains("餌台の餌が切れている"), "日記に餌切れが出る")
 	w.feeders.feeders[0].fed_day = f.day_number()
-	_check(not main.diary_text().contains("餌台の餌が切れている"), "餌があれば日記に出ない")
+	_check(not main.kitchen_panel.diary_text().contains("餌台の餌が切れている"), "餌があれば日記に出ない")
 	var item: Dictionary = trees_view._items[-1]
 	var wide: float = item.crown.scale.x
 	_check(trees_view.find_children("PrunedBranches*", "", true, false).is_empty(), "はじめは枝の束がない")
@@ -1888,7 +1888,7 @@ func _test_table_view() -> void:
 	_check(absf(figure._leg_l.rotation.x - figure.SIT_LEG) < 0.05, "足を前へ伸ばす")
 	var foot: Vector3 = figure._leg_l.get_node("Boot").global_position
 	_check(foot.y > view.FLOOR_Y - 0.1 and foot.y < view.FLOOR_Y + 0.15, "足が床に着いている(%.2fm)" % (foot.y - view.FLOOR_Y))
-	var rows: Array = main.table_rows()
+	var rows: Array = main.kitchen_panel.table_rows()
 	_check(rows.any(func(r): return r.id == "eat_sauce" and r.text.contains("トマトソース") and r.text.contains("3瓶") and r.text.contains("薪割りと雪かきが楽")), "持っている保存食と効果が並ぶ")
 	_check(_room_pieces(view, "Food").size() == 3, "テーブルに 3 瓶ある")
 	main._on_shop_action("eat_sauce")
@@ -1898,7 +1898,7 @@ func _test_table_view() -> void:
 	_check(main.shop_header().contains("1/3種類") and main.meal_line().contains("1/3種類") and main.meal_line().contains("薪割りと雪かきが楽"), "今日は何種類食べて、何が効いているか分かる")
 	main.update_shovel(0.1, false)
 	_check(player.speed_scale == 1.0, "トマトソースでは速く歩けない(系統が違う)")
-	_check(main.table_rows().any(func(r): return r.id == "eat_sauce" and r.text.begins_with("今日は食べた")), "食べたものは一覧で分かる")
+	_check(main.kitchen_panel.table_rows().any(func(r): return r.id == "eat_sauce" and r.text.begins_with("今日は食べた")), "食べたものは一覧で分かる")
 	figure._process(0.6)
 	_check(figure._arm_r.rotation.x > 2.0, "手が口のほうへ上がる(%.2f rad)" % figure._arm_r.rotation.x)
 	figure._process(10.0)
@@ -1909,7 +1909,7 @@ func _test_table_view() -> void:
 	k.stock.pryanik = 1
 	k.changed.emit()
 	k.stock.sbiten = 1
-	_check(main.table_rows().any(func(r): return r.id == "eat_sbiten" and r.text.contains("もう効いている")), "同じ系統の品は「もう効いている」と分かる")
+	_check(main.kitchen_panel.table_rows().any(func(r): return r.id == "eat_sbiten" and r.text.contains("もう効いている")), "同じ系統の品は「もう効いている」と分かる")
 	k.stock.sbiten = 0
 	main._on_shop_action("eat_jam")
 	_check(k.stock.jam == 0 and figure.current_action() == "eat", "種類が違えば食べられる")
@@ -1952,7 +1952,7 @@ func _test_table_view() -> void:
 	k.stock.sauce = 0
 	k.changed.emit()
 	press.call(KEY_H)
-	_check(main.table_rows().any(func(r): return r.id == "no_food"), "保存食がなければ、そう出る")
+	_check(main.kitchen_panel.table_rows().any(func(r): return r.id == "no_food"), "保存食がなければ、そう出る")
 	main._on_shop_action("no_food")
 	press.call(KEY_ESCAPE)
 	_check(not hud.is_shop_open() and not figure.sitting, "Esc でも立ち上がる")
@@ -1988,7 +1988,7 @@ func _test_closeness_view() -> void:
 		vs.closeness[id] = 0
 	open.call("chat")
 	_check(main.shop_title() == "ニーナさん(顔見知り)", "見出しに親しさが出る")
-	_check(main.visitor_chat_lines("nina").size() == main.VISITOR_CHATS.nina.size(), "顔見知りの言葉はそのまま")
+	_check(main.visitor_talk.visitor_chat_lines("nina").size() == main.visitor_talk.VISITOR_CHATS.nina.size(), "顔見知りの言葉はそのまま")
 	_check(main.neighbors_line().contains("ニーナさん 顔見知り") and main.neighbors_line().contains("パーヴェルさん 顔見知り"), "持ち物に全員の親しさが出る")
 	hud.close_shop()
 	hud.inventory_open = true
@@ -1997,17 +1997,17 @@ func _test_closeness_view() -> void:
 	hud.open_shop()
 	# 段階が上がると言葉が増える。どの人のどの段階にも言葉がある
 	for who in vs.CAST:
-		var base: int = main.VISITOR_CHATS[who].size()
-		_check(main.VISITOR_CHATS_CLOSE[who].size() == vs.LEVELS.size() - 1, "%s の段階ごとの言葉がある" % who)
+		var base: int = main.visitor_talk.VISITOR_CHATS[who].size()
+		_check(main.visitor_talk.VISITOR_CHATS_CLOSE[who].size() == vs.LEVELS.size() - 1, "%s の段階ごとの言葉がある" % who)
 		for level in range(1, vs.LEVELS.size()):
 			vs.closeness[who] = vs.LEVELS[level]
-			_check(main.visitor_chat_lines(who).size() == base + level * 2, "%s は段階 %d で言葉が増える" % [who, level])
-			for line in main.VISITOR_CHATS_CLOSE[who][level - 1]:
+			_check(main.visitor_talk.visitor_chat_lines(who).size() == base + level * 2, "%s は段階 %d で言葉が増える" % [who, level])
+			for line in main.visitor_talk.VISITOR_CHATS_CLOSE[who][level - 1]:
 				_check(line.contains("\n"), "2 行で読める: %s" % line.substr(0, 8))
 		vs.closeness[who] = 0
 	vs.closeness.nina = vs.LEVELS[1]
-	vs.visit.line = main.VISITOR_CHATS.nina.size()  # 増えた言葉の 1 つ目
-	_check(main.visitor_text() == main.VISITOR_CHATS_CLOSE.nina[0][0], "増えた言葉を話す")
+	vs.visit.line = main.visitor_talk.VISITOR_CHATS.nina.size()  # 増えた言葉の 1 つ目
+	_check(main.visitor_talk.visitor_text() == main.visitor_talk.VISITOR_CHATS_CLOSE.nina[0][0], "増えた言葉を話す")
 	vs.closeness.nina = vs.LEVELS[1] - 1
 	# 話し終えると、段階が上がったことを知らせる
 	vs.visit.line = 0
@@ -2024,9 +2024,9 @@ func _test_closeness_view() -> void:
 	var gift := {"type": "item", "item": "pickles", "count": 2}
 	var keep_pickles: int = w.kitchen.stock.pickles
 	open.call("gift", {"reward": gift})
-	_check(main.visitor_text().contains("きゅうりの塩漬け 2瓶"), "贈り物の中身を話す")
-	_check(main.visitor_line().contains("ニーナさん"), "HUD に来ていることが出る")
-	_check(main.visitor_rows().any(func(r): return r.id == "receive" and r.text.contains("塩漬け 2瓶")), "受け取る行が出る")
+	_check(main.visitor_talk.visitor_text().contains("きゅうりの塩漬け 2瓶"), "贈り物の中身を話す")
+	_check(main.visitor_talk.visitor_line().contains("ニーナさん"), "HUD に来ていることが出る")
+	_check(main.visitor_talk.visitor_rows().any(func(r): return r.id == "receive" and r.text.contains("塩漬け 2瓶")), "受け取る行が出る")
 	var view = main.get_node("Visitor")
 	view._state = "wait"
 	view._show_mark()
@@ -2036,8 +2036,8 @@ func _test_closeness_view() -> void:
 	_check(w.kitchen.stock.pickles == keep_pickles + 2 and hud._message.contains("もらった") and not vs.is_here(), "受け取ると増えて帰っていく")
 	w.kitchen.stock.pickles = keep_pickles
 	# 薪の贈り物の文言
-	_check(main.reward_text({"type": "firewood", "count": 2}) == "薪 2回分", "薪の文言")
-	_check(main.reward_text({"type": "item", "item": "honey", "count": 1}) == "はちみつ 1kg", "はちみつの文言")
+	_check(main.visitor_talk.reward_text({"type": "firewood", "count": 2}) == "薪 2回分", "薪の文言")
+	_check(main.visitor_talk.reward_text({"type": "item", "item": "honey", "count": 1}) == "はちみつ 1kg", "はちみつの文言")
 	# 片づけ
 	for id in keep_close:
 		vs.closeness[id] = keep_close[id]
@@ -2065,22 +2065,22 @@ func _test_market_pages() -> void:
 	for item in w.market.SELL_PRICES:
 		pile_set.call(item, 3)
 	main._panel = "market"
-	main._buy_page = 0
-	main._sell_page = 0
+	main.market_panel._buy_page = 0
+	main.market_panel._sell_page = 0
 	hud.open_shop()
 	var seen := {}
 	var tallest := 0
-	for buy_step in range(main.BUY_PAGES.size()):
-		for sell_step in range(main.SELL_PAGES.size()):
+	for buy_step in range(main.market_panel.BUY_PAGES.size()):
+		for sell_step in range(main.market_panel.SELL_PAGES.size()):
 			var rows: Array = main.visible_shop_rows()
 			for id in ids.call(rows):
 				seen[id] = true
 			tallest = maxi(tallest, rows.filter(func(r): return r.column == 0).size())
 			tallest = maxi(tallest, rows.filter(func(r): return r.column == 1).size())
-			_check(hud._shop.get_combined_minimum_size().y <= 648.0, "画面の高さに収まる(買う %d・売る %d: %.0fpx)" % [main._buy_page, main._sell_page, hud._shop.get_combined_minimum_size().y])
+			_check(hud._shop.get_combined_minimum_size().y <= 648.0, "画面の高さに収まる(買う %d・売る %d: %.0fpx)" % [main.market_panel._buy_page, main.market_panel._sell_page, hud._shop.get_combined_minimum_size().y])
 			main._on_shop_action("page_sell")
 		main._on_shop_action("page_buy")
-	_check(main._buy_page == 0 and main._sell_page == 0, "ページは一周すると最初に戻る")
+	_check(main.market_panel._buy_page == 0 and main.market_panel._sell_page == 0, "ページは一周すると最初に戻る")
 	_check(tallest <= 15, "1 列は多くても 15 行(%d 行)" % tallest)
 	var missing := []
 	for g in w.market.GOODS:
@@ -2099,10 +2099,10 @@ func _test_market_pages() -> void:
 	_check(hud._shop_columns[0].get_child(0).has_focus(), "続けて押せるように、フォーカスが残る")
 	# ほかの画面にページの行は出ない
 	main._panel = "kitchen"
-	_check(main.kitchen_rows()[0].id == "page_cook" and main.visible_shop_rows().all(func(r): return not r.has("page") or r.page == main._cook_page), "ストーブの画面は料理のページで分ける")
+	_check(main.kitchen_panel.kitchen_rows()[0].id == "page_cook" and main.visible_shop_rows().all(func(r): return not r.has("page") or r.page == main.kitchen_panel._cook_page), "ストーブの画面は料理のページで分ける")
 	main._panel = "market"
-	main._buy_page = 0
-	main._sell_page = 0
+	main.market_panel._buy_page = 0
+	main.market_panel._sell_page = 0
 	hud.close_shop()
 	for item in keep:
 		pile_set.call(item, keep[item])
@@ -2187,7 +2187,7 @@ func _test_visitor_view() -> void:
 	# 来ない日
 	vs.visit = {"day": today}
 	view.sync_visit()
-	_check(view.state() == "away" and main.visitor_line() == "", "来ない日は誰もいない")
+	_check(view.state() == "away" and main.visitor_talk.visitor_line() == "", "来ない日は誰もいない")
 	player.global_position = Vector3(-20, 0, -10)
 	press.call(KEY_C)
 	_check(not hud.is_shop_open(), "誰もいなければ C を押しても何も起きない")
@@ -2227,14 +2227,14 @@ func _test_visitor_view() -> void:
 
 	# HUD の案内: 離れていると向きと距離、近いと C
 	player.global_position = Vector3(spot.x + 20, 0, spot.y)
-	var far_line: String = main.visitor_line()
+	var far_line: String = main.visitor_talk.visitor_line()
 	_check(far_line.contains("ニーナさん") and far_line.contains("西") and far_line.contains("20m") and far_line.contains("頼みごと"), "離れていると向きと距離が出る: %s" % far_line)
 	press.call(KEY_C)
 	_check(not hud.is_shop_open(), "離れていると話せない")
 	_check(hud._message.contains("ニーナさん"), "どこにいるかを知らせる")
 	player.global_position = Vector3(spot.x + 2, 0, spot.y)
-	_check(main.visitor_line().contains("C で話す"), "近いと C の案内が出る")
-	_check(main.diary_text().contains("ニーナさんの頼みごとがまだ"), "日記にも出る")
+	_check(main.visitor_talk.visitor_line().contains("C で話す"), "近いと C の案内が出る")
+	_check(main.kitchen_panel.diary_text().contains("ニーナさんの頼みごとがまだ"), "日記にも出る")
 	_check(main.compass(Vector2(1, 0)) == "東" and main.compass(Vector2(0, -1)) == "北" and main.compass(Vector2(-1, 1)) == "南西", "向きの文言が合う")
 
 	# 話す: 足りないと渡せない
@@ -2245,7 +2245,7 @@ func _test_visitor_view() -> void:
 	var text: String = main.shop_header()
 	_check(text.contains("トマト") and text.contains("5kg") and text.contains("260₽"), "何を頼むかが分かる: %s" % text)
 	_check(not hud.status_text().contains("─ 持ち物 ─"), "話す画面には持ち物を重ねない")
-	_check(main.visitor_rows().any(func(r): return r.id == "give" and r.text.contains("トマト 3kg")), "持っている量が分かる")
+	_check(main.visitor_talk.visitor_rows().any(func(r): return r.id == "give" and r.text.contains("トマト 3kg")), "持っている量が分かる")
 	main._on_shop_action("give")
 	_check(hud._message.contains("あと2kg足りない") and vs.is_here() and hud.is_shop_open(), "足りなければ足りない量を知らせる")
 	press.call(KEY_C)
@@ -2265,7 +2265,7 @@ func _test_visitor_view() -> void:
 	_check(view.state() == "leave" and not view._mark.visible, "帰っていく。印は消える")
 	walk.call("away")
 	_check(view.state() == "away" and view._figure == null, "入口まで行くと消える")
-	_check(main.visitor_line() == "", "帰ると案内が消える")
+	_check(main.visitor_talk.visitor_line() == "", "帰ると案内が消える")
 
 	# 話すだけの日: 話し終えると帰る
 	vs.visit = {"day": today, "who": "pavel", "kind": "chat", "done": false, "line": 0}
@@ -2276,7 +2276,7 @@ func _test_visitor_view() -> void:
 	_check(view._figure.get_node("Hips/Upper/Head").get_child_count() > 2, "帽子などが付いている")
 	press.call(KEY_C)
 	_check(main.shop_title().begins_with("パーヴェルさん") and main.shop_header().contains("明日は"), "パーヴェルさんは明日の空模様を話す: %s" % main.shop_header())
-	_check(main.visitor_rows().any(func(r): return r.id == "chat_end"), "別れの行が出る")
+	_check(main.visitor_talk.visitor_rows().any(func(r): return r.id == "chat_end"), "別れの行が出る")
 	main._on_shop_action("chat_end")
 	_check(not hud.is_shop_open() and not vs.is_here(), "話し終えると用が済む")
 	view.sync_visit()
@@ -2454,13 +2454,13 @@ func _test_visitor_view() -> void:
 	_check(vs.has_help() and hud.is_shop_open(), "話しかけると、手詰まりなら分けてくれる")
 	var help_text: String = main.shop_header()
 	_check(help_text.contains("ラディッシュの種 3つ"), "何をくれるかが分かる: %s" % help_text)
-	_check(main.visitor_rows().any(func(r): return r.id == "receive"), "受け取る行が出る")
+	_check(main.visitor_talk.visitor_rows().any(func(r): return r.id == "receive"), "受け取る行が出る")
 	press.call(KEY_C)
 	_check(vs.has_help() and vs.is_here(), "閉じても、まだ待っている")
 	view.sync_visit()
 	_check(view._mark.get_child(0).material_override == view._request_mat, "分けてくれるものがあると橙の印")
 	player.global_position = Vector3(-20, 0, 40)
-	_check(main.visitor_line().contains("渡したいものがある"), "離れていても分かる: %s" % main.visitor_line())
+	_check(main.visitor_talk.visitor_line().contains("渡したいものがある"), "離れていても分かる: %s" % main.visitor_talk.visitor_line())
 	player.global_position = Vector3(view.ground_pos().x, 0, view.ground_pos().y + 2)
 	press.call(KEY_C)
 	main._on_shop_action("receive")
@@ -2497,9 +2497,9 @@ func _test_visitor_view() -> void:
 	# 日記に明日来る人が出る
 	var tomorrow: int = today + 1
 	if vs.is_visit_day(tomorrow):
-		_check(main.diary_text().contains("%sが来そう" % vs.CAST[vs.who_on(tomorrow)].name), "明日来る人が日記に出る")
+		_check(main.kitchen_panel.diary_text().contains("%sが来そう" % vs.CAST[vs.who_on(tomorrow)].name), "明日来る人が日記に出る")
 	else:
-		_check(not main.diary_text().contains("が来そう"), "明日来ない日は出ない")
+		_check(not main.kitchen_panel.diary_text().contains("が来そう"), "明日来ない日は出ない")
 	vs.visit = {"day": today}
 	player.global_position = Vector3(20, 0, 23)
 
@@ -2824,7 +2824,7 @@ func _test_furniture() -> void:
 	key.call(KEY_H)
 	_check(hud.is_shop_open() and main._panel == "kitchen" and not player.is_physics_processing(), "H で台所が開き、歩かなくなる")
 	_check(main.shop_title().contains("ストーブ") and main.shop_header().contains("薪"), "見出しが台所になる")
-	_check(main.kitchen_rows().any(func(r): return r.id == "cook_sauce" and r.text.contains("トマト 10kg") and r.text.contains("5瓶")), "料理の一覧に材料とできる数が出る")
+	_check(main.kitchen_panel.kitchen_rows().any(func(r): return r.id == "cook_sauce" and r.text.contains("トマト 10kg") and r.text.contains("5瓶")), "料理の一覧に材料とできる数が出る")
 
 	# 薪がなければ仕込めない(丸太があっても、自動では割らない)
 	main._on_shop_action("cook_sauce")
@@ -2848,7 +2848,7 @@ func _test_furniture() -> void:
 	_check(fire2.material_override.emission_enabled, "火が見える")
 	_check(_room_pieces(view, "Firewood").size() == view.WOOD_PILES_MAX, "割った薪が積まれる")
 	_check(main.kitchen_line().contains("あと1日"), "HUD に鍋の残り日数が出る")
-	_check(main.kitchen_rows().any(func(r): return r.id == "pot_wait" and r.text.contains("あと1日")), "台所にも残り日数が出る")
+	_check(main.kitchen_panel.kitchen_rows().any(func(r): return r.id == "pot_wait" and r.text.contains("あと1日")), "台所にも残り日数が出る")
 	main._on_shop_action("cook_sauce")
 	_check(hud._message.contains("鍋は使っている"), "鍋がふさがっていると仕込めない")
 	key.call(KEY_H)
@@ -2860,15 +2860,15 @@ func _test_furniture() -> void:
 	_check(main.kitchen_line().contains("できた"), "できると HUD で知らせる")
 	_check(_room_pieces(view, "PotFood").size() == 1 and _room_pieces(view, "PotLid").is_empty() and view._steam_puffs.is_empty(), "できると蓋が取れて中身が見え、湯気は止まる")
 	_check(not _room_pieces(view, "StoveFire")[0].material_override.emission_enabled, "できると火は落ちている")
-	main._open_kitchen()
-	_check(main.kitchen_rows().any(func(r): return r.id == "pot_collect" and r.text.contains("5瓶")), "受け取りの行が出る")
+	main.kitchen_panel._open_kitchen()
+	_check(main.kitchen_panel.kitchen_rows().any(func(r): return r.id == "pot_collect" and r.text.contains("5瓶")), "受け取りの行が出る")
 	main._on_shop_action("pot_collect")
 	_check(k.stock.sauce == 5 and k.is_empty() and _room_pieces(view, "PotInside").size() == 1 and _room_pieces(view, "PotFood").is_empty(), "受け取ると鍋が空く")
 	_check(_room_pieces(view, "Food").size() == 5, "できた瓶がテーブルに並ぶ")
 	_check(not _room_pieces(view, "StoveFire")[0].material_override.emission_enabled, "火が消える")
 	main._on_shop_action("close")
 	_check(main.food_line().contains("トマトソース 5瓶") and not main.produce_line().contains("トマトソース"), "持ち物の保存食の行に出る")
-	main._open_kitchen()
+	main.kitchen_panel._open_kitchen()
 	_check(not hud.status_text().contains("─ 持ち物 ─"), "ストーブの画面には持ち物を重ねない")
 	main._close_shop()
 	main._panel = "market"
@@ -2879,10 +2879,10 @@ func _test_furniture() -> void:
 	var real_season: String = w.forest.season
 	w.forest.season = "winter"
 	_check(main.shop_rows().any(func(r): return r.id == "sell_sauce" and r.text.ends_with("トマトソース 5瓶 × 225₽(冬)")), "冬は高い値段と、そのわけが出る")
-	_check(main._preserve_price_text("sauce", "瓶") == "市場で1瓶 225₽で売れる", "冬にできあがると、今の値段を知らせる")
+	_check(main.kitchen_panel._preserve_price_text("sauce", "瓶") == "市場で1瓶 225₽で売れる", "冬にできあがると、今の値段を知らせる")
 	w.forest.season = "autumn"
 	_check(main.shop_rows().any(func(r): return r.id == "sell_sauce" and r.text.ends_with("トマトソース 5瓶 × 150₽")), "市場に売る行が出る")
-	_check(main._preserve_price_text("sauce", "瓶") == "市場で1瓶 150₽で売れる。冬は225₽", "秋にできあがると、冬の値段も知らせる")
+	_check(main.kitchen_panel._preserve_price_text("sauce", "瓶") == "市場で1瓶 150₽で売れる。冬は225₽", "秋にできあがると、冬の値段も知らせる")
 	_test_market_pages()
 	var money: int = w.market.money
 	main._on_shop_action("sell_sauce")
@@ -2892,8 +2892,8 @@ func _test_furniture() -> void:
 	for id in k.RECIPES:
 		_check(view.FOOD_COLORS.has(id), "%s の色がある(鍋とテーブルに見える)" % id)
 	w.bees.stock.honey = 1
-	main._open_kitchen()
-	_check(main.kitchen_rows().any(func(r): return r.id == "cook_pryanik" and r.text.contains("はちみつ 1kg") and r.text.contains("10個") and r.text.contains("持っている 1kg")), "ストーブの料理にはちみつの品が出る")
+	main.kitchen_panel._open_kitchen()
+	_check(main.kitchen_panel.kitchen_rows().any(func(r): return r.id == "cook_pryanik" and r.text.contains("はちみつ 1kg") and r.text.contains("10個") and r.text.contains("持っている 1kg")), "ストーブの料理にはちみつの品が出る")
 	main._on_shop_action("cook_pryanik")
 	_check(k.pot.recipe == "pryanik" and int(w.bees.stock.honey) == 0, "画面からはちみつで仕込める")
 	k.pot.start_day -= 1
@@ -2987,14 +2987,14 @@ func _test_furniture() -> void:
 	var g = w.garden
 	g.crops.clear()
 	g.crops.append({"pos": Vector2(40, 40), "kind": "radish", "sown_day": g.day_number() - 5, "water_days": 0, "last_watered": "", "head": 0.0})
-	var d: String = main.diary_text()
+	var d: String = main.kitchen_panel.diary_text()
 	_check(d.contains("収穫できる区画: 1") and d.contains("まだ水をやっていない区画が 1"), "明日収穫できる区画とやり残しが出る")
 	_check(d.contains("鍋が空いている"), "鍋が空いていると出る")
 	g.crops.clear()
 	k.pot = {"recipe": "jam", "start_day": k.forest.day_number()}
-	_check(main.diary_text().contains("鍋のリンゴジャムを受け取れる"), "明日できる鍋が出る")
+	_check(main.kitchen_panel.diary_text().contains("鍋のリンゴジャムを受け取れる"), "明日できる鍋が出る")
 	k.pot = {"recipe": "pickles", "start_day": k.forest.day_number()}
-	var d2: String = main.diary_text()
+	var d2: String = main.kitchen_panel.diary_text()
 	_check(not d2.contains("鍋の") and not d2.contains("鍋が"), "まだできない鍋は出さない")
 	k.pot = {}
 	k.changed.emit()
@@ -3387,7 +3387,7 @@ func _test_2d_still_works() -> void:
 	_check(main.world.wildlife.seen.is_empty(), "2D には生き物の姿がないので、来たと数えない")
 	main.world.visitors.visit = {"day": main.world.forest.day_number(), "who": "nina", "kind": "chat", "done": false, "line": 0}
 	main._talk()
-	_check(main.visitor_line() == "" and not main.get_node("HUD").is_shop_open(), "2D には訪問者の姿がないので、話せない")
+	_check(main.visitor_talk.visitor_line() == "" and not main.get_node("HUD").is_shop_open(), "2D には訪問者の姿がないので、話せない")
 	main.world.visitors.visit = {}
 	main._sfx("click")  # 2D には音がない
 	_check(not main.get_node("Audio").has_method("play"), "2D では音を鳴らさない")
@@ -3481,7 +3481,7 @@ func _test_family_view() -> void:
 	for id in view.people_ids():  # ほかの人を遠ざける(いちばん近い人に話しかけるので)
 		if id != "alyona":
 			view._people[id].pos = Vector2(-40, -40)
-	_check(main.family_near() == "alyona", "近くの家族に話せる")
+	_check(main.family_talk.family_near() == "alyona", "近くの家族に話せる")
 	_check(main.people_line() == "アリョーナ(妻)(C で話す)", "左上に「C で話す」")
 	press.call(KEY_C)
 	_check(hud.is_shop_open() and main._panel == "family" and main.shop_title() == "アリョーナ(妻)" and main.shop_header().begins_with("「"), "C で話しかけると、話す画面に言葉が出る(%s)" % main.shop_header().left(30))
@@ -3499,7 +3499,7 @@ func _test_family_view() -> void:
 	_check(not main.shop_header().contains("をもらった"), "同じ日の 2 回目は贈り物なし")
 	main._on_shop_action("close")
 	player.global_position = Vector3(30, 0, 30)
-	_check(main.family_near() == "" and main.people_line() == main.visitor_line(), "離れると話せない")
+	_check(main.family_talk.family_near() == "" and main.people_line() == main.visitor_talk.visitor_line(), "離れると話せない")
 	# 朝の手伝いの動き
 	var plot := Vector2(19.5, 19.5)
 	w.land.toggle_plot(plot)
@@ -3580,7 +3580,7 @@ func _test_family_view() -> void:
 	_check(tent_cloth.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON, "外からはテントの布で中は見えない")
 	_check(view.tent_node().get_node("TentLight").visible, "夜はテントのランタンがともる")
 	player.global_position = Vector3(f.home_pos().x, 0, f.home_pos().y + 0.5)
-	_check(main.family_near() == "", "中で寝ている家族とは話せない")
+	_check(main.family_talk.family_near() == "", "中で寝ている家族とは話せない")
 	# テントに入る
 	player.global_position = Vector3(f.tent.x, 0, f.tent.y + 1.0)
 	view._process(0.0)
@@ -3679,17 +3679,17 @@ func _test_family_together() -> void:
 		p.wait = 1000.0  # 勝手に歩きださない
 	player.global_position = Vector3(-7.5, 0, -1.5)
 	# 話す画面: 小屋ができていれば 3 つの誘い。小さい子は夕食だけ
-	main._talk_family("alyona")
+	main.family_talk._talk_family("alyona")
 	_check(main.shop_rows().map(func(r): return r.id) == ["invite_harvest", "invite_cook", "invite_dinner", "close"], "配偶者には 収穫・料理・夕食 を誘える")
 	main._on_shop_action("close")
-	main._talk_family("polya")
+	main.family_talk._talk_family("polya")
 	_check(main.shop_rows().map(func(r): return r.id) == ["invite_dinner", "invite_explore", "close"], "3 歳の子は夕食と生き物探し")
 	main._on_shop_action("close")
-	main._talk_family("vanya")
+	main.family_talk._talk_family("vanya")
 	_check(main.shop_rows().map(func(r): return r.id) == ["invite_harvest", "invite_dinner", "invite_explore", "invite_seeds", "close"], "9 歳の子は 収穫・夕食・生き物探し・種拾い")
 	main._on_shop_action("close")
 	# 収穫: 実った区画がなければ断られる
-	main._talk_family("alyona")
+	main.family_talk._talk_family("alyona")
 	main._on_shop_action("invite_harvest")
 	_check(not hud.is_shop_open() and hud._message.contains("まだないみたい") and not f.invited_today("alyona", "harvest"), "実った区画がなければ「まだないみたい」(誘ったことにならない)")
 	# 実った区画を 3 つ(3m おき)
@@ -3700,7 +3700,7 @@ func _test_family_together() -> void:
 	_check(plots.all(func(q): return g.is_ripe(g.crop_at(q))), "区画が実っている")
 	# 暗いと断られる
 	view.set_night(1.0)
-	main._talk_family("alyona")
+	main.family_talk._talk_family("alyona")
 	main._on_shop_action("invite_harvest")
 	_check(hud._message.contains("明日にしよう") and not f.invited_today("alyona", "harvest"), "暗いと「収穫は明日にしよう」")
 	view.set_night(0.0)
@@ -3710,13 +3710,13 @@ func _test_family_together() -> void:
 		p.indoor = false
 		view._stand(p)
 		p.wait = 1000.0
-	main._talk_family("alyona")
+	main.family_talk._talk_family("alyona")
 	main._on_shop_action("invite_harvest")
 	_check(f.invited_today("alyona", "harvest") and view.invite_of("alyona") == "harvest" and hud._message.contains("一緒に採ろう"), "配偶者を収穫に誘う: " + hud._message.left(40))
-	main._talk_family("vanya")
+	main.family_talk._talk_family("vanya")
 	main._on_shop_action("invite_harvest")
 	_check(view.invite_of("vanya") == "harvest" and hud._message.contains("得意だよ"), "子どもも収穫に誘える")
-	main._talk_family("alyona")
+	main.family_talk._talk_family("alyona")
 	_check(not main.shop_rows().any(func(r): return r.id == "invite_harvest"), "同じ日にもう一度は誘えない")
 	main._on_shop_action("close")
 	var follows: bool = steps.call(func(): return ["alyona", "vanya"].all(func(id): return view.person_pos(id).distance_to(main.player_pos()) <= view.FOLLOW_DIST + 0.3 and view.state_of(id) == "stand"))
@@ -3732,7 +3732,7 @@ func _test_family_together() -> void:
 	var done: bool = steps.call(func(): return view.invite_of("alyona") == "" and view.invite_of("vanya") == "")
 	_check(done, "実った区画がなくなると、一緒の収穫はおしまい")
 	# 生き物探し: 子どもがついてきて、近くの生き物を見つけて教える(仲良し度が上がる)
-	main._talk_family("masha")
+	main.family_talk._talk_family("masha")
 	main._on_shop_action("invite_explore")
 	_check(view.invite_of("masha") == "explore" and hud._message.contains("いっぱい見つける"), "子どもを生き物探しに誘う: " + hud._message.replace("\n", " ").left(60))
 	var wl_view = main.get_node("Wildlife")
@@ -3753,12 +3753,12 @@ func _test_family_together() -> void:
 	view._end_invite(view._people["masha"])
 	# 種拾い: 外の林に種が落ちていなければ、次に落ちる日を教えてくれる
 	w.forest.pickups = w.forest.pickups.filter(func(pk): return not w.forest.is_outside_land(pk.pos))
-	main._talk_family("vanya")
+	main.family_talk._talk_family("vanya")
 	main._on_shop_action("invite_seeds")
 	_check(hud._message.contains("種が落ちてないみたい") and (hud._message.contains("の種が落ちるよ") or w.wilds.species_here().is_empty()) and not f.invited_today("vanya", "seeds"), "外の林に種がない日は断って、次に落ちる日を教える: " + hud._message.replace("\n", " "))
 	w.forest.pickups.append({"pos": Vector2(5, -55), "species": "birch", "amount": 3})
 	w.forest.pickups.append({"pos": Vector2(9, -56), "species": "birch", "amount": 3})
-	main._talk_family("vanya")
+	main.family_talk._talk_family("vanya")
 	main._on_shop_action("invite_seeds")
 	_check(view.invite_of("vanya") == "seeds" and hud._message.contains("一緒に拾おう"), "子どもを外の林の種拾いに誘う")
 	player.global_position = Vector3(5, 0, -54)
@@ -3774,7 +3774,7 @@ func _test_family_together() -> void:
 	_check(seeds_done, "外の林の種がなくなると、種拾いはおしまい")
 	player.global_position = Vector3(-7.5, 0, -1.5)
 	# 料理: 配偶者がストーブの前で待ち、仕込むと鍋をかき混ぜる。できる数が 2 割増える
-	main._talk_family("alyona")
+	main.family_talk._talk_family("alyona")
 	main._on_shop_action("invite_cook")
 	_check(view.invite_of("alyona") == "cook" and hud._message.contains("ストーブの前で待ってる"), "配偶者を料理に誘う")
 	var at_stove: bool = steps.call(func(): return view.cook_helper() == "alyona")
@@ -3784,21 +3784,21 @@ func _test_family_together() -> void:
 	k.firewood = 5
 	g.produce.tomato = 20
 	var sauce_before: int = int(k.stock.sauce)
-	main._kitchen_action("cook_sauce")
+	main.kitchen_panel._kitchen_action("cook_sauce")
 	_check(k.pots[0].get("helped", false) and hud._message.contains("鍋をかき混ぜてくれた"), "一緒に仕込む: " + hud._message.replace("\n", " ").left(60))
 	_check(view.figure_of("alyona").current_action() == "grind", "配偶者が鍋をかき混ぜる動きをする")
 	k.pots[0].start_day = int(k.pots[0].start_day) - 1
-	main._kitchen_action("pot_collect")
+	main.kitchen_panel._kitchen_action("pot_collect")
 	_check(int(k.stock.sauce) == sauce_before + int(k.RECIPES.sauce.output) + 1 and hud._message.contains("一緒に作ったぶん +1瓶"), "できる数が増える: " + hud._message.left(60))
 	var cook_done: bool = steps.call(func(): return view.invite_of("alyona") == "")
 	_check(cook_done, "かき混ぜたあと、いつもの暮らしに戻る")
 	# 夕食: 昼は断られる。暗くなってから誘うと、家族が席に座る
-	main._talk_family("masha")
+	main.family_talk._talk_family("masha")
 	main._on_shop_action("invite_dinner")
 	_check(hud._message.contains("暗くなってから") and not f.invited_today("masha", "dinner"), "昼は「夕ごはんは暗くなってから」")
 	view.set_night(1.0)
 	view.hours_override = 19.0
-	main._talk_family("masha")
+	main.family_talk._talk_family("masha")
 	main._on_shop_action("invite_dinner")
 	_check(f.invited_today("polya", "dinner") and hud._message.contains("みんな、座って"), "暗くなってから誘うと、みんなに声をかける")
 	var seated: bool = steps.call(func(): return view.seated_ids().size() == 4)
@@ -3812,13 +3812,13 @@ func _test_family_together() -> void:
 	for id in k.stock:
 		k.stock[id] = 0
 	k.stock.jam = 1
-	main._table_action("eat_jam")
+	main.kitchen_panel._table_action("eat_jam")
 	_check(f.dined_today() and hud._message.contains("みんなで食べた"), "腰掛けで食べると、みんなで食べた: " + hud._message.replace("\n", " ").left(60))
 	_check(view.seated_ids().all(func(id): return view.figure_of(id).current_action() == "eat"), "座っている家族も食べる動きをする")
 	var stood: bool = steps.call(func(): return view.seated_ids().is_empty())
 	_check(stood and not view.figure_of("alyona").sitting, "食べ終わると席を立つ")
 	# 子どもは寝る時刻に席を立って寝に行く
-	main._talk_family("alyona")
+	main.family_talk._talk_family("alyona")
 	_check(not main.shop_rows().any(func(r): return r.id == "invite_dinner"), "夕食は 1 日 1 回")
 	main._on_shop_action("close")
 	f.invited.erase("all:dinner")
@@ -3869,7 +3869,7 @@ func _test_family_seasons() -> void:
 	g.produce.wheat = 20
 	gather.call(Vector2(-12, 6))
 	player.global_position = Vector3(-12, 0, 13.2)
-	main._talk_family("alyona")
+	main.family_talk._talk_family("alyona")
 	_check(main.shop_rows().any(func(r): return r.id == "invite_mill"), "石臼を置くと「一緒に石臼を回そう」が出る")
 	main._on_shop_action("invite_mill")
 	_check(hud._message.contains("5kg → 10kg") and w.mill.hand_limit() == 10, "誘うと今日手で挽ける量が 5kg → 10kg: " + hud._message.replace("\n", " "))
@@ -3891,9 +3891,9 @@ func _test_family_seasons() -> void:
 	g.seeds.rice = 5
 	gather.call(Vector2(-4, -42))
 	player.global_position = Vector3(-1.5, 0, -46.5)
-	main._talk_family("alyona")
+	main.family_talk._talk_family("alyona")
 	main._on_shop_action("invite_rice")
-	main._talk_family("vanya")
+	main.family_talk._talk_family("vanya")
 	main._on_shop_action("invite_rice")
 	_check(view.invite_of("alyona") == "rice" and view.invite_of("vanya") == "rice", "配偶者と子どもを田植えに誘う")
 	steps.call(func(): return ["alyona", "vanya"].all(func(id): return view.state_of(id) == "stand" and view.person_pos(id).distance_to(main.player_pos()) <= view.FOLLOW_DIST + 0.3))
@@ -3908,7 +3908,7 @@ func _test_family_seasons() -> void:
 	w.refresh_season()
 	gather.call(Vector2(10, -10))
 	player.global_position = Vector3(10, 0, -5)
-	main._talk_family("vanya")
+	main.family_talk._talk_family("vanya")
 	_check(main.shop_rows().any(func(r): return r.id == "invite_snow") and not main.shop_rows().any(func(r): return r.id == "invite_rice"), "冬は雪かきが出て、田植えは出ない")
 	main._on_shop_action("invite_snow")
 	_check(view.invite_of("vanya") == "snow", "子どもを雪かきに誘う")
@@ -3930,7 +3930,7 @@ func _test_profile_view() -> void:
 	var player: CharacterBody3D = main.get_node("Player")
 	var figure: Node3D = player.get_node("Body/Figure")
 	_check(not p.chosen and main.profile_suffix() == "" and main.with_call("{呼}ありがとう") == "ありがとう", "決める前は呼びかけなし")
-	_check(main.diary_text().begins_with("%d月%d日の日記" % [int(w.forest.today().substr(5, 2)), int(w.forest.today().substr(8, 2))]), "決める前の日記の見出し")
+	_check(main.kitchen_panel.diary_text().begins_with("%d月%d日の日記" % [int(w.forest.today().substr(5, 2)), int(w.forest.today().substr(8, 2))]), "決める前の日記の見出し")
 	_check(not figure.has_long_hair(), "決める前は今の髪")
 	main.open_profile_picker()
 	_check(hud.is_picker_open() and hud.profile_picker.visible and not player.is_physics_processing(), "自分のことを決める画面が開き、そのあいだは歩かない")
@@ -3942,11 +3942,11 @@ func _test_profile_view() -> void:
 	_check(hud._message.contains("ようこそ、とむさん"), "ようこそと知らせる")
 	_check(figure.has_long_hair() and figure.get_node("Hips/Upper/Head/LongHair").get_child_count() >= 4, "女性は長めの髪と三つ編み")
 	_check(main.profile_suffix() == "  とむ(女性)" and hud._inventory_lines()[0] == "─ 持ち物 ─  とむ(女性)", "持ち物の見出しに名前")
-	_check(main.diary_text().contains("日 とむの日記"), "日記の見出しに名前")
+	_check(main.kitchen_panel.diary_text().contains("日 とむの日記"), "日記の見出しに名前")
 	_check(main.with_call("{呼}ありがとう、助かったよ。") == "とむさん、ありがとう、助かったよ。", "近所の人は「とむさん、」と呼ぶ")
 	_check(main.with_call("{呼}無理しないでね。", "spouse") == "とむ、無理しないでね。", "配偶者は「とむ、」と呼ぶ")
 	_check(main.with_call("{親}見て見て!", "child") == "お母さん、見て見て!", "子どもは「お母さん、」と呼ぶ")
-	_check(main.VISITOR_CHATS.nina.any(func(l): return l.begins_with("{呼}")) and main.VISITOR_THANKS.values().all(func(l): return l.contains("{呼}")), "近所の人の言葉のいくつかとお礼で名前を呼ぶ")
+	_check(main.visitor_talk.VISITOR_CHATS.nina.any(func(l): return l.begins_with("{呼}")) and main.visitor_talk.VISITOR_THANKS.values().all(func(l): return l.contains("{呼}")), "近所の人の言葉のいくつかとお礼で名前を呼ぶ")
 	# 名前を付け直す(Y。自分の行がいちばん上)
 	var e := InputEventKey.new()
 	e.keycode = KEY_Y
