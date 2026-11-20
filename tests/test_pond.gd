@@ -47,6 +47,7 @@ func _initialize() -> void:
 	_test_creatures()
 	_test_water_around()
 	_test_save()
+	_test_long_closed()
 	_remove_save()
 	print("RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(1 if _failed > 0 else 0)
@@ -395,3 +396,17 @@ func _test_save() -> void:
 	w5.pond.water = 50  # 読み込みで消えることを見る
 	w5.load_game()
 	_check(not w5.pond.is_placed() and w5.pond.water == 0 and w5.pond.days_dug == 0, "池がないセーブは空から")
+
+# 何年も開かなかったとき: 数えるのは 365 日まで(巣箱・雪と同じ。前は池だけ上限がなかった。レビュー C5)
+func _test_long_closed() -> void:
+	print("何年も開かなかったとき")
+	var w := _world(RainForest.new())
+	var p := w.pond
+	_dug(w)
+	var today: int = w.forest.day_number()
+	p.last_checked_day = today - 5000
+	p.catch_up()
+	_check(p.last_checked_day == today, "今日まで数え終える")
+	_check(p.water == 100, "雨が続いたので水はいっぱい")
+	_check(p.wet_since_day >= today - Forest.MAX_CATCH_UP_DAYS + 1, "数えたのは 365 日ぶんだけ(それより前の日は数えない)")
+	_check(p.wet_days() > 14 and p.present().has("duck"), "1 年あれば、いちばん遅いカモまで来ている")

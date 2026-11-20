@@ -131,7 +131,7 @@ func check_today() -> bool:
 
 # 収入の手段が尽きているか。種も買えず、畑が空で、売れるものもなく、待てば手に入るものもない
 func is_stuck() -> bool:
-	if market.money >= _cheapest_seed():
+	if market.money >= market.cheapest_crop_seed():
 		return false
 	for k in garden.seeds:
 		if int(garden.seeds[k]) > 0:
@@ -146,13 +146,6 @@ func is_stuck() -> bool:
 	if kitchen != null and not kitchen.all_empty():
 		return false
 	return forest.fruiting_in(forest.season) == 0
-
-func _cheapest_seed() -> int:
-	var best := 999999
-	for g in market.GOODS:
-		if g.form == "crop_seed":
-			best = mini(best, int(g.price))
-	return best
 
 func _make_help(v: Dictionary) -> void:
 	v.kind = "help"

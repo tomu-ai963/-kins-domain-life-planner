@@ -359,12 +359,16 @@ func toggle_plot(pos: Vector2) -> String:
 	tilled_count = used
 	return result
 
+# 育った日数の式(畑と小屋の苗で同じ。レビュー C5): まいてからの日数 elapsed のうち、水をやった wet 日は 1 日ぶん、
+# やらなかった日は dry 日ぶん育つ
+static func grown_days(elapsed: int, wet: int, dry: float) -> float:
+	return elapsed * dry + wet * (1.0 - dry)
+
 # 育った日数。今日の分はまだ数えない(今日の水やりは、明日の時点で 1 日ぶんになる)
 func growth_days(c: Dictionary) -> float:
 	var elapsed: int = day_number() - int(c.sown_day)
 	var wet: int = int(c.water_days) - (1 if watered_today(c) else 0)
-	var dry := dry_rate(c.kind)
-	return elapsed * dry + wet * (1.0 - dry) + float(c.get("head", 0.0))
+	return grown_days(elapsed, wet, dry_rate(c.kind)) + float(c.get("head", 0.0))
 
 func is_ripe(c: Dictionary) -> bool:
 	return growth_days(c) >= float(CROPS[c.kind].grow_days)
@@ -383,8 +387,7 @@ func days_until_spoiled(c: Dictionary) -> int:
 # 明日の時点の育った日数(今日までの水やりはすべて数える)
 func _growth_tomorrow(c: Dictionary) -> float:
 	var elapsed: int = day_number() + 1 - int(c.sown_day)
-	var dry := dry_rate(c.kind)
-	return elapsed * dry + int(c.water_days) * (1.0 - dry) + float(c.get("head", 0.0))
+	return grown_days(elapsed, int(c.water_days), dry_rate(c.kind)) + float(c.get("head", 0.0))
 
 # 明日の畑の見込み(日記用)。ripe: 収穫できる区画(今できているものも含む) / spoiling: 明日傷みはじめる区画
 # 明日の霜で枯れる分はここでは引かない(霜は frost_is_near で別に知らせる)

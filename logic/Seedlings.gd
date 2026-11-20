@@ -46,7 +46,7 @@ func watered_today(p: Dictionary) -> bool:
 func growth_days(p: Dictionary) -> float:
 	var elapsed: int = forest.day_number() - int(p.sown_day)
 	var wet: int = int(p.water_days) - (1 if watered_today(p) else 0)
-	return elapsed * DRY_GROWTH + wet * (1.0 - DRY_GROWTH)
+	return Garden.grown_days(elapsed, wet, DRY_GROWTH)
 
 func is_grown(p: Dictionary) -> bool:
 	return growth_days(p) >= GROW_DAYS
@@ -66,7 +66,7 @@ func grown_tomorrow() -> int:
 	var n := 0
 	for p in pots:
 		var elapsed: int = forest.day_number() + 1 - int(p.sown_day)
-		if elapsed * DRY_GROWTH + int(p.water_days) * (1.0 - DRY_GROWTH) >= GROW_DAYS:
+		if Garden.grown_days(elapsed, int(p.water_days), DRY_GROWTH) >= GROW_DAYS:
 			n += 1
 	return n
 

@@ -145,7 +145,7 @@ func catch_up() -> void:
 		return
 	var before := water
 	var today: int = forest.day_number()
-	for d in range(last_checked_day + 1, today + 1):
+	for d in range(Forest.catch_up_from(last_checked_day, today), today + 1):
 		var date := Forest.date_of_day(d)
 		if forest.is_summer_date(date):
 			water = maxi(0, water - SUMMER_LOSS)

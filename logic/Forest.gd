@@ -50,6 +50,8 @@ const FRUIT_ORDER := ["apple", "cherry", "plum", "pear", "kaki", "mikan", "shiku
 # 収穫してから次に実るまでの日数(2026-11-11 とむ決定。前は毎日採れて、季節の売上が野菜の区画並みだった。仮の数字)
 const FRUIT_INTERVAL := 3
 const SAPLING_ONLY := ["cherry", "plum", "pear", "kaki", "mikan", "shikuwasa", "ume", "kuri", "mango", "papaya"]  # 接ぎ木の苗木から育てる(現実でも、種からだと親と同じ実にならない)
+# 閉じていたあいだを 1 日ずつ数えるのは、この日数まで(池・巣箱・雪で同じ。前は池だけ上限がなかった。レビュー C5)
+const MAX_CATCH_UP_DAYS := 365
 const GERMINATION_YEARS := 1.0  # 種から芽が出るまで(= 1 日)。当たり外れが分かるのは、まいた次の暦の日(germination_known)
 # 剪定: 葉の落ちた冬に果樹の枝を切ると、次の収穫が増える(現実でも果樹の剪定は冬の仕事)。1 本につきひと冬 1 回
 const PRUNE_BONUS := 1.25  # 剪定した木の収穫の倍率(仮の数字)
@@ -846,6 +848,10 @@ func is_summer_date(date: String) -> bool:
 # その日付の季節(土地の気候で決まる)
 func season_of_date(date: String) -> String:
 	return climate().season_of_date(date)
+
+# 閉じていたあいだを数えはじめる日: 前に数え終えた日の次の日から。ただし MAX_CATCH_UP_DAYS より前は数えない
+static func catch_up_from(last_checked_day: int, today: int) -> int:
+	return maxi(last_checked_day + 1, today - MAX_CATCH_UP_DAYS + 1)
 
 # 通し番号から日付(YYYY-MM-DD)に戻す
 static func date_of_day(n: int) -> String:

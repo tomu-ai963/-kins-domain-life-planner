@@ -117,13 +117,6 @@ func _any_watered() -> bool:
 func _needs_water() -> bool:
 	return not forest.is_raining() and garden.crops.any(func(c): return not garden.is_ripe(c) and not garden.watered_today(c))
 
-func _cheapest_seed() -> int:
-	var best := 999999
-	for g in market.GOODS:
-		if g.form == "crop_seed":
-			best = mini(best, int(g.price))
-	return best
-
 func _logs_needed() -> int:
 	var n := 0
 	for i in range(cabin.stage, cabin.STAGES.size()):
@@ -143,7 +136,7 @@ func _wants(id: String) -> bool:
 		"plot":
 			return land.plots.is_empty()
 		"buy_seeds":
-			return not land.plots.is_empty() and garden.crops.is_empty() and _crop_seeds() == 0 and market.money >= _cheapest_seed()
+			return not land.plots.is_empty() and garden.crops.is_empty() and _crop_seeds() == 0 and market.money >= market.cheapest_crop_seed()
 		"sow":
 			return not land.plots.is_empty() and garden.crops.is_empty() and _crop_seeds() > 0
 		"water":
@@ -155,7 +148,7 @@ func _wants(id: String) -> bool:
 		"stuck":
 			return has_people and visitors.is_stuck()
 		"broke":  # 手詰まりなら「収穫して売ろう」は当てはまらない
-			return market.money < _cheapest_seed() and _crop_seeds() == 0 and not visitors.is_stuck()
+			return market.money < market.cheapest_crop_seed() and _crop_seeds() == 0 and not visitors.is_stuck()
 		"apple":
 			return forest.fruiting_in(forest.season) > 0
 		"visitor":
@@ -232,7 +225,7 @@ func _is_done(id: String) -> bool:
 		"stuck":
 			return not visitors.is_stuck()
 		"broke":
-			return market.money >= _cheapest_seed() or _crop_seeds() > 0
+			return market.money >= market.cheapest_crop_seed() or _crop_seeds() > 0
 		"cabin_site":
 			return cabin.site != null
 		"cabin_logs":

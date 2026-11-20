@@ -16,7 +16,7 @@ const CELL := 1.5           # どかすマスの大きさ(m)
 const PATH_SPEED := 1.3     # どかした道の上を歩く速さの倍率(仮の数字)
 const SHOVEL_SPEED := 0.5   # 雪かきしながら歩く速さの倍率(1 マスに約 0.6 秒。仮の数字)
 const LIMIT := 78.0         # どかせる範囲(市場への道も作れるように、歩ける範囲と同じ)
-const MAX_CATCH_UP_DAYS := 365
+const MAX_CATCH_UP_DAYS := Forest.MAX_CATCH_UP_DAYS  # 閉じていたあいだを数える上限(池・巣箱・雪で同じ)
 
 var forest: Forest  # GameWorld が設定する
 var land: Land
@@ -83,7 +83,7 @@ func advance_to(today: int) -> void:
 		return
 	if today <= last_checked_day:
 		return
-	var from: int = maxi(last_checked_day + 1, today - MAX_CATCH_UP_DAYS + 1)
+	var from: int = Forest.catch_up_from(last_checked_day, today)
 	var buried := false
 	for d in range(from, today + 1):
 		if _buries_on(d):

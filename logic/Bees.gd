@@ -27,7 +27,7 @@ const SHARE_SEASONS := ["spring", "summer", "autumn"]  # フョードルさん�
 const HONEY_RATE := {"spring": 0.5, "summer": 0.5, "autumn": 0.2, "winter": 0.0}  # 1 日にたまるはちみつ(kg)
 const FLOWER_BONUS := 0.2  # 畑に野菜があると増える分(kg)
 const COMB_MAX := 5.0     # 巣箱にためておける量(kg)
-const MAX_CATCH_UP_DAYS := 365
+const MAX_CATCH_UP_DAYS := Forest.MAX_CATCH_UP_DAYS  # 閉じていたあいだを数える上限(池・巣箱・雪で同じ)
 
 var forest: Forest  # GameWorld が設定する
 var land: Land
@@ -197,7 +197,7 @@ func catch_up() -> void:
 		return
 	if today <= last_checked_day:
 		return
-	var from: int = maxi(last_checked_day + 1, today - MAX_CATCH_UP_DAYS + 1)
+	var from: int = Forest.catch_up_from(last_checked_day, today)
 	for d in range(from, today + 1):
 		var season := season_on(d)
 		for i in range(hives.size()):

@@ -213,6 +213,14 @@ func buy(id: String) -> String:
 	changed.emit()  # 種・苗木・丸太は持ち物だけ。木や畑の見た目は変わらないので forest.changed は出さない(レビュー M2)
 	return "bought"
 
+# いちばん安い野菜の種の値段(₽)。訪問者が「手詰まり」かを見るのと、ヒントが使う(前は 2 か所に同じ式があった。レビュー C5)
+func cheapest_crop_seed() -> int:
+	var best := 999999
+	for g in GOODS:
+		if g.form == "crop_seed":
+			best = mini(best, int(g.price))
+	return best
+
 # 増築・家具を今買えない理由("" なら買える)
 func _cabin_problem(g: Dictionary) -> String:
 	if g.form == "extension":
