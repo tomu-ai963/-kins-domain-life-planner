@@ -38,13 +38,19 @@ const MENU := [
 	],
 	[
 		["items", "持ち物", KEY_TAB, false], ["help", "操作", KEY_F1, false], ["sound", "音量", KEY_M, true],
-		["year1", "+1年", KEY_T, true], ["year10", "+10年", KEY_G, true], ["hour1", "+1時間", KEY_N, true],
-		["now", "今に戻す", KEY_R, true],
+		["text", "文字を隠す", KEY_F2, false],  # 文字を隠して景色を眺める(レビュー G10)
+		["more", "その他", KEY_NONE, true],
 	],
+]
+# 「その他」を押すと 4 行目に出す。未来のプレビューは、はじめての人には何が起きるか分かりにくいので奥に入れた(レビュー M4)
+const MENU_MORE := [
+	["year1", "+1年", KEY_T, true], ["year10", "+10年", KEY_G, true], ["hour1", "+1時間", KEY_N, true],
+	["now", "今に戻す", KEY_R, true], ["more_back", "戻る", KEY_NONE, true],
 ]
 
 var active := false
 var menu_open := false
+var more_open := false     # メニューの 4 行目を「その他」(MENU_MORE)にしている
 var _main: Node
 var _player: Node
 var _hud: Node
@@ -181,8 +187,9 @@ func _menu_pads(view: Vector2) -> Array:
 	var left: float = (view.x - width) * 0.5
 	var top: float = view.y - MARGIN - MENU.size() * step.y + GAP
 	for r in range(MENU.size()):
-		for i in range(MENU[r].size()):
-			var m: Array = MENU[r][i]
+		var row: Array = MENU_MORE if r == MENU.size() - 1 and more_open else MENU[r]
+		for i in range(row.size()):
+			var m: Array = row[i]
 			var rect := Rect2(Vector2(left, top) + Vector2(i, r) * step, pad_size)
 			list.append(_pad(m[0], _menu_text(m[0], m[1]), m[2], rect, m[3]))
 	# 2 行目の右の空きに閉じるボタン
@@ -196,6 +203,8 @@ const TREE_GROUPS := {"birch": "broadleaf", "fruit": "fruit", "cedar": "conifer"
 func _menu_text(id: String, text: String) -> String:
 	if id == "form":
 		return "苗木で植える" if _main.selected_form == "sapling" else "種で植える"
+	if id == "text":
+		return "文字を出す" if _hud.text_hidden else text
 	if id.begins_with("crop_"):
 		# 選んでいる野菜、なければその組でこの土地で最初に育つ野菜の名前
 		var g = _main.world.garden
@@ -315,10 +324,15 @@ func _press(pad: Dictionary) -> void:
 	match pad.id:
 		"menu":
 			menu_open = true
+			more_open = false
 			if _stick_finger >= 0:
 				_lift(_stick_finger)  # メニューを開いているあいだは歩かない
 		"menu_close":
 			menu_open = false
+		"more":
+			more_open = true
+		"more_back":
+			more_open = false
 		"zoom_in":
 			_player.zoom(ZOOM_STEP)
 		"zoom_out":

@@ -41,6 +41,7 @@ var _message_panel: PanelContainer
 var _message_label: Label
 var inventory_open := false  # Tab
 var help_open := false       # F1
+var text_hidden := false     # F2: 左上の文字とヒントを隠して眺める(レビュー G10。知らせは出る)
 var touch_mode := false      # タッチ操作のとき(市場の画面のボタンを指で押せる大きさにする)
 var _status_timer := 0.0
 var _shop: PanelContainer
@@ -227,7 +228,7 @@ func _build_hint() -> void:
 
 func _update_hint() -> void:
 	var text: String = _main.hint_text()
-	var show: bool = text != "" and not is_shop_open() and not is_diary_open()
+	var show: bool = text != "" and not is_shop_open() and not is_diary_open() and not text_hidden
 	_hint_panel.visible = show
 	if show:
 		# タッチの狭い画面では、左の文字に重ならないよう幅を決めて折り返す
@@ -294,7 +295,7 @@ func _process(delta: float) -> void:
 		# 背景は文字の量に合わせる
 		_bg.size = _label.get_combined_minimum_size() + Vector2(12, 8)
 	# タッチの狭い画面では、市場の画面と左の文字が重なるので、開いているあいだは文字を隠す(所持金は市場の画面にも出る)
-	var hide_status: bool = touch_mode and is_shop_open()
+	var hide_status: bool = (touch_mode and is_shop_open()) or text_hidden
 	_label.visible = not hide_status
 	_bg.visible = not hide_status
 
@@ -376,7 +377,7 @@ func _status_lines() -> PackedStringArray:
 	if touch_mode:
 		lines.append("持ち物と操作はメニューから")
 	else:
-		lines.append("Tab:%s  F1:%s" % ["持ち物を閉じる" if inventory_open else "持ち物", "操作を閉じる" if help_open else "操作"])
+		lines.append("Tab:%s  F1:%s  F2:文字を隠す" % ["持ち物を閉じる" if inventory_open else "持ち物", "操作を閉じる" if help_open else "操作"])
 	return lines
 
 # 持ち物(Tab)
@@ -435,8 +436,8 @@ func _touch_help_lines() -> PackedStringArray:
 		"小屋: 場所を決める/作業/苗づくり  使う: 家具のそばで使う",
 		"市場・話す・雪かき: 使えるときだけボタンが出る(市場は南の境界の外)",
 		"メニュー: 菜園 池 井戸 石臼 巣箱 餌台 剪定 名前(自分と家族)",
-		"メニュー: 植える木と野菜を選ぶ  種/苗木  持ち物  音量",
-		"メニュー: +1年 +10年 +1時間 今に戻す(未来をプレビュー)",
+		"メニュー: 植える木と野菜を選ぶ  種/苗木  持ち物  音量  文字(隠して景色を眺める)",
+		"メニュー > その他: +1年 +10年 +1時間 今に戻す(未来をプレビュー)",
 	])
 
 # 操作説明(F1)
@@ -452,5 +453,5 @@ func _help_lines() -> PackedStringArray:
 		"SPACE:植える/区画にまく  Q:水やり/井戸・池・川で汲む  E:収穫/草取り/わら  Z:抜く/伐る(斧は1日3本)",
 		"O:石臼を置く/穀物を挽く  I:井戸を掘る",
 		"F:菜園  P:池  H:小屋(完成したら 苗づくり / ストーブの前で料理 / ベッドのそばで日記。小屋ができるまではテントの寝袋で日記)  K:ヒントを閉じる",
-		"T:+1年  G:+10年  N:+1時間  R:今に戻す(未来をプレビュー)",
+		"T:+1年  G:+10年  N:+1時間  R:今に戻す(未来をプレビュー)  F2:文字を隠す/出す(景色を眺める)",
 	])

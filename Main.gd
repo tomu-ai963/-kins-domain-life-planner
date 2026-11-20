@@ -744,7 +744,7 @@ func _on_plant_tree(pos: Vector2) -> void:
 		return
 	_act("plant", pos)
 	if selected_form == "seed":
-		$HUD.show_message("種をまいた。芽が出るかは1日たつと分かる")
+		$HUD.show_message("種をまいた。芽が出るかは明日分かる")
 	_check_quests()
 
 # 1・2・3: 押すたびに、その組(広葉樹・果樹・針葉樹)のうち、この土地で育つ次の木を選ぶ。
@@ -1699,8 +1699,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	match event.keycode:
 		KEY_TAB:
 			$HUD.inventory_open = not $HUD.inventory_open
+			$HUD.text_hidden = false  # 持ち物を見たいときは、隠した文字も出す
 		KEY_F1:
 			$HUD.help_open = not $HUD.help_open
+			$HUD.text_hidden = false
+		KEY_F2:
+			$HUD.text_hidden = not $HUD.text_hidden  # 文字を隠して景色を眺める(レビュー G10)
 		KEY_1:
 			_select_next_in("broadleaf")
 		KEY_2:

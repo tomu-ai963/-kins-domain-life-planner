@@ -50,7 +50,7 @@ const FRUIT_ORDER := ["apple", "cherry", "plum", "pear", "kaki", "mikan", "shiku
 # 収穫してから次に実るまでの日数(2026-11-11 とむ決定。前は毎日採れて、季節の売上が野菜の区画並みだった。仮の数字)
 const FRUIT_INTERVAL := 3
 const SAPLING_ONLY := ["cherry", "plum", "pear", "kaki", "mikan", "shikuwasa", "ume", "kuri", "mango", "papaya"]  # 接ぎ木の苗木から育てる(現実でも、種からだと親と同じ実にならない)
-const GERMINATION_YEARS := 1.0  # 種から芽が出るまで(= 1 日)
+const GERMINATION_YEARS := 1.0  # 種から芽が出るまで(= 1 日)。当たり外れが分かるのは、まいた次の暦の日(germination_known)
 # 剪定: 葉の落ちた冬に果樹の枝を切ると、次の収穫が増える(現実でも果樹の剪定は冬の仕事)。1 本につきひと冬 1 回
 const PRUNE_BONUS := 1.25  # 剪定した木の収穫の倍率(仮の数字)
 
@@ -524,22 +524,35 @@ func add_tree(pos: Vector2, species: String, form := "seed") -> bool:
 func is_raining() -> bool:
 	return last_day == today() and today_event == "rain"
 
-# 根付いているか(苗木・移行前の木はいつも。種は芽が出て 1 日たってから)
+# 根付いているか(苗木・移行前の木はいつも。種は芽が出たと分かってから)
 func is_established(tree: Dictionary) -> bool:
 	if tree.form != "seed":
 		return true
-	return tree.sprouts and real_age_years(tree) >= GERMINATION_YEARS
+	return tree.sprouts and germination_known(tree)
+
+# 種の芽が出るかが分かったか: まいた日の次の暦の日になったら。畑の野菜と同じく暦の日で数える
+# (前は 24 時間で数えていて、夜にまくと分かるのが 2 日後の朝になった。レビュー G9)
+func germination_known(tree: Dictionary) -> bool:
+	return day_number() > planted_day(tree)
+
+# 植えた日の暦の日の通し番号(day_number と同じ数え方。現地の日付)
+func planted_day(tree: Dictionary) -> int:
+	return floori((int(tree.planted_at) + int(Time.get_time_zone_from_system().bias) * 60) / 86400.0)
 
 # 種のまま、まだ芽が出ていない(見た目は土の盛り上がり)。
-# 芽が出るかどうかは、まいてから 1 日たつまで分からない。先送りのプレビュー(G / T)では、
+# 芽が出るかどうかは、まいた次の日まで分からない。先送りのプレビュー(G / T)では、
 # まだ分からない種はみな芽が出たものとして見せる(プレビューで当たり外れを先に知って、
 # 外れを抜いてまき直す裏技にならないように。2026-11-17 とむ決定)。外れと分かった種は土のまま
 func is_seed(tree: Dictionary) -> bool:
-	return tree.form == "seed" and (age_years(tree) < GERMINATION_YEARS or has_failed(tree))
+	if tree.form != "seed":
+		return false
+	if has_failed(tree):
+		return true
+	return not germination_known(tree) and time_offset_years < GERMINATION_YEARS
 
 # 芽が出なかったと分かった種(翌日の確認で消える)
 func has_failed(tree: Dictionary) -> bool:
-	return tree.form == "seed" and not tree.sprouts and real_age_years(tree) >= GERMINATION_YEARS
+	return tree.form == "seed" and not tree.sprouts and germination_known(tree)
 
 # 足元の木に水をあげる。結果コードを返す: watered / none / done
 func water_nearest(pos: Vector2, max_dist: float) -> String:

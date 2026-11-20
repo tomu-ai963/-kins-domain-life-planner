@@ -101,6 +101,15 @@ func _test_germination() -> void:
 	_check(f.is_seed(t) and not f.is_established(t) and f.radius_of(t) == 0.0, "まいたばかりの種は土の中(根付いていない)")
 	_age(t, 1.0)
 	_check(not f.is_seed(t) and f.is_established(t), "1 日たつと芽が出る")
+	# 夜にまいた種も翌朝には分かる(畑と同じく暦の日で数える。前は 24 時間で数えて 2 日後の朝になった。レビュー G9)
+	var midnight: int = f.day_number() * DAY - int(Time.get_time_zone_from_system().bias) * 60  # 今日の 0 時(現地)
+	f.add_tree(Vector2(12, 0), "birch")
+	var night: Dictionary = f.trees[-1]
+	night.planted_at = midnight - 3600  # 昨日の 23 時
+	_check(f.germination_known(night) and f.is_established(night) and not f.is_seed(night), "昨日の 23 時にまいた種は、24 時間たっていなくても今日は芽が出たと分かる")
+	night.planted_at = midnight + 60  # 今日の 0 時 1 分
+	_check(not f.germination_known(night) and f.is_seed(night) and not f.is_established(night), "今日まいた種は、今日のうちはまだ分からない")
+	f.trees.erase(night)
 
 	f.germination_rates.birch = 0.0
 	f.add_tree(Vector2(5, 0), "birch")

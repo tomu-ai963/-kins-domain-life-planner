@@ -263,7 +263,8 @@ func _test_menu() -> void:
 	_check(tc.menu_open and _pad("plant").is_empty(), "メニューを開くと、いつものボタンは隠れる")
 	for p in tc.pads(_view()):
 		ids.append(p.id)
-	_check(ids.size() == 28, "メニューに 27 の操作と閉じるボタンがある(%d)" % ids.size())
+	_check(ids.size() == 26, "メニューに 25 の操作と閉じるボタンがある(%d)" % ids.size())
+	_check(not ("year1" in ids) and "more" in ids and "text" in ids, "未来のプレビューは「その他」の中。文字を隠すボタンがある(レビュー M4・G10)")
 	_check("family" in ids, "メニューに「家族」(名前を付け直す)がある")
 	_check(not tc.touch(0, Vector2(100, 100), true) and tc.stick_value() == Vector2.ZERO, "メニューのあいだは歩かない")
 	tc.touch(0, Vector2.ZERO, false)
@@ -285,6 +286,30 @@ func _test_menu() -> void:
 	await _tap("menu")
 	await _tap("menu_close")
 	_check(not tc.menu_open and not _pad("plant").is_empty(), "閉じるボタンで元に戻る")
+	# その他: 未来のプレビュー(レビュー M4)
+	await _tap("menu")
+	await _tap("more")
+	_check(tc.menu_open and not _pad("year1").is_empty() and not _pad("now").is_empty() and _pad("items").is_empty(), "「その他」で 4 行目が +1年 などに変わる")
+	var years: float = main.world.forest.time_offset_years
+	await _tap("year1")
+	_check(main.world.forest.time_offset_years == years + 1.0 and tc.menu_open and tc.more_open, "+1年を押しても、その他は開いたまま")
+	await _tap("now")
+	_check(main.world.forest.time_offset_years == 0.0, "今に戻す")
+	await _tap("more_back")
+	_check(not _pad("items").is_empty() and _pad("year1").is_empty(), "戻るで 4 行目が元に戻る")
+	await _tap("more")
+	await _tap("menu_close")
+	await _tap("menu")
+	_check(not tc.more_open and not _pad("items").is_empty(), "メニューを開き直すと、その他は閉じている")
+	# 文字を隠す(レビュー G10)
+	await _tap("text")
+	await create_timer(hud.TOUCH_STATUS_SECONDS + 0.1).timeout
+	_check(hud.text_hidden and not hud._label.visible and not tc.menu_open, "文字を隠すと、左上の文字が消えてメニューも閉じる")
+	await _tap("menu")
+	_check(_pad("text").text == "文字を出す", "隠しているあいだは「文字を出す」")
+	await _tap("text")
+	await create_timer(hud.TOUCH_STATUS_SECONDS + 0.1).timeout
+	_check(not hud.text_hidden and hud._label.visible, "もう一度押すと出る")
 
 func _test_context_pads() -> void:
 	print("近くにあるものでボタンが増える")
