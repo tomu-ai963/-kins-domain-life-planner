@@ -3312,7 +3312,7 @@ func _test_plot_limit() -> void:
 		main._toggle_plot()
 	_check(w.land.plots.size() == plots + 2, "F で耕せるのは 1 日 2 区画まで")
 	_check(hud._message.contains("1日2区画まで") and hud._message.contains("明日"), "上限になると、その理由を出す")
-	_check(main.QUEST_TEXTS.garden.hint.contains("1日2区画"), "クエストの案内にも上限が書いてある")
+	_check(main.Msg.QUEST_TEXTS.garden.hint.contains("1日2区画"), "クエストの案内にも上限が書いてある")
 	for i in range(2):
 		player.global_position = spots[i]
 		main._toggle_plot()

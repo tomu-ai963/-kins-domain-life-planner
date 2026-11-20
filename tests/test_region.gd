@@ -563,7 +563,7 @@ func Market_price(sp: String) -> int:
 	return int(load("res://logic/Market.gd").SELL_PRICES[sp])
 
 func Main_hint(id: String) -> bool:
-	return load("res://Main.gd").GUIDE_HINTS.has(id)
+	return load("res://Main.gd").Msg.GUIDE_HINTS.has(id)
 
 
 # 画面: 選ぶ画面を開いて、地方 → 県 → 決める
@@ -701,7 +701,7 @@ func _run_scene() -> void:
 	var ground = main.get_node("Ground")
 	_check(ground.look_season() == "winter_dry", "東京の冬の地面は枯れ草の色(雪で白くしない)")
 	main.world.guide.current = "winter"
-	_check(main.hint_text() == main.MILD_WINTER_TEXT, "東京の冬のヒントは霜のこと")
+	_check(main.hint_text() == main.Msg.MILD_WINTER_TEXT, "東京の冬のヒントは霜のこと")
 	# 生き物の形: どの生き物も作れる(県を選んで足した生き物も)
 	var wv = main.get_node("Wildlife")
 	var built := 0
@@ -712,7 +712,7 @@ func _run_scene() -> void:
 			built += 1
 		node.free()
 	_check(built == Wildlife.SPECIES.size(), "どの生き物も形を作れる(%d/%d)" % [built, Wildlife.SPECIES.size()])
-	_check(main._creature_name("yamagara") == "ヤマガラ" and main.local_text(main.GUIDE_HINTS.yamagara).contains("コナラの種"), "ヤマガラの会い方はコナラの種")
+	_check(main._creature_name("yamagara") == "ヤマガラ" and main.local_text(main.Msg.GUIDE_HINTS.yamagara).contains("コナラの種"), "ヤマガラの会い方はコナラの種")
 	main.queue_free()
 	await process_frame
 	_remove_save()

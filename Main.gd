@@ -10,6 +10,7 @@ const RiverView = preload("res://view/3d/RiverView3D.gd")
 const WellView = preload("res://view/3d/WellView3D.gd")
 const MillView = preload("res://view/3d/MillView3D.gd")
 const FamilyView = preload("res://view/3d/FamilyView3D.gd")
+const Msg = preload("res://view/main/Messages.gd")
 const REACH := 2.0    # 足元 2m 以内
 const PICKUP_RADIUS := 1.2  # 落ちている種は、これだけ近づくと拾う
 const FELL_CONFIRM_SECONDS := 4.0  # 根付いた木は、この時間内にもう一度 Z を押すと伐れる
@@ -21,41 +22,6 @@ const SOUND_LEVELS := [0.0, 0.3, 0.6, 1.0]        # M で切り替える音量
 const SOUND_LEVEL_NAMES := ["消す", "小", "中", "大"]
 const TREE_FALL_SOUND_DELAY := 0.45  # 斧を振ってから、木が倒れる音を出すまで(秒)。木が倒れきる時に「どさっ」が合う
 
-# ヒント(logic/Guide.gd の id)の文言。実際のルールに合わせて書く
-const GUIDE_TEXTS := {
-	"walk": "WASD か矢印キーで歩ける。\nホイールでカメラを寄せたり引いたりできる。",
-	"plant": "SPACE で足元に木を植える。\n[1][2][3] で木を選び、[V] で種と苗木を切り替える。",
-	"plot": "F で足元に畑の区画を作れる。お金はいらない。\n手で耕すので、新しく作れるのは1日2区画まで。",
-	"buy_seeds": "野菜の種は市場で買える。\n市場は南の境界の外にある(前に立って B で開く)。",
-	"sow": "区画の上で SPACE を押すと種をまく。\n[4]〜[9] で野菜を選ぶ。まける季節は野菜ごとに違う。",
-	"water": "野菜の上で Q を押すと、ジョウロで水をやれる(1L で1か所)。\n水をやった日は1日ぶん、やらない日は半日ぶん育つ。",
-	"well": "I で井戸を掘れる(1日1回・3日)。ジョウロが空になったら、\n井戸か池か、北の境界の外の川のそばで Q を押して汲む。",
-	"harvest": "育った野菜は E で収穫する。\n放っておくと傷んで、収穫が半分になる。",
-	"sell": "収穫物は市場で売れる。\n市場は南の境界の外(前に立って B で開く)。",
-	"broke": "お金と種が足りないときは、畑の野菜を収穫して市場で売ろう。\n訪ねてくる人の頼みごとでも、お金や種がもらえる。",
-	"stuck": "お金も種も、売るものもなくなったら、訪ねてくる人に話そう。\n2〜3日に1人来て、種を少し分けてくれる。",
-	"apple": "果樹に実がなっている(季節と樹齢で実る)。\n木のそばで E を押すと収穫できる。",
-	"visitor": "訪ねてくる人がいる。そばで C を押すと話せる。\n頼みごとは断ってもいい。",
-	"pond_rain": "池の水は雨でたまる。\n半分を超えると、生き物が来るようになる。",
-	"pond_water": "エンジンポンプがあるので、井戸か池か川のそばで Q を押すと、\nまわりの畑と木にまとめて水をやれる(ガソリンを使う)。",
-	"cabin_site": "H で足元を小屋の場所に決められる。\n丸太を集めて、1日1回ずつ建てていく。",
-	"cabin_logs": "小屋の丸太は、市場で買う(5本 1,500₽)か、\n育った木を Z で伐って集める(白樺は樹齢15年から)。",
-	"cabin_inside": "小屋が建った。南のドアから中に入れる。\n窓辺で苗づくり、ストーブで料理、ベッドで日記。",
-	"split": "小屋の東の薪割り台で H を押すと、丸太を割れる。\n料理には薪がいる。丸太1本で10回分。",
-	"stove": "ストーブの前で H を押すと、収穫物を保存食にできる。\n生より高く、冬と春はもっと高く売れる。薪を1回分使う。",
-	"bed": "ベッドのそばで H を押すと、横になって日記を見る。\n明日の予定が分かる。寝ても時間は進まない。",
-	"table": "腰掛けのそばで H を押すと、座って保存食を食べられる。\n食べたもので、その日の調子が変わる(1日3種類まで)。",
-	"hive_make": "自分の木を伐った丸太で、巣箱を作れる(J・丸太2本)。\n3日かけてくり抜く。市場の丸太は使えない。",
-	"hive_bees": "巣箱に蜂が入るのを待とう(春と夏)。\nフョードルさんが来たら、分けてもらうこともできる。",
-	"honey": "はちみつが採れる。巣箱のそばで J を押す。\n市場で売れて、ストーブで料理にも使える。採っても蜂はいなくならない。",
-	"winter": "冬は地面が凍って、苗木を植えられない(白樺の種だけはまける)。\n小屋の窓辺なら、冬でも苗が育つ。",
-	"shovel": "U を押したまま歩くと、雪をどかせる。\nどかした道は速く歩ける。次の雪で埋まる。",
-	"prune": "冬は果樹のそばで X を押すと剪定できる。\n次の収穫が増えて、切った枝は薪になる。",
-	"feeder": "L を押すと、丸太1本で鳥の餌台を立てられる。\n秋と冬に白樺の種を置くと、鳥が集まる。",
-	"feed": "餌台のそばで L を押すと、白樺の種を3粒置ける。\n餌は翌日まで残る。近づきすぎると鳥は逃げる。",
-	"mill": "穀物は石臼で挽くと粉になる(市場で買い、O で置く)。\n粉は売れて、ストーブでパンや麺にできる。",
-	"creatures": "見かけた生き物は、Tab の持ち物で見られる。\n木や畑が増えると、来る生き物も増える。",
-}
 
 const SEASON_NAMES := {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬"}
 const FORM_NAMES := {"seed": "種", "sapling": "苗木"}
@@ -82,15 +48,6 @@ const BUY_PAGES := [
 const TOOL_NAMES := {"big_can": "10Lのジョウロ(1杯で10か所)", "pump": "エンジンポンプ(井戸・池・川からまとめて水やり)",
 	"chainsaw": "チェーンソー(何本でも伐れる)", "splitter": "薪割り機(薪を一度に割る)",
 	"quern": "石臼(穀物を挽いて粉にする)", "mill": "製粉機(石臼のそばで穀物を一度に挽く)"}
-# 道具を買ったときの使い方の案内
-const TOOL_BOUGHT := {
-	"big_can": "1杯で10か所に水をやれる",
-	"pump": "井戸か池か川のそばで Q を押すと、まわりの畑と木にまとめて水をやれる(ガソリン 0.5L)",
-	"chainsaw": "ガソリンがあれば、Z で何本でも伐れる(1本 0.2L)",
-	"splitter": "小屋の東の薪割り台で H を押すと、積める量まで一度に割れる(ガソリン 0.5L)",
-	"quern": "O で体の前に置く。そばで O を押すと、穀物を 1kg ずつ挽ける(手で 1日5kg まで)",
-	"mill": "石臼のそばで O を押すと、穀物を一度に全部挽ける(ガソリン 0.5L)",
-}
 const MACHINE_NAMES := {"pump": "エンジンポンプ", "chainsaw": "チェーンソー", "splitter": "薪割り機", "mill": "製粉機"}
 const FURNITURE_NAMES := {"shelf": "保存食の棚", "rocking_chair": "揺り椅子", "rug": "じゅうたん", "lamp": "ランプ", "clock": "掛け時計"}
 # 売る列のページ。果物ははちみつも、実もの野菜は苗も。野菜の組は SELL_GROUPS(果樹と野菜が増えて 1 列 15 行を超えるため分けた)
@@ -620,12 +577,9 @@ func hint_text() -> String:
 	if id == "":
 		return ""
 	if id == "winter" and not world.forest.snowy_winter():
-		return MILD_WINTER_TEXT if world.region.has_frost() else WARM_WINTER_TEXT
-	return local_text(GUIDE_TEXTS[id])
+		return Msg.MILD_WINTER_TEXT if world.region.has_frost() else Msg.WARM_WINTER_TEXT
+	return local_text(Msg.GUIDE_TEXTS[id])
 
-# 雪の積もらない土地の冬のヒント
-const MILD_WINTER_TEXT := "冬は霜で、霜に弱い野菜が枯れる(ニンニクは平気)。\n雪は積もらないので、冬も木を植えられる。"
-const WARM_WINTER_TEXT := "冬も霜は降りない。春か秋にまく野菜は、冬にもまける。\n冬も木を植えられる。"
 
 # 決まった文言の木の名前を、その土地の木に置き換える(県を選ぶ前は今までの文言のまま)。
 # 白樺の種 → 餌台に置く種(その土地の広葉樹)、シベリア杉 → 家族の木、家族の杉 → ガジュマルなら家族の木
@@ -1070,7 +1024,7 @@ func _family_action(action: String) -> void:
 					line += "\nまだ見てない%sに会いたいな。" % _creature_name(missing[0])
 				line += "\n(ついてきて、近くの生き物を教えてくれる)"
 				if not missing.is_empty():
-					line += "\n(図鑑のヒント: %s)" % local_text(GUIDE_HINTS[missing[0]])
+					line += "\n(図鑑のヒント: %s)" % local_text(Msg.GUIDE_HINTS[missing[0]])
 			"seeds":
 				$Family.start_invite(id, "seeds")
 				line = "外の林だね! 一緒に拾おう!\n(ついてきて、近くに落ちている種を拾ってくれる)"
@@ -1256,12 +1210,6 @@ func _family_seeds() -> String:
 			parts.append("%sも%sの種を拾った(+%d)" % [world.family.member(id).name, world.forest.SPECIES[g.species].name, g.amount])
 	return "" if parts.is_empty() else "\n" + "\n".join(parts)
 
-# 収穫の結果コード(Forest.harvest_nearest)ごとの文言
-const HARVEST_MESSAGES := {
-	"none": "近くに実のなる木がない",
-	"preview": "未来のプレビュー中は収穫できない",
-	"done": "この木は収穫したばかり(次に実るまで、あと%d日)",
-}
 
 # 果樹の収穫の文言(結果が harvested / not_season / young のとき)
 func _fruit_message(result: String) -> String:
@@ -1282,12 +1230,6 @@ func _fruit_message(result: String) -> String:
 			return "%sが実るのは%s" % [fruit_name, "・".join(seasons)]
 	return "%sはまだ実らない(樹齢%d年から)" % [fruit_name, int(fruit.age)]
 
-# 水やりの結果コード(Forest.water_nearest)ごとの文言
-const WATER_MESSAGES := {
-	"watered": "%sに水をあげた(樹齢 +%.1f年。ジョウロ 残り %d/%dL)",
-	"none": "近くに木がない",
-	"done": "この木には今日もう水をあげた",
-}
 
 # 発見の文言。雨の日は冬なら雪になる(降るものは WeatherView3D と同じ。効き目は雨と同じ)
 func daily_message(id: String) -> String:
@@ -1296,183 +1238,31 @@ func daily_message(id: String) -> String:
 		return "雪が降った。今日は全部の木と野菜に水やり済み"
 	if id == "birch_seed" and f.wind_seed() != "birch":
 		var name: String = f.SPECIES[f.wind_seed()].name
-		return "%s(%sの種 +1)" % [SEED_ARRIVALS.get(f.wind_seed(), "風で%sの種が飛んできた") % name, name]
+		return "%s(%sの種 +1)" % [Msg.SEED_ARRIVALS.get(f.wind_seed(), "風で%sの種が飛んできた") % name, name]
 	if id == "cedar_seed" and f.nut_seed() != "cedar":
 		var name: String = f.SPECIES[f.nut_seed()].name
-		return "%s(%sの種 +1)" % [SEED_ARRIVALS.get(f.nut_seed(), "風で%sの種が飛んできた") % name, name]
-	return DAILY_MESSAGES[id]
+		return "%s(%sの種 +1)" % [Msg.SEED_ARRIVALS.get(f.nut_seed(), "風で%sの種が飛んできた") % name, name]
+	return Msg.DAILY_MESSAGES[id]
 
 # その季節の雨の日は雪になるか(雪の積もる土地の冬だけ。降るものは WeatherView3D と同じ)
 func is_snow_day(season: String) -> bool:
 	return season == "winter" and world.forest.snowy_winter()
 
-# 種が運ばれてきたときの文言(白樺・シベリア杉のほかの木)
-const SEED_ARRIVALS := {
-	"konara": "カケスが%sのどんぐりを落としていった",
-	"gajumaru": "鳥が%sの種を運んできた",
-}
 
-# 日替わりの発見(Forest.DAILY_EVENTS の id)ごとの文言
-const DAILY_MESSAGES := {
-	"birch_seed": "風で白樺の種が飛んできた(白樺の種 +1)",
-	"cedar_seed": "リスがシベリア杉の実を置いていった(シベリア杉の種 +1)",
-	"rain": "雨が降った。今日は全部の木と野菜に水やり済み",
-	"birds": "渡り鳥が来て、しばらく休んでいった",
-}
 
-# 段階クエスト(Quests.QUESTS の id)ごとの名前と進み具合の単位
-const QUEST_TEXTS := {
-	"hedge": {"name": "境界を生垣で囲む", "short": "生垣", "unit": "区画", "hint": "境界から3m以内に、10mごとに1本"},
-	"garden": {"name": "菜園を作る", "short": "菜園", "unit": "区画", "hint": "F で3m四方の区画を置く・1日2区画まで"},
-	"pond": {"name": "池を掘る", "short": "池", "unit": "", "hint": "P で場所を決めて、1日1回 5日かけて掘る"},
-	"family_cedar": {"name": "中心に家族の杉を植える", "short": "家族の杉", "unit": "", "hint": "中心から5m以内にシベリア杉"},
-}
 # その土地のクエストの文言(家族の木は土地で変わる)
 func quest_text(id: String) -> Dictionary:
-	var t: Dictionary = QUEST_TEXTS[id].duplicate()
+	var t: Dictionary = Msg.QUEST_TEXTS[id].duplicate()
 	for k in t:
 		t[k] = local_text(t[k])
 	return t
 
-# 生き物の図鑑で、まだ見ていない生き物の会い方(愛の空間の完成後、HUD に 1 つずつ出す)
-const GUIDE_HINTS := {
-	"sparrow": "木が3本あれば昼に来る",
-	"squirrel": "育った木が3本あれば昼に来る",
-	"butterfly": "春〜秋の晴れた昼、畑に野菜があれば来る",
-	"bee": "春〜秋の晴れた昼、畑に野菜があれば来る",
-	"hare": "区画が4つあれば夕方から朝に来る",
-	"hedgehog": "春〜秋の夜、区画か木が多ければ来る",
-	"migrant": "「渡り鳥」の発見の日に来る",
-	"tit": "秋と冬、餌台に白樺の種を置くと来る",
-	"bullfinch": "冬、餌台に白樺の種を置くと来る",
-	"woodpecker": "冬の昼、育った木が3本あれば来る",
-	"ezo_squirrel": "育った木が3本あれば昼に来る",
-	"snow_hare": "区画が4つあれば夕方から朝に来る(冬は白い毛になる)",
-	"kuina": "区画が4つあれば夕方から朝に来る",
-	"tanuki": "夜、区画か木が多ければ来る",
-	"fox": "夕方から朝、区画か木が多ければ来る",
-	"fruit_bat": "夜、育った木が3本あれば来る",
-	"yamagara": "秋と冬、餌台に白樺の種を置くと来る",
-	"mejiro": "秋と冬、餌台に白樺の種を置くと来る",
-	"kogera": "冬の昼、育った木が3本あれば来る",
-	"starling": "春と夏、ムクドリの巣箱を掛けると来る",
-	"crow": "畑に野菜が4区画あれば昼に来る",
-	"boar": "区画が12あれば夜に来る",
-	"ezo_deer": "区画が12あれば夕方から朝に来る",
-	"strider": "池の水が半分を超えて2日(春〜秋)",
-	"reed": "池の水が半分を超えて5日",
-	"frog": "池の水が半分を超えて7日(春と夏)",
-	"dragonfly": "池の水が半分を超えて10日(夏と秋)",
-	"duck": "池の水が半分を超えて14日(春〜秋)",
-}
 
-# 菜園・池の結果コード(GameWorld.toggle_plot / pond_action)ごとの文言
-const PLOT_MESSAGES := {
-	"placed": "菜園の区画を作った(%d区画)",
-	"removed": "菜園の区画を草地に戻した",
-	"outside": "土地の外には作れない",
-	"has_crop": "野菜が育っている区画は戻せない(Z で抜くか、E で収穫してから)",
-	"cabin": "小屋にかかる場所には作れない",
-	"hive": "巣箱にかかる場所には作れない",
-	"feeder": "餌台にかかる場所には作れない",
-	"well": "井戸にかかる場所には作れない",
-	"mill": "石臼にかかる場所には作れない",
-	"tent": "家族のテントにかかる場所には作れない(小屋が完成すると片付ける)",
-	"limit": "新しく耕せるのは1日%d区画まで(続きは明日)",
-}
-const POND_MESSAGES := {
-	"placed": "ここに池を掘ることにした(P で 1日1回 掘る)。エンジンポンプがあれば、水色の輪の中の畑と木に、池からまとめて水をやれる。掘りはじめる前なら Z で取り消せる",
-	"outside": "土地の外には掘れない",
-	"cabin": "小屋にかかる場所には掘れない",
-	"hive": "巣箱にかかる場所には掘れない",
-	"feeder": "餌台にかかる場所には掘れない",
-	"well": "井戸にかかる場所には掘れない",
-	"mill": "石臼にかかる場所には掘れない",
-	"tent": "家族のテントにかかる場所には掘れない(小屋が完成すると片付ける)",
-	"dug": "池を掘った(続きは明日)",
-	"finished": "池を掘り終えた。底から水が湧いて、半分までたまった。あとは雨でたまる",
-	"far": "池はひとつまで(今の池の近くで P を押すと掘る)",
-	"already": "池はもう掘り終えた(水は雨でたまる)",
-	"done_today": "今日はもう掘った(1日1回)",
-}
 
-# 池からまとめて水をやれないとき(Pond.water_around)の文言
-const POND_WATER_MESSAGES := {
-	"frozen": "池が凍っていて水を汲めない",
-	"low": "池の水が足りない(雨でたまる)",
-	"nothing": "まわりに水のいる木や区画がない",
-}
 
-# 小屋の場所決め(Cabin.place)の結果ごとの文言
-# 木を植えられない場所(GameWorld.tree_spot_problem の結果)
-const TREE_SPOT_MESSAGES := {
-	"outside": "一族の土地の外には植えられない(外の林では種を拾うだけ)",
-	"cabin": "小屋の場所には植えられない",
-	"hive": "巣箱の近くには植えられない",
-	"feeder": "餌台の近くには植えられない",
-	"well": "井戸の近くには植えられない",
-	"mill": "石臼の近くには植えられない",
-	"tent": "テントの近くには植えられない",
-	"yard": "小屋の東の庭には植えられない(薪割り台と薪を置く場所)",
-}
-# 小屋を建てる場所にかかる物(GameWorld.cabin_spot_problem の結果)
-const TAKEN_NAMES := {"hive": "巣箱", "feeder": "餌台", "well": "井戸", "mill": "石臼"}
-const CABIN_PLACE_MESSAGES := {
-	"placed": "ここに小屋を建てることにした(外から H で作業する。始める前なら Z で取り消せる)",
-	"edge": "境界の近くには建てられない(生垣のために3m空ける)",
-	"center": "中心の近くには建てられない(家族の杉のために5m空ける)",
-	"pond": "池にかかる場所には建てられない",
-	"plot": "菜園の区画にかかる場所には建てられない",
-	"tree": "木がある場所には建てられない(先に Z で伐る)",
-}
 const CABIN_STAGE_NAMES := {"foundation": "基礎", "walls": "壁", "roof": "屋根"}
 const POT_NAMES := ["鍋", "かまどの鍋"]      # 母屋のストーブの鍋 / 増築した部屋のかまどの鍋
 const POT_PLACES := ["ストーブ", "かまど"]
-# 増築(市場で頼む)できないときの文言(Market.buy の結果)
-const EXTENSION_MESSAGES := {
-	"no_cabin": "増築は小屋が建ってから頼める",
-	"exists": "増築はもう頼んである",
-	"edge": "小屋の西は境界に近くて増築できない(生垣のために3m空ける)",
-	"center": "小屋の西は中心に近くて増築できない(家族の杉のために5m空ける)",
-	"pond": "小屋の西に池があって増築できない",
-	"plot": "小屋の西(3m)に菜園の区画があって増築できない(先に F で取り消す)",
-	"tree": "小屋の西(3m)に木があって増築できない(先に Z で伐る)",
-	"hive": "小屋の西に巣箱があって増築できない",
-	"feeder": "小屋の西に餌台があって増築できない",
-	"well": "小屋の西に井戸があって増築できない",
-	"mill": "小屋の西に石臼があって増築できない",
-	"no_room": "家具は、小屋を増築した部屋に置く(先に増築を頼む)",
-	"owned": "もう持っている",
-	"full": "ガソリンはもう入らない(携行缶に20Lまで)",
-}
-# 井戸(Well.act)の結果ごとの文言
-const WELL_MESSAGES := {
-	"placed": "ここに井戸を掘ることにした(I で 1日1回 掘る・%d日)。掘りはじめる前なら Z で取り消せる",
-	"blocked": "ここには掘れない(区画・小屋・池・木・巣箱・餌台のそばや、土地の端は空ける)",
-	"dug": "井戸を掘った(続きは明日)",
-	"finished": "井戸を掘り終えた。冷たい水が湧いた。Q でジョウロに汲める(冬も凍らない)",
-	"far": "井戸はひとつまで(今の井戸のそばで I を押すと掘る)",
-	"already": "井戸はもう掘り終えている(Q でジョウロに汲む)",
-	"done_today": "今日はもう掘った(続きは明日)",
-}
-# 石臼(Mill.act)の結果ごとの文言(ground と engine は _mill_action で組み立てる)
-const MILL_MESSAGES := {
-	"placed": "石臼を置いた。穀物を持ってそばで O を押すと、粉に挽ける",
-	"no_quern": "石臼がない(市場の「道具と燃料」で買える)",
-	"blocked": "ここには置けない(区画・小屋・池・木・巣箱・餌台・井戸のそばや、土地の端は空ける)",
-	"far": "石臼のそばで O を押すと挽ける",
-	"no_grain": "挽く穀物がない(小麦・ライ麦・ソバ・キビを畑で育てる。豆・穀物の組にある)",
-	"tired": "今日はもう手で%dkg挽いて、腕が疲れた。続きは明日(製粉機なら一度に挽ける)",
-}
-# ジョウロに汲めない・ポンプが動かない理由
-const FILL_MESSAGES := {
-	"frozen": "池が凍っていて水を汲めない(井戸なら冬も汲める)",
-	"empty": "池に水がない(雨でたまる。井戸なら汲める)",
-}
-const PUMP_MESSAGES := {
-	"frozen": "池が凍っていてポンプが使えない(井戸なら冬も使える)",
-	"low": "池の水が足りなくてポンプが使えない(雨でたまる)",
-}
 
 # プレイヤーの足元(m)
 func player_pos() -> Vector2:
@@ -1506,14 +1296,14 @@ func _on_plant_tree(pos: Vector2) -> void:
 		return
 	var problem: String = world.tree_spot_problem(pos)
 	if problem == "outside":
-		$HUD.show_message(TREE_SPOT_MESSAGES.outside)
+		$HUD.show_message(Msg.TREE_SPOT_MESSAGES.outside)
 		return
 	# 菜園の区画の上では、木ではなく野菜をまく
 	if world.land.plot_at(pos) != null:
 		_sow(pos)
 		return
 	if problem != "":
-		$HUD.show_message(TREE_SPOT_MESSAGES[problem])
+		$HUD.show_message(Msg.TREE_SPOT_MESSAGES[problem])
 		return
 	if selected_form == "seed" and selected_species in world.forest.SAPLING_ONLY:
 		$HUD.show_message("%sは苗木から育てる(V で苗木に切り替える。市場で買える)" % world.forest.SPECIES[selected_species].name, 5.0)
@@ -1587,9 +1377,9 @@ func _cabin_action() -> void:
 	if c.site == null:
 		var taken: String = world.cabin_spot_problem(pos)
 		if taken != "":
-			$HUD.show_message("%sにかかる場所には建てられない" % TAKEN_NAMES[taken])
+			$HUD.show_message("%sにかかる場所には建てられない" % Msg.TAKEN_NAMES[taken])
 			return
-		$HUD.show_message(CABIN_PLACE_MESSAGES[c.place(pos)], 5.0)
+		$HUD.show_message(Msg.CABIN_PLACE_MESSAGES[c.place(pos)], 5.0)
 		return
 	if c.is_complete():
 		if c.is_at_chop_block(pos):
@@ -2024,12 +1814,12 @@ func cabin_line() -> String:
 # ── 池 ────────────────────────────────────────────────────
 func _pond_action() -> void:
 	var result: String = world.pond_action(player_pos())
-	$HUD.show_message(POND_MESSAGES[result], 5.0)
+	$HUD.show_message(Msg.POND_MESSAGES[result], 5.0)
 	if result == "dug" or result == "finished":
 		_act("dig", world.land.pond)
 	if result == "placed" or result == "finished":
 		world.save_game()
-		_check_quests(POND_MESSAGES[result])
+		_check_quests(Msg.POND_MESSAGES[result])
 
 # 水の出どころ(GameWorld.water_source)の名前
 func source_name(source: String) -> String:
@@ -2501,13 +2291,13 @@ func _on_shop_action(id: String) -> void:
 		elif bought and g.form == "furniture":
 			$HUD.show_message("%sを買って、増築した部屋に置いた(-%d₽)" % [FURNITURE_NAMES[g.species], g.price], 5.0)
 		elif bought and g.form == "tool":
-			$HUD.show_message("%sを買った(-%d₽)。%s" % [TOOL_NAMES[g.species], g.price, TOOL_BOUGHT[g.species]], 6.0)
+			$HUD.show_message("%sを買った(-%d₽)。%s" % [TOOL_NAMES[g.species], g.price, Msg.TOOL_BOUGHT[g.species]], 6.0)
 		elif bought and g.form == "fuel":
 			$HUD.show_message("ガソリンを%s買った(-%d₽。持っている %s)" % [gas_text(int(g.amount)), g.price, gas_text(world.tools.gas)])
 		elif bought:
 			$HUD.show_message("%sを買った(-%d₽)" % [good_name(g), g.price])
-		elif EXTENSION_MESSAGES.has(result):
-			$HUD.show_message(EXTENSION_MESSAGES[result], 5.0)
+		elif Msg.EXTENSION_MESSAGES.has(result):
+			$HUD.show_message(Msg.EXTENSION_MESSAGES[result], 5.0)
 		else:
 			$HUD.show_message("お金が足りない(%d₽ 必要)" % g.price)
 	world.save_game()
@@ -2515,7 +2305,7 @@ func _on_shop_action(id: String) -> void:
 
 func _toggle_plot() -> void:
 	var result: String = world.toggle_plot(player_pos())
-	var msg: String = PLOT_MESSAGES[result]
+	var msg: String = Msg.PLOT_MESSAGES[result]
 	if result == "placed":
 		msg = msg % world.land.plots.size()
 	elif result == "limit":
@@ -2590,7 +2380,7 @@ func _next_goal_text() -> String:
 	var q := world.quests
 	var missing: Array = q.guide_missing()
 	if not missing.is_empty():
-		return "(次: %s・%s)" % [_creature_name(missing[0]), local_text(GUIDE_HINTS[missing[0]])]
+		return "(次: %s・%s)" % [_creature_name(missing[0]), local_text(Msg.GUIDE_HINTS[missing[0]])]
 	var m: Dictionary = q.next_milestone()
 	if not m.is_empty():
 		return "(次の節目: %s 樹齢%d年まで あと%d日)" % [world.forest.SPECIES[m.species].name, m.age, m.days]
@@ -2636,7 +2426,7 @@ func _harvest() -> void:
 		$HUD.show_message(text + _family_harvest(c.pos, pos))
 		return
 	if crop == "preview":
-		$HUD.show_message(HARVEST_MESSAGES.preview)
+		$HUD.show_message(Msg.HARVEST_MESSAGES.preview)
 		return
 	# 育っている区画に雑草が生えていれば抜く
 	if crop == "growing" and g.weed_at(pos) == "weeded":
@@ -2658,9 +2448,9 @@ func _harvest() -> void:
 	if result == "harvested":
 		_act("pick_high", world.forest.trees[world.forest.nearest_fruit_index(pos, REACH)].pos, world.forest.last_harvest_item)
 	if result == "done":
-		$HUD.show_message(HARVEST_MESSAGES.done % world.forest.last_harvest_wait)
+		$HUD.show_message(Msg.HARVEST_MESSAGES.done % world.forest.last_harvest_wait)
 		return
-	$HUD.show_message(HARVEST_MESSAGES[result] if HARVEST_MESSAGES.has(result) else _fruit_message(result))
+	$HUD.show_message(Msg.HARVEST_MESSAGES[result] if Msg.HARVEST_MESSAGES.has(result) else _fruit_message(result))
 
 # Q: 井戸か池のそばなら、エンジンポンプでまとめて水をやるか、ジョウロに汲む。
 # そうでなければ、足元の区画の野菜か 2m 以内の木に、ジョウロで水をやる(1L で 1 か所)
@@ -2686,8 +2476,8 @@ func _water() -> void:
 			var note := "。ポンプはガソリンがなくて動かない" if pump_result == "no_gas" else ""
 			$HUD.show_message("%sの水をジョウロに汲んだ(%d/%dL)%s" % [source_name(source), t.can_water, t.can_size(), note])
 			return
-		if FILL_MESSAGES.has(fill) and g.crop_at(pos).is_empty() and f.nearest_index(pos, REACH, "") < 0:
-			$HUD.show_message(PUMP_MESSAGES.get(pump_result, FILL_MESSAGES[fill]))
+		if Msg.FILL_MESSAGES.has(fill) and g.crop_at(pos).is_empty() and f.nearest_index(pos, REACH, "") < 0:
+			$HUD.show_message(Msg.PUMP_MESSAGES.get(pump_result, Msg.FILL_MESSAGES[fill]))
 			return
 	# 足元の区画の野菜を先に。今日もう水をあげていれば、近くの木を見る
 	var crop: String = world.water_plot(pos)
@@ -2714,10 +2504,10 @@ func _water() -> void:
 		if pump_result == "no_gas":
 			$HUD.show_message("エンジンポンプのガソリンがない(市場で買える)。ジョウロは満杯(%dL)" % t.can_size())
 			return
-		if PUMP_MESSAGES.has(pump_result):
-			$HUD.show_message(PUMP_MESSAGES[pump_result])
+		if Msg.PUMP_MESSAGES.has(pump_result):
+			$HUD.show_message(Msg.PUMP_MESSAGES[pump_result])
 			return
-	var msg: String = WATER_MESSAGES[result]
+	var msg: String = Msg.WATER_MESSAGES[result]
 	if result == "watered":
 		var i: int = f.nearest_index(pos, REACH, "")
 		msg = msg % [f.SPECIES[f.trees[i].species].name, f.WATER_BONUS_YEARS, t.can_water, t.can_size()]
@@ -2748,7 +2538,7 @@ func cutter_text() -> String:
 func _well_action() -> void:
 	var front: Vector2 = player_pos() + $Player.facing() * HIVE_FRONT if $Player.has_method("facing") else player_pos()
 	var result: String = world.well_action(player_pos(), front)
-	var msg: String = WELL_MESSAGES[result]
+	var msg: String = Msg.WELL_MESSAGES[result]
 	if result == "placed":
 		msg = msg % world.well.DIG_DAYS
 	$HUD.show_message(msg, 5.0)
@@ -2778,11 +2568,11 @@ func _mill_action() -> void:
 			$HUD.show_message("製粉機で挽いた(%s。ガソリン -%s・残り %s)" % ["・".join(parts), gas_text(world.tools.gas_needed("mill")), gas_text(world.tools.gas)], 5.0)
 		"placed":
 			_act("build", m.site)
-			$HUD.show_message(MILL_MESSAGES.placed, 5.0)
+			$HUD.show_message(Msg.MILL_MESSAGES.placed, 5.0)
 		"tired":
-			$HUD.show_message(MILL_MESSAGES.tired % m.hand_limit(), 5.0)
+			$HUD.show_message(Msg.MILL_MESSAGES.tired % m.hand_limit(), 5.0)
 		_:
-			$HUD.show_message(MILL_MESSAGES[result], 5.0)
+			$HUD.show_message(Msg.MILL_MESSAGES[result], 5.0)
 
 # HUD に出す、石臼のそばでの案内。そばにいなければ ""
 func mill_line() -> String:

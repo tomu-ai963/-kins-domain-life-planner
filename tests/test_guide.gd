@@ -68,7 +68,7 @@ func _add_crop(w: GameWorld, sown_ago := 0, water_days := 0) -> Dictionary:
 
 func _test_every_hint_has_text() -> void:
 	print("文言")
-	var texts: Dictionary = MainScript.GUIDE_TEXTS
+	var texts: Dictionary = MainScript.Msg.GUIDE_TEXTS
 	for id in Guide.HINTS:
 		_check(texts.has(id) and texts[id].contains("\n"), "%s の文言があり、2 行で読める" % id)
 		var widest := 0
